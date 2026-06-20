@@ -61,6 +61,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyY", "ShiftLeft", "ShiftRight"]);
 const hud = {
   speed: document.querySelector("#speed"),
   turret: document.querySelector("#turret-angle"),
@@ -119,14 +120,28 @@ const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
-  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH"].includes(event.code);
+  const gameKey = gameKeyCodes.has(event.code);
   const elevationKey = event.code === "KeyY" || (input.KeyY && ["ArrowUp", "ArrowDown"].includes(event.code));
-  if (gameKey || elevationKey) event.preventDefault();
+  if (gameKey || elevationKey) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
   input[event.code] = true;
+  if (event.code === "Space") input.fireHeld = true;
+  if (event.code === "KeyH") input.heatSeekingHeld = true;
   if (event.code === "Escape") emergencyClearAroundTank();
-});
+}, true);
 window.addEventListener("keyup", event => {
+  if (gameKeyCodes.has(event.code)) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
   input[event.code] = false;
+  if (event.code === "Space") input.fireHeld = false;
+  if (event.code === "KeyH") input.heatSeekingHeld = false;
+}, true);
+window.addEventListener("blur", () => {
+  for (const key of Object.keys(input)) input[key] = false;
 });
 hud.musicButton.addEventListener("click", () => audio.start());
 
@@ -987,8 +1002,8 @@ class ProjectileManager {
 
   update(delta, keys, tankRef, enemyManager, skyDroneManager) {
     this.cooldown -= delta;
-    if (keys.Space && this.cooldown <= 0) {
-      this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.KeyH);
+    if (keys.fireHeld && this.cooldown <= 0) {
+      this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld);
       this.cooldown = CONFIG.projectileCooldown;
     }
 
