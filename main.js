@@ -7,7 +7,8 @@ const CONFIG = {
   tankTurnSpeed: 1.55,
   turretTurnSpeed: 2.7,
   turretPitchSpeed: 1.4,
-  tankHoverHeight: 3.2,
+  tankHoverHeight: 4.8,
+  tankCollisionRadius: 5.2,
   emergencyClearRadius: 58,
   chunkSize: 220,
   visibleChunkRadius: 2,
@@ -21,7 +22,6 @@ const CONFIG = {
     crystal: 0x58f3ff,
     gold: 0xffc45c
   },
-  musicPath: "music/ambient.mp3",
   solarethVisibility: 0.6
 };
 
@@ -330,8 +330,12 @@ class Tank {
     this.cannon.rotation.x = this.turretPitch;
 
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+    const previousPosition = this.group.position.clone();
     this.group.position.addScaledVector(forward, this.speed * delta);
     this.group.position.y = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
+    if (terrainManager.resolveTankCollision(this, previousPosition)) {
+      this.bumpTimer = 0.28;
+    }
   }
 
   getTurretWorldDirection() {
@@ -504,11 +508,46 @@ class TerrainManager {
     return this.destroyDestructible(closest);
   }
 
+  resolveTankCollision(tankRef, previousPosition) {
+    const tankPosition = tankRef.group.position;
+    for (const item of this.destructibles) {
+      if (!item.object.parent) continue;
+      const objectPosition = item.object.getWorldPosition(new THREE.Vector3());
+      const dx = tankPosition.x - objectPosition.x;
+      const dz = tankPosition.z - objectPosition.z;
+      const distance = Math.hypot(dx, dz);
+      const minimumDistance = CONFIG.tankCollisionRadius + item.radius;
+      if (distance < minimumDistance) {
+        const normal = distance > 0.001
+          ? new THREE.Vector3(dx / distance, 0, dz / distance)
+          : previousPosition.clone().sub(objectPosition).setY(0).normalize();
+        if (normal.lengthSq() < 0.001) normal.set(0, 0, 1);
+        tankPosition.x = objectPosition.x + normal.x * minimumDistance;
+        tankPosition.z = objectPosition.z + normal.z * minimumDistance;
+        tankPosition.y = this.getHeightAt(tankPosition.x, tankPosition.z) + CONFIG.tankHoverHeight;
+        tankRef.speed = Math.min(tankRef.speed, 0);
+        hud.status.textContent = "The hull meets solid ruin. Back up and steer around.";
+        statusTimer = 5;
+        return true;
+      }
+    }
+    return false;
+  }
+
   getHeightAt(x, z) {
     const waves = Math.sin(x * 0.018) * 2.8 + Math.cos(z * 0.021) * 2.3 + Math.sin((x + z) * 0.009) * 4.4;
     const rough = (valueNoise(x * 0.035, z * 0.035) - 0.5) * 8.5;
     const crater = Math.sin(Math.hypot(x + 130, z - 90) * 0.021) * 1.3;
     return waves + rough + crater;
+  }
+
+  getNormalAt(x, z) {
+    const sample = 1.5;
+    const left = this.getHeightAt(x - sample, z);
+    const right = this.getHeightAt(x + sample, z);
+    const back = this.getHeightAt(x, z - sample);
+    const front = this.getHeightAt(x, z + sample);
+    return new THREE.Vector3(left - right, sample * 2, back - front).normalize();
   }
 }
 
@@ -640,6 +679,18 @@ class ProjectileManager {
       shot.light.position.copy(shot.mesh.position);
       shot.trail.scale.multiplyScalar(0.965);
 
+      const groundHeight = terrain.getHeightAt(shot.mesh.position.x, shot.mesh.position.z);
+      if (shot.mesh.position.y <= groundHeight + shot.radius * 0.4 && shot.velocity.y < 0) {
+        const normal = terrain.getNormalAt(shot.mesh.position.x, shot.mesh.position.z);
+        shot.velocity.reflect(normal).multiplyScalar(0.82);
+        shot.velocity.y = Math.max(shot.velocity.y, 18);
+        shot.direction.copy(shot.velocity).normalize();
+        shot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), shot.direction);
+        shot.mesh.position.y = groundHeight + shot.radius + 0.25;
+        shot.bounces++;
+        if (shot.bounces > 4) shot.life = -1;
+      }
+
       for (const enemy of enemyManager.enemies) {
         if (!enemy.dead && shot.mesh.position.distanceTo(enemy.group.position) < enemy.collisionRadius + shot.radius) {
           enemy.destroy();
@@ -683,6 +734,7 @@ class ProjectileManager {
       direction: direction.clone().normalize(),
       quaternion: trail.quaternion.clone(),
       velocity: direction.multiplyScalar(118),
+      bounces: 0,
       life: 2.8,
       radius: 1.1
     });
@@ -693,72 +745,21 @@ class ProjectileManager {
 class AudioManager {
   constructor() {
     this.started = false;
-    this.context = null;
-    this.master = null;
-    this.wind = null;
-    this.music = new Audio(CONFIG.musicPath);
-    this.music.preload = "none";
-    this.music.loop = true;
-    this.music.volume = 0.38;
   }
 
   async start() {
     if (this.started) return;
     this.started = true;
-    hud.musicButton.textContent = "Journey Begun";
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    this.context = new AudioContextClass();
-    this.master = this.context.createGain();
-    this.master.gain.value = 0.18;
-    this.master.connect(this.context.destination);
-
-    try {
-      await this.music.play();
-    } catch {
-      this.createAmbientFallback();
-    }
-  }
-
-  createAmbientFallback() {
-    const drone = this.context.createOscillator();
-    const harmonic = this.context.createOscillator();
-    const gain = this.context.createGain();
-    drone.type = "sine";
-    harmonic.type = "triangle";
-    drone.frequency.value = 54;
-    harmonic.frequency.value = 81;
-    gain.gain.value = 0.42;
-    drone.connect(gain);
-    harmonic.connect(gain);
-    gain.connect(this.master);
-    drone.start();
-    harmonic.start();
-    this.wind = gain;
+    hud.musicButton.textContent = "Silent Mode";
   }
 
   update() {
   }
 
   playFire() {
-    this.blip(164, 0.06, 0.09, "square");
   }
 
   playExplosion() {
-    this.blip(72, 0.14, 0.18, "sawtooth");
-  }
-
-  blip(freq, volume, length, type) {
-    if (!this.context || !this.master) return;
-    const osc = this.context.createOscillator();
-    const gain = this.context.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(volume, this.context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.context.currentTime + length);
-    osc.connect(gain);
-    gain.connect(this.master);
-    osc.start();
-    osc.stop(this.context.currentTime + length);
   }
 }
 
