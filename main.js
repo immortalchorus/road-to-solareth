@@ -156,7 +156,6 @@ window.addEventListener("keyup", event => {
   input[event.code] = false;
   if (event.code === "Space") input.fireHeld = false;
   if (event.code === "KeyH") input.heatSeekingHeld = false;
-  if (event.code === "KeyF" && !input.ShiftLeft && !input.ShiftRight && tank) tank.holdCurrentAltitude();
 }, true);
 window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
@@ -257,6 +256,7 @@ class Tank {
     this.turretPitch = 0;
     this.verticalVelocity = 0;
     this.altitudeHoldY = null;
+    this.wasAltitudeClimbing = false;
     this.flightPitch = 0;
     this.flightRoll = 0;
     this.bumpTimer = 0;
@@ -466,7 +466,10 @@ class Tank {
       this.verticalVelocity += CONFIG.verticalThrust * delta;
       hud.status.textContent = "Vertical thrusters flare beneath the hull.";
       statusTimer = 3;
+    } else if (this.wasAltitudeClimbing) {
+      this.holdCurrentAltitude();
     }
+    this.wasAltitudeClimbing = altitudeClimb;
 
     if (bankMode) {
       if (keys.ArrowLeft) {
@@ -511,9 +514,9 @@ class Tank {
     const previousPosition = this.group.position.clone();
     this.group.position.addScaledVector(forward, this.speed * delta);
     const targetHoverY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
-    if (this.altitudeHoldY !== null && this.altitudeHoldY <= targetHoverY + 0.1) this.altitudeHoldY = null;
     if (this.altitudeHoldY !== null) {
-      const altitudeError = this.altitudeHoldY - this.group.position.y;
+      const heldY = Math.max(this.altitudeHoldY, targetHoverY);
+      const altitudeError = heldY - this.group.position.y;
       this.verticalVelocity = moveToward(this.verticalVelocity, altitudeError * 4.5, CONFIG.hoverGravity * 1.7 * delta);
     } else {
       this.verticalVelocity -= CONFIG.hoverGravity * delta;
