@@ -6,6 +6,8 @@ const CONFIG = {
   tankAcceleration: 24,
   tankTurnSpeed: 1.55,
   turretTurnSpeed: 2.7,
+  turretPitchSpeed: 1.4,
+  tankHoverHeight: 3.2,
   chunkSize: 220,
   visibleChunkRadius: 2,
   enemySpawnEvery: 7.5,
@@ -93,7 +95,9 @@ const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
+  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code);
+  const elevationKey = event.ctrlKey && ["KeyY", "ArrowUp", "ArrowDown"].includes(event.code);
+  if (gameKey || elevationKey) event.preventDefault();
   input[event.code] = true;
 });
 window.addEventListener("keyup", event => {
@@ -191,6 +195,8 @@ class Tank {
     this.friction = 13;
     this.turnSpeed = CONFIG.tankTurnSpeed;
     this.turretTurnSpeed = CONFIG.turretTurnSpeed;
+    this.turretPitchSpeed = CONFIG.turretPitchSpeed;
+    this.turretPitch = 0;
     this.bumpTimer = 0;
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.3, 8.2), materials.tankDark);
@@ -218,22 +224,27 @@ class Tank {
     const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 1.95, 0.78, 20), materials.tankTrim);
     turretBase.castShadow = true;
     this.turret.add(turretBase);
+
+    this.cannon = new THREE.Group();
+    this.cannon.position.set(0, 0.08, 0);
     this.barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 5.8, 14), materials.darkMetal);
     this.barrel.rotation.x = Math.PI / 2;
-    this.barrel.position.set(0, 0.08, -3.55);
+    this.barrel.position.set(0, 0, -3.55);
     this.barrel.castShadow = true;
-    this.turret.add(this.barrel);
+    this.cannon.add(this.barrel);
     const muzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), materials.orangeGlow);
-    muzzleGlow.position.set(0, 0.08, -6.55);
-    this.turret.add(muzzleGlow);
+    muzzleGlow.position.set(0, 0, -6.55);
+    this.cannon.add(muzzleGlow);
+    this.turret.add(this.cannon);
     this.group.add(this.turret);
 
     parent.add(this.group);
   }
 
   update(delta, keys, terrainManager) {
-    const forwardInput = keys.ArrowUp ? 1 : 0;
-    const reverseInput = keys.ArrowDown ? 1 : 0;
+    const pitchMode = (keys.ControlLeft || keys.ControlRight) && keys.KeyY;
+    const forwardInput = keys.ArrowUp && !pitchMode ? 1 : 0;
+    const reverseInput = keys.ArrowDown && !pitchMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
 
     if (forwardInput) this.speed += this.acceleration * delta;
@@ -249,23 +260,29 @@ class Tank {
     if (turningTurret) {
       if (keys.ArrowLeft) this.turret.rotation.y += this.turretTurnSpeed * delta;
       if (keys.ArrowRight) this.turret.rotation.y -= this.turretTurnSpeed * delta;
+    } else if (pitchMode) {
+      if (keys.ArrowUp) this.turretPitch += this.turretPitchSpeed * delta;
+      if (keys.ArrowDown) this.turretPitch -= this.turretPitchSpeed * delta;
     } else {
       const turnScale = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0.25, 1);
       if (keys.ArrowLeft) this.group.rotation.y += this.turnSpeed * turnScale * delta;
       if (keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * delta;
     }
 
+    this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
+    this.cannon.rotation.x = this.turretPitch;
+
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
     this.group.position.addScaledVector(forward, this.speed * delta);
-    this.group.position.y = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + 0.72;
+    this.group.position.y = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
   }
 
   getTurretWorldDirection() {
-    return new THREE.Vector3(0, 0, -1).applyQuaternion(this.turret.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    return new THREE.Vector3(0, 0, -1).applyQuaternion(this.cannon.getWorldQuaternion(new THREE.Quaternion())).normalize();
   }
 
   getMuzzleWorldPosition() {
-    return this.turret.localToWorld(new THREE.Vector3(0, 0.08, -6.55));
+    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -6.55));
   }
 }
 
@@ -566,7 +583,6 @@ class AudioManager {
     this.started = false;
     this.context = null;
     this.master = null;
-    this.engine = null;
     this.wind = null;
     this.music = new Audio(CONFIG.musicPath);
     this.music.preload = "none";
@@ -589,7 +605,6 @@ class AudioManager {
     } catch {
       this.createAmbientFallback();
     }
-    this.createEngineHum();
   }
 
   createAmbientFallback() {
@@ -609,19 +624,7 @@ class AudioManager {
     this.wind = gain;
   }
 
-  createEngineHum() {
-    this.engine = this.context.createOscillator();
-    const gain = this.context.createGain();
-    this.engine.type = "sawtooth";
-    this.engine.frequency.value = 42;
-    gain.gain.value = 0.12;
-    this.engine.connect(gain);
-    gain.connect(this.master);
-    this.engine.start();
-  }
-
-  update(speed) {
-    if (this.engine) this.engine.frequency.setTargetAtTime(38 + Math.abs(speed) * 1.3, this.context.currentTime, 0.08);
+  update() {
   }
 
   playFire() {
@@ -682,7 +685,7 @@ function animate() {
 }
 
 function positionTankOnTerrain() {
-  tank.group.position.set(0, terrain.getHeightAt(0, 0) + 0.72, 0);
+  tank.group.position.set(0, terrain.getHeightAt(0, 0) + CONFIG.tankHoverHeight, 0);
 }
 
 function updateCamera(delta) {
@@ -706,7 +709,7 @@ function updateSolareth() {
 
 function updateHUD(delta) {
   hud.speed.textContent = `${Math.round(Math.abs(tank.speed) * 2.4)} kph`;
-  hud.turret.textContent = `${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} deg`;
+  hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${Math.round(THREE.MathUtils.radToDeg(tank.turretPitch))} deg`;
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
   hud.destroyed.textContent = destroyedEnemies;
   statusTimer -= delta;
