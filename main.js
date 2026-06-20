@@ -1019,7 +1019,14 @@ class SkyDrone {
   destroy() {
     this.dead = true;
     destroyedEnemies++;
-    createExplosion(this.group.position);
+    createExplosion(this.group.position, {
+      color: 0xffd46b,
+      opacity: 0.92,
+      radius: 2.4,
+      growth: 28,
+      life: 0.82,
+      coreColor: 0xffffff
+    });
     audio.playExplosion();
   }
 }
@@ -1316,7 +1323,12 @@ function createBurningDystopianCity(seed) {
   return group;
 }
 
-function createExplosion(position) {
+function createExplosion(position, options = {}) {
+  const radius = options.radius ?? 1.2;
+  const life = options.life ?? 0.55;
+  const growth = options.growth ?? 14;
+  const color = options.color ?? 0xffb05c;
+  const opacity = options.opacity ?? 0.65;
   while (explosionEffects.length >= 12) {
     const oldest = explosionEffects.shift();
     scene.remove(oldest.group);
@@ -1324,21 +1336,36 @@ function createExplosion(position) {
   }
   const group = new THREE.Group();
   const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(1.2, 16, 10),
-    new THREE.MeshBasicMaterial({ color: 0xffb05c, transparent: true, opacity: 0.65 })
+    new THREE.SphereGeometry(radius, 18, 12),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity })
   );
   group.position.copy(position);
   group.add(sphere);
+  if (options.coreColor) {
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(radius * 0.38, 12, 8),
+      new THREE.MeshBasicMaterial({ color: options.coreColor, transparent: true, opacity: 0.9 })
+    );
+    group.add(core);
+    explosionEffects.push({ group, sphere, core, life, maxLife: life, growth, opacity });
+    scene.add(group);
+    return;
+  }
   scene.add(group);
-  explosionEffects.push({ group, sphere, life: 0.55 });
+  explosionEffects.push({ group, sphere, life, maxLife: life, growth, opacity });
 }
 
 function updateExplosions(delta) {
   for (let i = explosionEffects.length - 1; i >= 0; i--) {
     const effect = explosionEffects[i];
     effect.life -= delta;
-    effect.sphere.scale.addScalar(delta * 14);
-    effect.sphere.material.opacity = Math.max(0, effect.life);
+    effect.sphere.scale.addScalar(delta * effect.growth);
+    const fade = Math.max(0, effect.life / effect.maxLife);
+    effect.sphere.material.opacity = effect.opacity * fade;
+    if (effect.core) {
+      effect.core.scale.addScalar(delta * effect.growth * 0.45);
+      effect.core.material.opacity = 0.9 * fade;
+    }
     if (effect.life <= 0) {
       scene.remove(effect.group);
       disposeObject(effect.group);
