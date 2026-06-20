@@ -201,43 +201,98 @@ class Tank {
     this.turretPitch = 0;
     this.bumpTimer = 0;
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(5.8, 1.3, 8.2), materials.tankDark);
-    body.position.y = 1.25;
-    body.castShadow = true;
-    this.group.add(body);
+    const addBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
+      mesh.position.set(position[0], position[1], position[2]);
+      mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+      mesh.castShadow = true;
+      this.group.add(mesh);
+      return mesh;
+    };
 
-    for (const x of [-3.55, 3.55]) {
-      const track = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.95, 8.9), materials.darkMetal);
-      track.position.set(x, 0.8, 0);
-      track.castShadow = true;
-      this.group.add(track);
-      const glow = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 6.7), materials.blueGlow);
-      glow.position.set(x * 1.01, 1.22, 0);
-      this.group.add(glow);
+    addBox([7.4, 1.05, 9.8], [0, 1.18, 0], materials.tankDark);
+    addBox([6.4, 0.68, 7.9], [0, 1.96, -0.15], materials.tankTrim);
+    addBox([5.7, 0.22, 6.7], [0, 2.36, -0.25], materials.tankDark);
+    addBox([6.2, 0.42, 1.7], [0, 1.82, -4.5], materials.tankTrim, [-0.28, 0, 0]);
+    addBox([6.2, 0.42, 1.4], [0, 1.78, 4.55], materials.tankTrim, [0.24, 0, 0]);
+    addBox([2.5, 0.28, 7.3], [-2.15, 2.48, -0.2], materials.tankTrim, [0, 0, -0.08]);
+    addBox([2.5, 0.28, 7.3], [2.15, 2.48, -0.2], materials.tankTrim, [0, 0, 0.08]);
+
+    for (const x of [-4.2, 4.2]) {
+      addBox([1.55, 1.12, 10.6], [x, 0.96, 0], materials.darkMetal);
+      addBox([1.8, 0.36, 8.8], [x, 1.56, -0.25], materials.tankDark, [0, 0, x < 0 ? -0.12 : 0.12]);
+      addBox([0.18, 0.72, 1.35], [x, 1.72, -3.9], materials.blueGlow);
+      for (let z = -4.2; z <= 4.2; z += 1.68) {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.22, 16), materials.darkMetal);
+        wheel.position.set(x, 0.38, z);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.castShadow = true;
+        this.group.add(wheel);
+      }
+      for (let z = -4.6; z <= 4.6; z += 0.92) {
+        addBox([1.68, 0.16, 0.36], [x, 0.06, z], materials.tankDark);
+      }
     }
 
-    const cockpit = new THREE.Mesh(new THREE.SphereGeometry(1.12, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), materials.tankTrim);
-    cockpit.position.set(0, 2.14, 1.1);
+    for (const x of [-2.1, 0, 2.1]) {
+      addBox([1.15, 0.24, 0.24], [x, 2.58, -4.72], materials.blueGlow);
+    }
+    addBox([0.72, 0.22, 0.2], [-1.45, 1.72, 4.92], materials.redEye);
+    addBox([0.72, 0.22, 0.2], [1.45, 1.72, 4.92], materials.redEye);
+    addBox([1.5, 0.26, 0.24], [0, 2.78, 2.55], materials.blueGlow);
+
+    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.72, 1.45), materials.tankTrim);
+    cockpit.position.set(-1.3, 2.98, 1.7);
+    cockpit.rotation.z = -0.08;
     cockpit.castShadow = true;
     this.group.add(cockpit);
+    addBox([0.18, 2.8, 0.18], [-3.55, 3.75, 3.85], materials.darkMetal, [0.12, 0, 0]);
+    addBox([0.1, 1.65, 0.1], [3.65, 3.35, 4.1], materials.darkMetal, [-0.08, 0, 0]);
 
     this.turret = new THREE.Group();
-    this.turret.position.set(0, 2.1, -0.7);
-    const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 1.95, 0.78, 20), materials.tankTrim);
-    turretBase.castShadow = true;
-    this.turret.add(turretBase);
+    this.turret.position.set(0, 3.0, -0.55);
+    const addTurretBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
+      mesh.position.set(position[0], position[1], position[2]);
+      mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+      mesh.castShadow = true;
+      this.turret.add(mesh);
+      return mesh;
+    };
+    const turretRing = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.45, 0.48, 24), materials.darkMetal);
+    turretRing.castShadow = true;
+    this.turret.add(turretRing);
+    addTurretBox([4.25, 0.78, 3.45], [0, 0.48, -0.1], materials.tankTrim);
+    addTurretBox([3.45, 0.42, 2.65], [0, 1.02, -0.2], materials.tankDark);
+    addTurretBox([3.35, 0.42, 0.9], [0, 0.7, -1.85], materials.tankTrim, [-0.08, 0, 0]);
+    addTurretBox([2.45, 0.52, 1.0], [-0.1, 1.36, 0.9], materials.tankTrim);
+    addTurretBox([2.15, 0.2, 0.22], [-0.1, 1.72, 0.24], materials.blueGlow);
+    addTurretBox([0.42, 0.18, 0.16], [-1.1, 0.18, 1.72], materials.redEye);
+    addTurretBox([0.42, 0.18, 0.16], [1.1, 0.18, 1.72], materials.redEye);
 
     this.cannon = new THREE.Group();
-    this.cannon.position.set(0, 0.08, 0);
-    this.barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 5.8, 14), materials.darkMetal);
-    this.barrel.rotation.x = Math.PI / 2;
-    this.barrel.position.set(0, 0, -3.55);
-    this.barrel.castShadow = true;
-    this.cannon.add(this.barrel);
+    this.cannon.position.set(0, 0.66, -1.6);
+    const addBarrelSegment = (radiusA, radiusB, length, z, material = materials.darkMetal) => {
+      const segment = new THREE.Mesh(new THREE.CylinderGeometry(radiusA, radiusB, length, 16), material);
+      segment.rotation.x = Math.PI / 2;
+      segment.position.set(0, 0, z);
+      segment.castShadow = true;
+      this.cannon.add(segment);
+      return segment;
+    };
+    addBarrelSegment(0.54, 0.64, 0.72, -0.35, materials.tankTrim);
+    addBarrelSegment(0.35, 0.48, 1.45, -1.25, materials.darkMetal);
+    addBarrelSegment(0.42, 0.42, 1.15, -2.6, materials.tankTrim);
+    this.barrel = addBarrelSegment(0.2, 0.28, 4.2, -5.08, materials.darkMetal);
+    addBarrelSegment(0.38, 0.34, 0.68, -7.48, materials.tankTrim);
     const muzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), materials.orangeGlow);
-    muzzleGlow.position.set(0, 0, -6.55);
+    muzzleGlow.position.set(0, 0, -7.9);
     this.cannon.add(muzzleGlow);
     this.turret.add(this.cannon);
+    const turretAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.5, 8), materials.darkMetal);
+    turretAntenna.position.set(-1.75, 2.05, 1.2);
+    turretAntenna.rotation.x = 0.08;
+    this.turret.add(turretAntenna);
     this.group.add(this.turret);
 
     parent.add(this.group);
@@ -284,7 +339,7 @@ class Tank {
   }
 
   getMuzzleWorldPosition() {
-    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -6.55));
+    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -7.9));
   }
 }
 
