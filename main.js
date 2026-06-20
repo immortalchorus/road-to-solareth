@@ -19,6 +19,9 @@ const CONFIG = {
   maxFlightPitch: 0.38,
   maxFlightRoll: 0.52,
   tankCollisionRadius: 5.2,
+  projectileCooldown: 0.085,
+  projectileRadius: 0.48,
+  projectileCollisionRadius: 0.72,
   emergencyClearRadius: 58,
   chunkSize: 220,
   visibleChunkRadius: 2,
@@ -962,7 +965,7 @@ class ProjectileManager {
     this.cooldown -= delta;
     if (keys.Space && this.cooldown <= 0) {
       this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection());
-      this.cooldown = 0.34;
+      this.cooldown = CONFIG.projectileCooldown;
     }
 
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
@@ -1013,15 +1016,15 @@ class ProjectileManager {
 
   fire(position, direction) {
     const group = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 10), materials.orangeGlow);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(CONFIG.projectileRadius, 14, 8), materials.orangeGlow);
     mesh.position.copy(position);
     const trail = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.52, 3.4, 10),
-      new THREE.MeshBasicMaterial({ color: 0xff7b32, transparent: true, opacity: 0.35 })
+      new THREE.CylinderGeometry(0.11, 0.34, 2.35, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff7b32, transparent: true, opacity: 0.3 })
     );
     trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
     trail.position.copy(position).addScaledVector(direction, -1.6);
-    const light = new THREE.PointLight(0xff8a30, 4, 34);
+    const light = new THREE.PointLight(0xff8a30, 2.4, 24);
     light.position.copy(position);
     group.add(mesh, trail, light);
     this.parent.add(group);
@@ -1035,7 +1038,7 @@ class ProjectileManager {
       velocity: direction.multiplyScalar(118),
       bounces: 0,
       life: 2.8,
-      radius: 1.1
+      radius: CONFIG.projectileCollisionRadius
     });
     audio.playFire();
   }
