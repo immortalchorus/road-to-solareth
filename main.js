@@ -758,8 +758,11 @@ class TerrainManager {
 
   resolveTankCollision(tankRef, previousPosition) {
     const tankPosition = tankRef.group.position;
+    const tankHoverY = this.getHeightAt(tankPosition.x, tankPosition.z) + CONFIG.tankHoverHeight;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
+      const obstacleTop = item.position.y + Math.max(8, item.radius * 0.75);
+      if (tankPosition.y > obstacleTop) continue;
       const dx = tankPosition.x - item.position.x;
       const dz = tankPosition.z - item.position.z;
       const distance = Math.hypot(dx, dz);
@@ -771,7 +774,7 @@ class TerrainManager {
         if (normal.lengthSq() < 0.001) normal.set(0, 0, 1);
         tankPosition.x = item.position.x + normal.x * minimumDistance;
         tankPosition.z = item.position.z + normal.z * minimumDistance;
-        tankPosition.y = this.getHeightAt(tankPosition.x, tankPosition.z) + CONFIG.tankHoverHeight;
+        tankPosition.y = Math.max(tankPosition.y, tankHoverY);
         tankRef.speed = Math.min(tankRef.speed, 0);
         hud.status.textContent = "The hull meets solid ruin. Back up and steer around.";
         statusTimer = 5;
