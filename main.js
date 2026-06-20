@@ -25,10 +25,11 @@ const CONFIG = {
   projectileRadius: 0.48,
   projectileCollisionRadius: 0.72,
   maxProjectiles: 46,
-  homingAimDistance: 420,
-  homingAimCone: 0.94,
-  homingTurnRate: 4.8,
-  homingSpeed: 132,
+  homingAimDistance: 680,
+  homingAimCone: 0.86,
+  homingTurnRate: 8.5,
+  homingSpeed: 150,
+  homingLife: 5.2,
   emergencyClearRadius: 58,
   chunkSize: 220,
   visibleChunkRadius: 2,
@@ -893,6 +894,24 @@ class SkyDroneManager {
     return false;
   }
 
+  hitDroneAlongSegment(start, end, radius) {
+    const path = end.clone().sub(start);
+    const pathLengthSq = path.lengthSq();
+
+    for (const drone of this.drones) {
+      if (drone.dead) continue;
+      const toDrone = drone.group.position.clone().sub(start);
+      const t = pathLengthSq > 0.001 ? THREE.MathUtils.clamp(toDrone.dot(path) / pathLengthSq, 0, 1) : 0;
+      const closest = start.clone().addScaledVector(path, t);
+      if (closest.distanceTo(drone.group.position) <= drone.collisionRadius + radius) {
+        drone.destroy();
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   acquireHomingTarget(origin, direction) {
     let bestTarget = null;
     let bestScore = CONFIG.homingAimCone;
@@ -1022,6 +1041,7 @@ class ProjectileManager {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const shot = this.projectiles[i];
       shot.life -= delta;
+      shot.previousPosition.copy(shot.mesh.position);
       if (shot.homingTarget && !shot.homingTarget.dead) {
         const toTarget = shot.homingTarget.group.position.clone().sub(shot.mesh.position);
         if (toTarget.lengthSq() > 0.001) {
@@ -1058,7 +1078,7 @@ class ProjectileManager {
         }
       }
 
-      if (shot.life > 0 && skyDroneManager.hitDrone(shot.mesh.position, shot.radius)) {
+      if (shot.life > 0 && skyDroneManager.hitDroneAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         shot.life = -1;
       }
 
@@ -1096,7 +1116,8 @@ class ProjectileManager {
       velocity: direction.clone().normalize().multiplyScalar(target ? CONFIG.homingSpeed : 118),
       homingTarget: target,
       bounces: 0,
-      life: 2.8,
+      life: target ? CONFIG.homingLife : 2.8,
+      previousPosition: position.clone(),
       radius: CONFIG.projectileCollisionRadius
     });
     audio.playFire();
