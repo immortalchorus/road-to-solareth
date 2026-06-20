@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Road to Solareth</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main id="game">
+      <canvas id="game-canvas" aria-label="Road to Solareth game canvas"></canvas>
+
+      <section id="hud" aria-live="polite">
+        <div class="hud-title">Road to Solareth</div>
+        <div>Destination: <span>Solareth</span></div>
+        <div>Speed: <span id="speed">0</span></div>
+        <div>Turret: <span id="turret-angle">0</span></div>
+        <div>Distance: <span id="distance">0.0 km</span></div>
+        <div>Machines stilled: <span id="destroyed">0</span></div>
+        <div id="status">Low moons over the red waste.</div>
+      </section>
+
+      <button id="music-button" type="button">Begin Journey</button>
+
+      <aside id="instructions">
+        <strong>Tank Driver</strong>
+        <span>Arrow keys drive. Shift + Left/Right rotates turret. Space fires.</span>
+      </aside>
+    </main>
+
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>

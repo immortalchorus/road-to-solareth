@@ -4,7 +4,7 @@ A simple Three.js browser game project: a slow, atmospheric futuristic tank jour
 
 ## Status
 
-This repository was created first so the project has a Git safety net before implementation begins.
+First playable version implemented.
 
 ## Planned Files
 
@@ -14,5 +14,14 @@ This repository was created first so the project has a Git safety net before imp
 
 ## Run
 
-The intended deliverable should run by opening `index.html` in a browser.
+Open `index.html` in a browser.
 
+The game uses Three.js from a CDN, so an internet connection is needed the first time the browser loads the library.
+
+Optional local server:
+
+```powershell
+python -m http.server 8000
+```
+
+Then open `http://127.0.0.1:8000/`.
