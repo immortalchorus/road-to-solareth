@@ -22,8 +22,8 @@ const CONFIG = {
   maxFlightRoll: 0.52,
   tankCollisionRadius: 5.2,
   projectileCooldown: 0.085,
-  projectileRadius: 0.48,
-  projectileCollisionRadius: 0.72,
+  projectileRadius: 0.34,
+  projectileCollisionRadius: 0.52,
   maxProjectiles: 46,
   homingAimDistance: 680,
   homingAimCone: 0.86,
@@ -64,7 +64,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyY", "ShiftLeft", "ShiftRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -136,6 +136,7 @@ window.addEventListener("keydown", event => {
   input[event.code] = true;
   if (event.code === "Space") input.fireHeld = true;
   if (event.code === "KeyH") input.heatSeekingHeld = true;
+  if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret();
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "Escape") emergencyClearAroundTank();
 }, true);
@@ -514,6 +515,14 @@ class Tank {
 
   getTurretWorldDirection() {
     return new THREE.Vector3(0, 0, -1).applyQuaternion(this.cannon.getWorldQuaternion(new THREE.Quaternion())).normalize();
+  }
+
+  centerTurret() {
+    this.turret.rotation.y = 0;
+    this.turretPitch = 0;
+    this.cannon.rotation.x = 0;
+    hud.status.textContent = "Turret centered for a straight shot.";
+    statusTimer = 2.5;
   }
 
   getMuzzleWorldPosition() {
