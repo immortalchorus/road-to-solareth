@@ -97,7 +97,7 @@ const explosionEffects = [];
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
   const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape"].includes(event.code);
-  const elevationKey = event.ctrlKey && ["KeyY", "ArrowUp", "ArrowDown"].includes(event.code);
+  const elevationKey = event.code === "KeyY" || (input.KeyY && ["ArrowUp", "ArrowDown"].includes(event.code));
   if (gameKey || elevationKey) event.preventDefault();
   input[event.code] = true;
   if (event.code === "Escape") emergencyClearAroundTank();
@@ -244,7 +244,7 @@ class Tank {
   }
 
   update(delta, keys, terrainManager) {
-    const pitchMode = (keys.ControlLeft || keys.ControlRight) && keys.KeyY;
+    const pitchMode = keys.KeyY;
     const forwardInput = keys.ArrowUp && !pitchMode ? 1 : 0;
     const reverseInput = keys.ArrowDown && !pitchMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
