@@ -22,6 +22,7 @@ const CONFIG = {
   enemySpawnEvery: 7.5,
   enemySpawnChance: 0.42,
   maxEnemies: 5,
+  skyDroneCount: 7,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -101,6 +102,7 @@ let terrain;
 let tank;
 let projectiles;
 let enemies;
+let skyDrones;
 let audio;
 let solareth;
 const explosionEffects = [];
@@ -801,6 +803,145 @@ class Enemy {
   }
 }
 
+class SkyDroneManager {
+  constructor(parent) {
+    this.parent = parent;
+    this.drones = [];
+  }
+
+  update(delta, tankRef) {
+    while (this.drones.length < CONFIG.skyDroneCount) this.spawn(tankRef);
+
+    for (let i = this.drones.length - 1; i >= 0; i--) {
+      const drone = this.drones[i];
+      drone.update(delta, tankRef);
+      if (drone.dead || drone.group.position.distanceTo(tankRef.group.position) > 760) {
+        this.parent.remove(drone.group);
+        disposeObject(drone.group);
+        this.drones.splice(i, 1);
+      }
+    }
+  }
+
+  spawn(tankRef) {
+    const index = this.drones.length;
+    const angle = seededRandom(performance.now() * 0.001 + index * 47) * Math.PI * 2;
+    const distance = 180 + seededRandom(index * 97 + Math.floor(tankRef.group.position.x)) * 260;
+    const drone = new SkyDrone(index + Math.floor(performance.now() * 0.01));
+    drone.group.position.set(
+      tankRef.group.position.x + Math.cos(angle) * distance,
+      tankRef.group.position.y + 56 + seededRandom(index * 31) * 55,
+      tankRef.group.position.z + Math.sin(angle) * distance
+    );
+    drone.anchor.copy(tankRef.group.position);
+    drone.orbitRadius = distance;
+    drone.orbitAngle = angle;
+    this.parent.add(drone.group);
+    this.drones.push(drone);
+  }
+
+  hitDrone(position, radius) {
+    for (const drone of this.drones) {
+      if (!drone.dead && drone.group.position.distanceTo(position) <= drone.collisionRadius + radius) {
+        drone.destroy();
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+class SkyDrone {
+  constructor(seed) {
+    this.seed = seed;
+    this.group = new THREE.Group();
+    this.anchor = new THREE.Vector3();
+    this.orbitRadius = 240;
+    this.orbitAngle = 0;
+    this.altitude = 58 + seededRandom(seed * 11) * 48;
+    this.speed = 0.18 + seededRandom(seed * 17) * 0.18;
+    this.bob = seededRandom(seed * 23) * Math.PI * 2;
+    this.collisionRadius = 6.2;
+    this.dead = false;
+    this.build();
+  }
+
+  build() {
+    const add = (mesh) => {
+      mesh.castShadow = true;
+      this.group.add(mesh);
+      return mesh;
+    };
+
+    const body = add(new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.65, 5.6, 6), materials.tankLight));
+    body.rotation.x = Math.PI / 2;
+    body.scale.set(1, 0.72, 1.25);
+
+    const nose = add(new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.3, 6), materials.darkMetal));
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.z = -3.65;
+
+    const canopy = add(new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.42, 1.55), materials.tankDark));
+    canopy.position.set(0, 0.72, -1.7);
+
+    for (const x of [-2.7, 2.7]) {
+      const wing = add(new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 1.2), materials.tankTrim));
+      wing.position.set(x, 0, -0.55);
+      wing.rotation.z = x < 0 ? 0.22 : -0.22;
+
+      const engine = add(new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.25, 16), materials.darkMetal));
+      engine.rotation.x = Math.PI / 2;
+      engine.position.set(x * 0.72, 0.42, 1.0);
+
+      const light = add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.12), materials.blueGlow));
+      light.position.set(x, 0.14, -1.05);
+    }
+
+    for (const [x, z] of [[-4.5, -2.6], [4.5, -2.6], [-4.5, 2.45], [4.5, 2.45]]) {
+      const arm = add(new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.16, 0.24), materials.tankTrim));
+      arm.position.set(x * 0.55, 0, z * 0.55);
+      arm.rotation.y = Math.atan2(x, z);
+
+      const ring = add(new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 28), materials.tankLight));
+      ring.position.set(x, 0.02, z);
+      ring.rotation.x = Math.PI / 2;
+
+      const hub = add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 6), materials.darkMetal));
+      hub.position.set(x, 0.05, z);
+
+      for (let i = 0; i < 3; i++) {
+        const blade = add(new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.04, 0.16), materials.tankDark));
+        blade.position.set(x, 0.05, z);
+        blade.rotation.y = i * Math.PI * 0.66;
+      }
+    }
+
+    const tail = add(new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.4, 4), materials.tankTrim));
+    tail.position.set(0, 1.35, 2.45);
+    tail.rotation.x = 0.35;
+
+    const red = add(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.12), materials.redEye));
+    red.position.set(0, -0.28, -4.55);
+  }
+
+  update(delta, tankRef) {
+    this.anchor.lerp(tankRef.group.position, 0.018);
+    this.orbitAngle += this.speed * delta;
+    const sideDrift = Math.sin(performance.now() * 0.00035 + this.seed) * 22;
+    this.group.position.x = this.anchor.x + Math.cos(this.orbitAngle) * this.orbitRadius + sideDrift;
+    this.group.position.z = this.anchor.z + Math.sin(this.orbitAngle) * this.orbitRadius;
+    this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + this.altitude + Math.sin(performance.now() * 0.0015 + this.bob) * 7;
+    this.group.lookAt(tankRef.group.position.x, this.group.position.y - 8, tankRef.group.position.z);
+  }
+
+  destroy() {
+    this.dead = true;
+    destroyedEnemies++;
+    createExplosion(this.group.position);
+    audio.playExplosion();
+  }
+}
+
 class ProjectileManager {
   constructor(parent) {
     this.parent = parent;
@@ -808,7 +949,7 @@ class ProjectileManager {
     this.cooldown = 0;
   }
 
-  update(delta, keys, tankRef, enemyManager) {
+  update(delta, keys, tankRef, enemyManager, skyDroneManager) {
     this.cooldown -= delta;
     if (keys.Space && this.cooldown <= 0) {
       this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection());
@@ -842,6 +983,10 @@ class ProjectileManager {
           shot.life = -1;
           break;
         }
+      }
+
+      if (shot.life > 0 && skyDroneManager.hitDrone(shot.mesh.position, shot.radius)) {
+        shot.life = -1;
       }
 
       if (shot.life > 0 && terrain.hitDestructible(shot.mesh.position, shot.radius)) {
@@ -915,6 +1060,7 @@ terrain = new TerrainManager(scene);
 tank = new Tank(scene);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
+skyDrones = new SkyDroneManager(scene);
 audio = new AudioManager();
 solareth = createSolareth();
 
@@ -931,7 +1077,8 @@ function animate() {
   distanceTravelled += moved;
   terrain.update(tank.group.position);
   enemies.update(delta, tank);
-  projectiles.update(delta, input, tank, enemies);
+  skyDrones.update(delta, tank);
+  projectiles.update(delta, input, tank, enemies, skyDrones);
   updateCamera(delta);
   updateSolareth(delta);
   updateExplosions(delta);
