@@ -22,6 +22,10 @@ const CONFIG = {
   projectileCooldown: 0.085,
   projectileRadius: 0.48,
   projectileCollisionRadius: 0.72,
+  homingAimDistance: 420,
+  homingAimCone: 0.94,
+  homingTurnRate: 4.8,
+  homingSpeed: 132,
   emergencyClearRadius: 58,
   chunkSize: 220,
   visibleChunkRadius: 2,
@@ -115,7 +119,7 @@ const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
-  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB"].includes(event.code);
+  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH"].includes(event.code);
   const elevationKey = event.code === "KeyY" || (input.KeyY && ["ArrowUp", "ArrowDown"].includes(event.code));
   if (gameKey || elevationKey) event.preventDefault();
   input[event.code] = true;
@@ -861,6 +865,26 @@ class SkyDroneManager {
     }
     return false;
   }
+
+  acquireHomingTarget(origin, direction) {
+    let bestTarget = null;
+    let bestScore = CONFIG.homingAimCone;
+    const aim = direction.clone().normalize();
+
+    for (const drone of this.drones) {
+      if (drone.dead) continue;
+      const toDrone = drone.group.position.clone().sub(origin);
+      const distance = toDrone.length();
+      if (distance > CONFIG.homingAimDistance) continue;
+      const score = aim.dot(toDrone.normalize());
+      if (score > bestScore) {
+        bestScore = score;
+        bestTarget = drone;
+      }
+    }
+
+    return bestTarget;
+  }
 }
 
 class SkyDrone {
@@ -964,13 +988,24 @@ class ProjectileManager {
   update(delta, keys, tankRef, enemyManager, skyDroneManager) {
     this.cooldown -= delta;
     if (keys.Space && this.cooldown <= 0) {
-      this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection());
+      this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.KeyH);
       this.cooldown = CONFIG.projectileCooldown;
     }
 
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const shot = this.projectiles[i];
       shot.life -= delta;
+      if (shot.homingTarget && !shot.homingTarget.dead) {
+        const toTarget = shot.homingTarget.group.position.clone().sub(shot.mesh.position);
+        if (toTarget.lengthSq() > 0.001) {
+          const desiredVelocity = toTarget.normalize().multiplyScalar(CONFIG.homingSpeed);
+          shot.velocity.lerp(desiredVelocity, Math.min(1, CONFIG.homingTurnRate * delta));
+          shot.direction.copy(shot.velocity).normalize();
+          shot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), shot.direction);
+        }
+      } else {
+        shot.homingTarget = null;
+      }
       shot.mesh.position.addScaledVector(shot.velocity, delta);
       shot.trail.position.copy(shot.mesh.position).addScaledVector(shot.direction, -1.6);
       shot.trail.quaternion.copy(shot.quaternion);
@@ -1014,13 +1049,14 @@ class ProjectileManager {
     }
   }
 
-  fire(position, direction) {
+  fire(position, direction, skyDroneManager, homingEnabled) {
     const group = new THREE.Group();
+    const target = homingEnabled ? skyDroneManager.acquireHomingTarget(position, direction) : null;
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(CONFIG.projectileRadius, 14, 8), materials.orangeGlow);
     mesh.position.copy(position);
     const trail = new THREE.Mesh(
       new THREE.CylinderGeometry(0.11, 0.34, 2.35, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff7b32, transparent: true, opacity: 0.3 })
+      new THREE.MeshBasicMaterial({ color: target ? 0xffd46b : 0xff7b32, transparent: true, opacity: target ? 0.42 : 0.3 })
     );
     trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
     trail.position.copy(position).addScaledVector(direction, -1.6);
@@ -1035,7 +1071,8 @@ class ProjectileManager {
       light,
       direction: direction.clone().normalize(),
       quaternion: trail.quaternion.clone(),
-      velocity: direction.multiplyScalar(118),
+      velocity: direction.clone().normalize().multiplyScalar(target ? CONFIG.homingSpeed : 118),
+      homingTarget: target,
       bounces: 0,
       life: 2.8,
       radius: CONFIG.projectileCollisionRadius
