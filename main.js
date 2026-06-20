@@ -8,6 +8,8 @@ const CONFIG = {
   turretTurnSpeed: 2.7,
   turretPitchSpeed: 1.4,
   tankHoverHeight: 4.8,
+  verticalThrust: 34,
+  hoverGravity: 26,
   tankCollisionRadius: 5.2,
   emergencyClearRadius: 58,
   chunkSize: 220,
@@ -62,7 +64,8 @@ const poeticStatuses = [
   "Something metallic walks among the stones.",
   "The pyramids are not ancient. They are waiting.",
   "The Glass Road bends through the Broken Empire.",
-  "The Dreaming Signal wakes in the rusted cities."
+  "The Dreaming Signal wakes in the rusted cities.",
+  "Far cities burn without making a sound."
 ];
 
 let destroyedEnemies = 0;
@@ -83,7 +86,8 @@ const materials = {
   plantMouth: new THREE.MeshStandardMaterial({ color: 0x762343, emissive: 0x2b0015, roughness: 0.6 }),
   water: new THREE.MeshStandardMaterial({ color: 0x5ed5ff, emissive: 0x1b7d9a, transparent: true, opacity: 0.52, side: THREE.DoubleSide }),
   road: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.road, roughness: 0.92 }),
-  terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true })
+  terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true }),
+  smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false })
 };
 
 let terrain;
@@ -96,7 +100,7 @@ const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
-  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape"].includes(event.code);
+  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF"].includes(event.code);
   const elevationKey = event.code === "KeyY" || (input.KeyY && ["ArrowUp", "ArrowDown"].includes(event.code));
   if (gameKey || elevationKey) event.preventDefault();
   input[event.code] = true;
@@ -199,6 +203,7 @@ class Tank {
     this.turretTurnSpeed = CONFIG.turretTurnSpeed;
     this.turretPitchSpeed = CONFIG.turretPitchSpeed;
     this.turretPitch = 0;
+    this.verticalVelocity = 0;
     this.bumpTimer = 0;
 
     const addBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
@@ -313,6 +318,11 @@ class Tank {
       this.speed *= 0.985;
       this.bumpTimer -= delta;
     }
+    if (keys.KeyF) {
+      this.verticalVelocity += CONFIG.verticalThrust * delta;
+      hud.status.textContent = "Vertical thrusters flare beneath the hull.";
+      statusTimer = 3;
+    }
 
     if (turningTurret) {
       if (keys.ArrowLeft) this.turret.rotation.y += this.turretTurnSpeed * delta;
@@ -332,7 +342,13 @@ class Tank {
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
     const previousPosition = this.group.position.clone();
     this.group.position.addScaledVector(forward, this.speed * delta);
-    this.group.position.y = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
+    const targetHoverY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
+    this.verticalVelocity -= CONFIG.hoverGravity * delta;
+    this.group.position.y += this.verticalVelocity * delta;
+    if (this.group.position.y <= targetHoverY) {
+      this.group.position.y = targetHoverY;
+      this.verticalVelocity = 0;
+    }
     if (terrainManager.resolveTankCollision(this, previousPosition)) {
       this.bumpTimer = 0.28;
     }
@@ -459,6 +475,18 @@ class TerrainManager {
       city.scale.setScalar(0.65 + seededRandom(cx + cz) * 0.8);
       this.registerDestructible(city, group, 26 * city.scale.x);
       group.add(city);
+    }
+
+    if (Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 53 - cz * 61) > 0.9) {
+      const burningCity = createBurningDystopianCity(cx * 41 + cz * 97);
+      burningCity.position.set(
+        (seededRandom(cx * 23 + cz) - 0.5) * this.size * 0.45,
+        2,
+        (seededRandom(cx - cz * 17) - 0.5) * this.size * 0.45
+      );
+      burningCity.scale.setScalar(0.75 + seededRandom(cx * 5 + cz * 3) * 0.8);
+      this.registerDestructible(burningCity, group, 30 * burningCity.scale.x);
+      group.add(burningCity);
     }
   }
 
@@ -879,6 +907,51 @@ function createDistantCity(colorHex) {
       group.add(dome);
     }
   }
+  return group;
+}
+
+function createBurningDystopianCity(seed) {
+  const group = new THREE.Group();
+  const towerMat = new THREE.MeshStandardMaterial({ color: 0x171417, metalness: 0.45, roughness: 0.78 });
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xff5a19, transparent: true, opacity: 0.82 });
+  const emberMat = new THREE.MeshBasicMaterial({ color: 0xffc35a, transparent: true, opacity: 0.75 });
+
+  for (let i = 0; i < 14; i++) {
+    const h = 14 + seededRandom(seed + i * 13) * 52;
+    const w = 4 + seededRandom(seed + i * 7) * 7;
+    const x = (i - 6.5) * 8 + (seededRandom(seed + i * 3) - 0.5) * 6;
+    const z = (seededRandom(seed + i * 11) - 0.5) * 24;
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.75), towerMat);
+    tower.position.set(x, h * 0.5, z);
+    tower.rotation.z = (seededRandom(seed + i * 17) - 0.5) * 0.14;
+    tower.castShadow = true;
+    group.add(tower);
+
+    if (seededRandom(seed + i * 19) > 0.28) {
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(w * 0.45, 5 + seededRandom(seed + i * 23) * 7, 7), flameMat);
+      flame.position.set(x, h + flame.geometry.parameters.height * 0.32, z);
+      flame.rotation.y = seededRandom(seed + i * 29) * Math.PI;
+      group.add(flame);
+
+      const ember = new THREE.Mesh(new THREE.SphereGeometry(w * 0.26, 8, 6), emberMat);
+      ember.position.set(x + (seededRandom(seed + i * 31) - 0.5) * 2, h + 1.6, z);
+      group.add(ember);
+    }
+
+    if (seededRandom(seed + i * 37) > 0.35) {
+      const smoke = new THREE.Mesh(
+        new THREE.CylinderGeometry(w * 0.7, w * 0.35, 20 + seededRandom(seed + i * 41) * 18, 8, 1, true),
+        materials.smoke
+      );
+      smoke.position.set(x + (seededRandom(seed + i * 43) - 0.5) * 5, h + smoke.geometry.parameters.height * 0.45, z);
+      smoke.rotation.z = (seededRandom(seed + i * 47) - 0.5) * 0.35;
+      group.add(smoke);
+    }
+  }
+
+  const glow = new THREE.PointLight(0xff4b18, 2.6, 90);
+  glow.position.set(0, 18, 0);
+  group.add(glow);
   return group;
 }
 
