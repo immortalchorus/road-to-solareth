@@ -8,6 +8,7 @@ const CONFIG = {
   turretTurnSpeed: 2.7,
   turretPitchSpeed: 1.4,
   tankHoverHeight: 3.2,
+  emergencyClearRadius: 58,
   chunkSize: 220,
   visibleChunkRadius: 2,
   enemySpawnEvery: 7.5,
@@ -95,10 +96,11 @@ const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
-  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code);
+  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape"].includes(event.code);
   const elevationKey = event.ctrlKey && ["KeyY", "ArrowUp", "ArrowDown"].includes(event.code);
   if (gameKey || elevationKey) event.preventDefault();
   input[event.code] = true;
+  if (event.code === "Escape") emergencyClearAroundTank();
 });
 window.addEventListener("keyup", event => {
   input[event.code] = false;
@@ -290,6 +292,7 @@ class TerrainManager {
   constructor(parent) {
     this.parent = parent;
     this.chunks = new Map();
+    this.destructibles = [];
     this.size = CONFIG.chunkSize;
     this.radius = CONFIG.visibleChunkRadius;
   }
@@ -310,6 +313,7 @@ class TerrainManager {
     for (const [key, chunk] of this.chunks) {
       if (!wanted.has(key)) {
         this.parent.remove(chunk);
+        this.destructibles = this.destructibles.filter(item => item.chunk !== chunk);
         disposeObject(chunk);
         this.chunks.delete(key);
       }
@@ -386,6 +390,7 @@ class TerrainManager {
 
       object.position.set(x, y, z);
       object.rotation.y = seededRandom(seed + 5) * Math.PI * 2;
+      this.registerDestructible(object, group, 6 + seededRandom(seed + 41) * 12);
       group.add(object);
     }
 
@@ -393,8 +398,55 @@ class TerrainManager {
       const city = createDistantCity(CONFIG.worldColors.gold);
       city.position.set(0, 2, 0);
       city.scale.setScalar(0.65 + seededRandom(cx + cz) * 0.8);
+      this.registerDestructible(city, group, 26 * city.scale.x);
       group.add(city);
     }
+  }
+
+  registerDestructible(object, chunk, radius) {
+    object.userData.destructible = true;
+    object.userData.collisionRadius = radius;
+    this.destructibles.push({ object, chunk, radius });
+  }
+
+  destroyDestructible(item) {
+    if (!item || !item.object.parent) return false;
+    const position = item.object.getWorldPosition(new THREE.Vector3());
+    createExplosion(position);
+    item.object.parent.remove(item.object);
+    disposeObject(item.object);
+    this.destructibles = this.destructibles.filter(candidate => candidate !== item);
+    return true;
+  }
+
+  destroyNear(position, radius) {
+    let destroyed = 0;
+    for (const item of [...this.destructibles]) {
+      if (!item.object.parent) {
+        this.destructibles = this.destructibles.filter(candidate => candidate !== item);
+        continue;
+      }
+      const objectPosition = item.object.getWorldPosition(new THREE.Vector3());
+      if (objectPosition.distanceTo(position) <= radius + item.radius) {
+        if (this.destroyDestructible(item)) destroyed++;
+      }
+    }
+    return destroyed;
+  }
+
+  hitDestructible(position, radius) {
+    let closest = null;
+    let closestDistance = Infinity;
+    for (const item of this.destructibles) {
+      if (!item.object.parent) continue;
+      const objectPosition = item.object.getWorldPosition(new THREE.Vector3());
+      const distance = objectPosition.distanceTo(position);
+      if (distance <= radius + item.radius && distance < closestDistance) {
+        closest = item;
+        closestDistance = distance;
+      }
+    }
+    return this.destroyDestructible(closest);
   }
 
   getHeightAt(x, z) {
@@ -539,6 +591,11 @@ class ProjectileManager {
           shot.life = -1;
           break;
         }
+      }
+
+      if (shot.life > 0 && terrain.hitDestructible(shot.mesh.position, shot.radius)) {
+        shot.life = -1;
+        audio.playExplosion();
       }
 
       if (shot.life <= 0) {
@@ -717,6 +774,24 @@ function updateHUD(delta) {
     currentStatus = (currentStatus + 1) % poeticStatuses.length;
     hud.status.textContent = poeticStatuses[currentStatus];
     statusTimer = 10 + Math.random() * 8;
+  }
+}
+
+function emergencyClearAroundTank() {
+  if (!tank || !terrain || !enemies) return;
+  const center = tank.group.position;
+  const removedObjects = terrain.destroyNear(center, CONFIG.emergencyClearRadius);
+  let removedEnemies = 0;
+  for (const enemy of enemies.enemies) {
+    if (!enemy.dead && enemy.group.position.distanceTo(center) <= CONFIG.emergencyClearRadius + enemy.collisionRadius) {
+      enemy.destroy();
+      removedEnemies++;
+    }
+  }
+  if (removedObjects + removedEnemies > 0) {
+    tank.speed = Math.max(tank.speed, 8);
+    hud.status.textContent = "The path opens through dust and sparks.";
+    statusTimer = 7;
   }
 }
 
