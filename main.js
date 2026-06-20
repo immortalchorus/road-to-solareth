@@ -223,9 +223,28 @@ class Tank {
       this.group.add(mesh);
       return mesh;
     };
+    const addStalk = (fromX, fromZ, toX, toZ) => {
+      const start = new THREE.Vector3(fromX, 1.36, fromZ);
+      const end = new THREE.Vector3(toX, 1.36, toZ);
+      const mid = start.clone().add(end).multiplyScalar(0.5);
+      const direction = end.clone().sub(start);
+      const length = direction.length();
+      const unitDirection = direction.clone().normalize();
+      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, length, 10), materials.tankDark);
+      stalk.position.copy(mid);
+      stalk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), unitDirection);
+      stalk.castShadow = true;
+      this.group.add(stalk);
+
+      const highlight = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, length * 0.92, 8), materials.blueGlow);
+      highlight.position.copy(mid).add(new THREE.Vector3(0, 0.08, 0));
+      highlight.quaternion.copy(stalk.quaternion);
+      this.group.add(highlight);
+    };
+
     const addFanPod = (x, z) => {
       const pod = new THREE.Group();
-      pod.position.set(x, 1.68, z);
+      pod.position.set(x, 1.58, z);
 
       const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 2.05, 0.62, 32), materials.tankLight);
       bowl.castShadow = true;
@@ -293,10 +312,14 @@ class Tank {
       this.group.add(underWheel);
     }
     addBox([6.2, 0.34, 0.45], [0, 0.22, 4.25], materials.warmMechanics);
-    addFanPod(-4.15, -3.55);
-    addFanPod(4.15, -3.55);
-    addFanPod(-4.15, 3.55);
-    addFanPod(4.15, 3.55);
+    addStalk(-3.25, -2.25, -6.25, -5.25);
+    addStalk(3.25, -2.25, 6.25, -5.25);
+    addStalk(-3.25, 2.25, -6.25, 5.25);
+    addStalk(3.25, 2.25, 6.25, 5.25);
+    addFanPod(-6.45, -5.45);
+    addFanPod(6.45, -5.45);
+    addFanPod(-6.45, 5.45);
+    addFanPod(6.45, 5.45);
 
     for (const x of [-2.1, 0, 2.1]) {
       addBox([1.15, 0.24, 0.24], [x, 2.58, -4.72], materials.blueGlow);
@@ -375,8 +398,8 @@ class Tank {
     const targetHoverYBeforeMove = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
     const airborne = this.group.position.y > targetHoverYBeforeMove + 0.35 || this.verticalVelocity > 0.1;
     const bankMode = keys.KeyB && airborne;
-    const forwardInput = keys.ArrowUp && !pitchMode && !bankMode ? 1 : 0;
-    const reverseInput = keys.ArrowDown && !pitchMode && !bankMode ? 1 : 0;
+    const forwardInput = keys.ArrowUp && !pitchMode ? 1 : 0;
+    const reverseInput = keys.ArrowDown && !pitchMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
 
     if (forwardInput) this.speed += this.acceleration * delta;
