@@ -10,6 +10,11 @@ const CONFIG = {
   tankHoverHeight: 4.8,
   verticalThrust: 34,
   hoverGravity: 26,
+  flightYawSpeed: 1.35,
+  flightPitchSpeed: 1.2,
+  flightLevelSpeed: 2.4,
+  maxFlightPitch: 0.38,
+  maxFlightRoll: 0.52,
   tankCollisionRadius: 5.2,
   emergencyClearRadius: 58,
   chunkSize: 220,
@@ -100,7 +105,7 @@ const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
-  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF"].includes(event.code);
+  const gameKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB"].includes(event.code);
   const elevationKey = event.code === "KeyY" || (input.KeyY && ["ArrowUp", "ArrowDown"].includes(event.code));
   if (gameKey || elevationKey) event.preventDefault();
   input[event.code] = true;
@@ -204,6 +209,8 @@ class Tank {
     this.turretPitchSpeed = CONFIG.turretPitchSpeed;
     this.turretPitch = 0;
     this.verticalVelocity = 0;
+    this.flightPitch = 0;
+    this.flightRoll = 0;
     this.bumpTimer = 0;
 
     const addBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
@@ -285,13 +292,16 @@ class Tank {
       this.cannon.add(segment);
       return segment;
     };
-    addBarrelSegment(0.54, 0.64, 0.72, -0.35, materials.tankTrim);
-    addBarrelSegment(0.35, 0.48, 1.45, -1.25, materials.darkMetal);
-    addBarrelSegment(0.42, 0.42, 1.15, -2.6, materials.tankTrim);
-    this.barrel = addBarrelSegment(0.2, 0.28, 4.2, -5.08, materials.darkMetal);
-    addBarrelSegment(0.38, 0.34, 0.68, -7.48, materials.tankTrim);
+    addBarrelSegment(0.58, 0.68, 0.8, -0.38, materials.tankTrim);
+    addBarrelSegment(0.38, 0.5, 1.55, -1.35, materials.darkMetal);
+    addBarrelSegment(0.45, 0.45, 1.2, -2.85, materials.tankTrim);
+    addBarrelSegment(0.25, 0.32, 3.7, -5.3, materials.darkMetal);
+    addBarrelSegment(0.28, 0.28, 3.6, -8.85, materials.darkMetal);
+    addBarrelSegment(0.34, 0.34, 0.95, -10.95, materials.tankTrim);
+    this.barrel = addBarrelSegment(0.19, 0.22, 2.1, -12.45, materials.darkMetal);
+    addBarrelSegment(0.42, 0.34, 0.78, -13.85, materials.tankTrim);
     const muzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), materials.orangeGlow);
-    muzzleGlow.position.set(0, 0, -7.9);
+    muzzleGlow.position.set(0, 0, -14.35);
     this.cannon.add(muzzleGlow);
     this.turret.add(this.cannon);
     const turretAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.5, 8), materials.darkMetal);
@@ -305,8 +315,11 @@ class Tank {
 
   update(delta, keys, terrainManager) {
     const pitchMode = keys.KeyY;
-    const forwardInput = keys.ArrowUp && !pitchMode ? 1 : 0;
-    const reverseInput = keys.ArrowDown && !pitchMode ? 1 : 0;
+    const targetHoverYBeforeMove = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
+    const airborne = this.group.position.y > targetHoverYBeforeMove + 0.35 || this.verticalVelocity > 0.1;
+    const bankMode = keys.KeyB && airborne;
+    const forwardInput = keys.ArrowUp && !pitchMode && !bankMode ? 1 : 0;
+    const reverseInput = keys.ArrowDown && !pitchMode && !bankMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
 
     if (forwardInput) this.speed += this.acceleration * delta;
@@ -324,7 +337,24 @@ class Tank {
       statusTimer = 3;
     }
 
-    if (turningTurret) {
+    if (bankMode) {
+      if (keys.ArrowLeft) {
+        this.group.rotation.y += CONFIG.flightYawSpeed * delta;
+        this.flightRoll = moveToward(this.flightRoll, CONFIG.maxFlightRoll, CONFIG.flightLevelSpeed * delta);
+      } else if (keys.ArrowRight) {
+        this.group.rotation.y -= CONFIG.flightYawSpeed * delta;
+        this.flightRoll = moveToward(this.flightRoll, -CONFIG.maxFlightRoll, CONFIG.flightLevelSpeed * delta);
+      } else {
+        this.flightRoll = moveToward(this.flightRoll, 0, CONFIG.flightLevelSpeed * delta);
+      }
+
+      if (keys.ArrowUp) this.flightPitch = moveToward(this.flightPitch, -CONFIG.maxFlightPitch, CONFIG.flightPitchSpeed * delta);
+      else if (keys.ArrowDown) this.flightPitch = moveToward(this.flightPitch, CONFIG.maxFlightPitch, CONFIG.flightPitchSpeed * delta);
+      else this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
+
+      hud.status.textContent = "The hover-tank banks like a heavy aircraft.";
+      statusTimer = 3;
+    } else if (turningTurret) {
       if (keys.ArrowLeft) this.turret.rotation.y += this.turretTurnSpeed * delta;
       if (keys.ArrowRight) this.turret.rotation.y -= this.turretTurnSpeed * delta;
     } else if (pitchMode) {
@@ -336,10 +366,17 @@ class Tank {
       if (keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * delta;
     }
 
+    if (!bankMode) {
+      this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
+      this.flightRoll = moveToward(this.flightRoll, 0, CONFIG.flightLevelSpeed * delta);
+    }
+    this.group.rotation.x = this.flightPitch;
+    this.group.rotation.z = this.flightRoll;
+
     this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
     this.cannon.rotation.x = this.turretPitch;
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.quaternion);
+    const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
     const previousPosition = this.group.position.clone();
     this.group.position.addScaledVector(forward, this.speed * delta);
     const targetHoverY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
@@ -359,7 +396,7 @@ class Tank {
   }
 
   getMuzzleWorldPosition() {
-    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -7.9));
+    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -14.35));
   }
 }
 
@@ -830,7 +867,7 @@ function positionTankOnTerrain() {
 }
 
 function updateCamera(delta) {
-  const behind = new THREE.Vector3(0, 0, 1).applyQuaternion(tank.group.quaternion);
+  const behind = new THREE.Vector3(Math.sin(tank.group.rotation.y), 0, Math.cos(tank.group.rotation.y));
   const target = tank.group.position.clone().add(new THREE.Vector3(0, 16, 0)).addScaledVector(behind, 28);
   camera.position.lerp(target, 1 - Math.pow(0.035, delta));
   const look = tank.group.position.clone().add(new THREE.Vector3(0, 5.8, 0));
@@ -838,7 +875,7 @@ function updateCamera(delta) {
 }
 
 function updateSolareth() {
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(tank.group.quaternion);
+  const forward = new THREE.Vector3(-Math.sin(tank.group.rotation.y), 0, -Math.cos(tank.group.rotation.y));
   solareth.position.copy(tank.group.position).addScaledVector(forward, 640);
   solareth.position.y = terrain.getHeightAt(solareth.position.x, solareth.position.z) + 48 + Math.sin(performance.now() * 0.00022) * 8;
   solareth.rotation.y = tank.group.rotation.y;
