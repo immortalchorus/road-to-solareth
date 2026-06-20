@@ -1,6 +1,8 @@
 const THREE = window.THREE;
 
 const CONFIG = {
+  maxPixelRatio: 1.35,
+  enableShadows: false,
   tankMaxForwardSpeed: 42,
   tankMaxReverseSpeed: 18,
   tankAcceleration: 24,
@@ -22,6 +24,7 @@ const CONFIG = {
   projectileCooldown: 0.085,
   projectileRadius: 0.48,
   projectileCollisionRadius: 0.72,
+  maxProjectiles: 46,
   homingAimDistance: 420,
   homingAimCone: 0.94,
   homingTurnRate: 4.8,
@@ -45,9 +48,9 @@ const CONFIG = {
 
 const canvas = document.querySelector("#game-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.maxPixelRatio));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = CONFIG.enableShadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -151,7 +154,7 @@ function initLights() {
 
   const sun = new THREE.DirectionalLight(0xffb06b, 2.15);
   sun.position.set(-180, 260, 120);
-  sun.castShadow = true;
+  sun.castShadow = CONFIG.enableShadows;
   sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.left = -220;
   sun.shadow.camera.right = 220;
@@ -643,13 +646,17 @@ class TerrainManager {
   registerDestructible(object, chunk, radius) {
     object.userData.destructible = true;
     object.userData.collisionRadius = radius;
-    this.destructibles.push({ object, chunk, radius });
+    const position = new THREE.Vector3(
+      chunk.position.x + object.position.x,
+      chunk.position.y + object.position.y,
+      chunk.position.z + object.position.z
+    );
+    this.destructibles.push({ object, chunk, radius, position });
   }
 
   destroyDestructible(item) {
     if (!item || !item.object.parent) return false;
-    const position = item.object.getWorldPosition(new THREE.Vector3());
-    createExplosion(position);
+    createExplosion(item.position);
     item.object.parent.remove(item.object);
     disposeObject(item.object);
     this.destructibles = this.destructibles.filter(candidate => candidate !== item);
@@ -663,8 +670,11 @@ class TerrainManager {
         this.destructibles = this.destructibles.filter(candidate => candidate !== item);
         continue;
       }
-      const objectPosition = item.object.getWorldPosition(new THREE.Vector3());
-      if (objectPosition.distanceTo(position) <= radius + item.radius) {
+      const hitRadius = radius + item.radius;
+      const dx = item.position.x - position.x;
+      const dy = item.position.y - position.y;
+      const dz = item.position.z - position.z;
+      if (dx * dx + dy * dy + dz * dz <= hitRadius * hitRadius) {
         if (this.destroyDestructible(item)) destroyed++;
       }
     }
@@ -676,11 +686,14 @@ class TerrainManager {
     let closestDistance = Infinity;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
-      const objectPosition = item.object.getWorldPosition(new THREE.Vector3());
-      const distance = objectPosition.distanceTo(position);
-      if (distance <= radius + item.radius && distance < closestDistance) {
+      const hitRadius = radius + item.radius;
+      const dx = item.position.x - position.x;
+      const dy = item.position.y - position.y;
+      const dz = item.position.z - position.z;
+      const distanceSq = dx * dx + dy * dy + dz * dz;
+      if (distanceSq <= hitRadius * hitRadius && distanceSq < closestDistance) {
         closest = item;
-        closestDistance = distance;
+        closestDistance = distanceSq;
       }
     }
     return this.destroyDestructible(closest);
@@ -690,18 +703,17 @@ class TerrainManager {
     const tankPosition = tankRef.group.position;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
-      const objectPosition = item.object.getWorldPosition(new THREE.Vector3());
-      const dx = tankPosition.x - objectPosition.x;
-      const dz = tankPosition.z - objectPosition.z;
+      const dx = tankPosition.x - item.position.x;
+      const dz = tankPosition.z - item.position.z;
       const distance = Math.hypot(dx, dz);
       const minimumDistance = CONFIG.tankCollisionRadius + item.radius;
       if (distance < minimumDistance) {
         const normal = distance > 0.001
           ? new THREE.Vector3(dx / distance, 0, dz / distance)
-          : previousPosition.clone().sub(objectPosition).setY(0).normalize();
+          : previousPosition.clone().sub(item.position).setY(0).normalize();
         if (normal.lengthSq() < 0.001) normal.set(0, 0, 1);
-        tankPosition.x = objectPosition.x + normal.x * minimumDistance;
-        tankPosition.z = objectPosition.z + normal.z * minimumDistance;
+        tankPosition.x = item.position.x + normal.x * minimumDistance;
+        tankPosition.z = item.position.z + normal.z * minimumDistance;
         tankPosition.y = this.getHeightAt(tankPosition.x, tankPosition.z) + CONFIG.tankHoverHeight;
         tankRef.speed = Math.min(tankRef.speed, 0);
         hud.status.textContent = "The hull meets solid ruin. Back up and steer around.";
@@ -1024,7 +1036,6 @@ class ProjectileManager {
       shot.mesh.position.addScaledVector(shot.velocity, delta);
       shot.trail.position.copy(shot.mesh.position).addScaledVector(shot.direction, -1.6);
       shot.trail.quaternion.copy(shot.quaternion);
-      shot.light.position.copy(shot.mesh.position);
       shot.trail.scale.multiplyScalar(0.965);
 
       const groundHeight = terrain.getHeightAt(shot.mesh.position.x, shot.mesh.position.z);
@@ -1057,14 +1068,13 @@ class ProjectileManager {
       }
 
       if (shot.life <= 0) {
-        this.parent.remove(shot.group);
-        disposeObject(shot.group);
-        this.projectiles.splice(i, 1);
+        this.removeProjectile(i);
       }
     }
   }
 
   fire(position, direction, skyDroneManager, homingEnabled) {
+    if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
     const group = new THREE.Group();
     const target = homingEnabled ? skyDroneManager.acquireHomingTarget(position, direction) : null;
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(CONFIG.projectileRadius, 14, 8), materials.orangeGlow);
@@ -1075,15 +1085,12 @@ class ProjectileManager {
     );
     trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
     trail.position.copy(position).addScaledVector(direction, -1.6);
-    const light = new THREE.PointLight(0xff8a30, 2.4, 24);
-    light.position.copy(position);
-    group.add(mesh, trail, light);
+    group.add(mesh, trail);
     this.parent.add(group);
     this.projectiles.push({
       group,
       mesh,
       trail,
-      light,
       direction: direction.clone().normalize(),
       quaternion: trail.quaternion.clone(),
       velocity: direction.clone().normalize().multiplyScalar(target ? CONFIG.homingSpeed : 118),
@@ -1093,6 +1100,14 @@ class ProjectileManager {
       radius: CONFIG.projectileCollisionRadius
     });
     audio.playFire();
+  }
+
+  removeProjectile(index) {
+    const shot = this.projectiles[index];
+    if (!shot) return;
+    this.parent.remove(shot.group);
+    disposeObject(shot.group);
+    this.projectiles.splice(index, 1);
   }
 }
 
@@ -1277,23 +1292,24 @@ function createBurningDystopianCity(seed) {
     }
   }
 
-  const glow = new THREE.PointLight(0xff4b18, 2.6, 90);
-  glow.position.set(0, 18, 0);
-  group.add(glow);
   return group;
 }
 
 function createExplosion(position) {
+  while (explosionEffects.length >= 12) {
+    const oldest = explosionEffects.shift();
+    scene.remove(oldest.group);
+    disposeObject(oldest.group);
+  }
   const group = new THREE.Group();
   const sphere = new THREE.Mesh(
     new THREE.SphereGeometry(1.2, 16, 10),
     new THREE.MeshBasicMaterial({ color: 0xffb05c, transparent: true, opacity: 0.65 })
   );
-  const light = new THREE.PointLight(0xff7b3b, 5, 45);
   group.position.copy(position);
-  group.add(sphere, light);
+  group.add(sphere);
   scene.add(group);
-  explosionEffects.push({ group, sphere, light, life: 0.55 });
+  explosionEffects.push({ group, sphere, life: 0.55 });
 }
 
 function updateExplosions(delta) {
@@ -1302,7 +1318,6 @@ function updateExplosions(delta) {
     effect.life -= delta;
     effect.sphere.scale.addScalar(delta * 14);
     effect.sphere.material.opacity = Math.max(0, effect.life);
-    effect.light.intensity = effect.life * 8;
     if (effect.life <= 0) {
       scene.remove(effect.group);
       disposeObject(effect.group);
