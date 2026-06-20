@@ -145,6 +145,7 @@ window.addEventListener("keydown", event => {
   if (event.code === "KeyH") input.heatSeekingHeld = true;
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret();
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
+  if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
   if (event.code === "Escape") emergencyClearAroundTank();
 }, true);
 window.addEventListener("keyup", event => {
@@ -155,6 +156,7 @@ window.addEventListener("keyup", event => {
   input[event.code] = false;
   if (event.code === "Space") input.fireHeld = false;
   if (event.code === "KeyH") input.heatSeekingHeld = false;
+  if (event.code === "KeyF" && !input.ShiftLeft && !input.ShiftRight && tank) tank.holdCurrentAltitude();
 }, true);
 window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
@@ -254,6 +256,7 @@ class Tank {
     this.turretPitchSpeed = CONFIG.turretPitchSpeed;
     this.turretPitch = 0;
     this.verticalVelocity = 0;
+    this.altitudeHoldY = null;
     this.flightPitch = 0;
     this.flightRoll = 0;
     this.bumpTimer = 0;
@@ -454,7 +457,12 @@ class Tank {
       this.speed *= 0.985;
       this.bumpTimer -= delta;
     }
-    if (keys.KeyF) {
+    const altitudeRelease = keys.KeyF && (keys.ShiftLeft || keys.ShiftRight);
+    const altitudeClimb = keys.KeyF && !altitudeRelease;
+    if (altitudeRelease) {
+      this.releaseAltitudeHold();
+    } else if (altitudeClimb) {
+      this.altitudeHoldY = null;
       this.verticalVelocity += CONFIG.verticalThrust * delta;
       hud.status.textContent = "Vertical thrusters flare beneath the hull.";
       statusTimer = 3;
@@ -503,9 +511,15 @@ class Tank {
     const previousPosition = this.group.position.clone();
     this.group.position.addScaledVector(forward, this.speed * delta);
     const targetHoverY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
-    this.verticalVelocity -= CONFIG.hoverGravity * delta;
+    if (this.altitudeHoldY !== null && this.altitudeHoldY <= targetHoverY + 0.1) this.altitudeHoldY = null;
+    if (this.altitudeHoldY !== null) {
+      const altitudeError = this.altitudeHoldY - this.group.position.y;
+      this.verticalVelocity = moveToward(this.verticalVelocity, altitudeError * 4.5, CONFIG.hoverGravity * 1.7 * delta);
+    } else {
+      this.verticalVelocity -= CONFIG.hoverGravity * delta;
+    }
     const hoverClearance = this.group.position.y - targetHoverY;
-    if (hoverClearance < CONFIG.landingCushionHeight && this.verticalVelocity < 0) {
+    if (this.altitudeHoldY === null && hoverClearance < CONFIG.landingCushionHeight && this.verticalVelocity < 0) {
       const cushion = THREE.MathUtils.clamp(1 - hoverClearance / CONFIG.landingCushionHeight, 0, 1);
       this.verticalVelocity += CONFIG.landingSpring * cushion * delta;
       this.verticalVelocity *= 1 - CONFIG.landingDamping * cushion * delta;
@@ -530,6 +544,25 @@ class Tank {
     this.cannon.rotation.x = 0;
     hud.status.textContent = "Turret centered for a straight shot.";
     statusTimer = 2.5;
+  }
+
+  holdCurrentAltitude() {
+    const terrainHoverY = terrain.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
+    if (this.group.position.y > terrainHoverY + 0.35) {
+      this.altitudeHoldY = this.group.position.y;
+      this.verticalVelocity = 0;
+      hud.status.textContent = "Altitude hold engaged.";
+      statusTimer = 3;
+    }
+  }
+
+  releaseAltitudeHold() {
+    if (this.altitudeHoldY !== null) {
+      this.altitudeHoldY = null;
+      this.verticalVelocity = Math.min(this.verticalVelocity, 0);
+      hud.status.textContent = "Altitude hold released.";
+      statusTimer = 3;
+    }
   }
 
   getMuzzleWorldPosition() {
