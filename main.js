@@ -37,6 +37,8 @@ const CONFIG = {
   enemySpawnChance: 0.42,
   maxEnemies: 5,
   skyDroneCount: 7,
+  dinosaurCount: 5,
+  turtleCount: 4,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -114,7 +116,11 @@ const materials = {
   water: new THREE.MeshStandardMaterial({ color: 0x5ed5ff, emissive: 0x1b7d9a, transparent: true, opacity: 0.52, side: THREE.DoubleSide }),
   road: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.road, roughness: 0.92 }),
   terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true }),
-  smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false })
+  smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false }),
+  dinosaur: new THREE.MeshStandardMaterial({ color: 0x466246, roughness: 0.82 }),
+  dinosaurBelly: new THREE.MeshStandardMaterial({ color: 0x7d8062, roughness: 0.9 }),
+  turtleShell: new THREE.MeshStandardMaterial({ color: 0x33472e, roughness: 0.86 }),
+  turtleBody: new THREE.MeshStandardMaterial({ color: 0x6d7659, roughness: 0.92 })
 };
 
 let terrain;
@@ -122,6 +128,7 @@ let tank;
 let projectiles;
 let enemies;
 let skyDrones;
+let wildlife;
 let audio;
 const explosionEffects = [];
 
@@ -1044,6 +1051,80 @@ class SkyDrone {
   }
 }
 
+class WildlifeManager {
+  constructor(parent) {
+    this.parent = parent;
+    this.animals = [];
+  }
+
+  update(delta, tankRef) {
+    this.ensureCount("dinosaur", CONFIG.dinosaurCount, tankRef);
+    this.ensureCount("turtle", CONFIG.turtleCount, tankRef);
+
+    for (let i = this.animals.length - 1; i >= 0; i--) {
+      const animal = this.animals[i];
+      animal.update(delta);
+      if (animal.group.position.distanceTo(tankRef.group.position) > 620) {
+        this.parent.remove(animal.group);
+        disposeObject(animal.group);
+        this.animals.splice(i, 1);
+      }
+    }
+  }
+
+  ensureCount(type, count, tankRef) {
+    const current = this.animals.filter(animal => animal.type === type).length;
+    for (let i = current; i < count; i++) this.spawn(type, tankRef, i);
+  }
+
+  spawn(type, tankRef, index) {
+    const seed = performance.now() * 0.001 + index * 173 + (type === "dinosaur" ? 31 : 97);
+    const angle = seededRandom(seed) * Math.PI * 2;
+    const distance = type === "dinosaur" ? 95 + seededRandom(seed + 1) * 280 : 70 + seededRandom(seed + 1) * 210;
+    const animal = new Wildlife(type, seed);
+    animal.group.position.set(
+      tankRef.group.position.x + Math.cos(angle) * distance,
+      0,
+      tankRef.group.position.z + Math.sin(angle) * distance
+    );
+    animal.group.position.y = terrain.getHeightAt(animal.group.position.x, animal.group.position.z) + animal.groundOffset;
+    animal.heading = angle + Math.PI * 0.5;
+    animal.group.rotation.y = animal.heading;
+    this.parent.add(animal.group);
+    this.animals.push(animal);
+  }
+}
+
+class Wildlife {
+  constructor(type, seed) {
+    this.type = type;
+    this.seed = seed;
+    this.group = type === "dinosaur" ? createDinosaur(seed) : createTurtle(seed);
+    this.speed = type === "dinosaur" ? 5.4 + seededRandom(seed + 7) * 3.2 : 1.4 + seededRandom(seed + 7) * 1.1;
+    this.turnSpeed = type === "dinosaur" ? 0.62 : 0.34;
+    this.groundOffset = type === "dinosaur" ? 1.25 : 0.42;
+    this.heading = seededRandom(seed + 11) * Math.PI * 2;
+    this.wanderTimer = 0;
+    this.legPhase = seededRandom(seed + 13) * Math.PI * 2;
+  }
+
+  update(delta) {
+    this.wanderTimer -= delta;
+    if (this.wanderTimer <= 0) {
+      this.heading += (seededRandom(performance.now() * 0.001 + this.seed) - 0.5) * 1.8;
+      this.wanderTimer = this.type === "dinosaur" ? 1.8 + seededRandom(this.seed + performance.now() * 0.002) * 2.2 : 3.0 + seededRandom(this.seed + performance.now() * 0.002) * 3.5;
+    }
+
+    const turn = wrapAngle(this.heading - this.group.rotation.y);
+    this.group.rotation.y += THREE.MathUtils.clamp(turn, -this.turnSpeed * delta, this.turnSpeed * delta);
+    const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
+    this.group.position.addScaledVector(forward, this.speed * delta);
+    this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + this.groundOffset;
+    this.legPhase += delta * this.speed * (this.type === "dinosaur" ? 2.1 : 1.5);
+    animateWildlifeWalk(this.group, this.legPhase, this.type);
+  }
+}
+
 class ProjectileManager {
   constructor(parent) {
     this.parent = parent;
@@ -1181,6 +1262,7 @@ tank = new Tank(scene);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 skyDrones = new SkyDroneManager(scene);
+wildlife = new WildlifeManager(scene);
 audio = new AudioManager();
 
 terrain.update(tank.group.position);
@@ -1197,6 +1279,7 @@ function animate() {
   terrain.update(tank.group.position);
   enemies.update(delta, tank);
   skyDrones.update(delta, tank);
+  wildlife.update(delta, tank);
   projectiles.update(delta, input, tank, enemies, skyDrones);
   updateCamera(delta);
   updateExplosions(delta);
@@ -1367,6 +1450,105 @@ function updateExplosions(delta) {
       disposeObject(effect.group);
       explosionEffects.splice(i, 1);
     }
+  }
+}
+
+function createDinosaur(seed) {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 3.8, 10), materials.dinosaur);
+  body.rotation.x = Math.PI / 2;
+  body.scale.set(1.25, 1.0, 0.92);
+  body.position.y = 2.15;
+  group.add(body);
+
+  const belly = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.48, 2.2, 8), materials.dinosaurBelly);
+  belly.rotation.x = Math.PI / 2;
+  belly.position.set(0.1, 1.75, -0.08);
+  group.add(belly);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 2.2, 8), materials.dinosaur);
+  neck.position.set(0, 3.05, -1.95);
+  neck.rotation.x = -0.48;
+  group.add(neck);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.72, 1.2), materials.dinosaur);
+  head.position.set(0, 3.72, -2.8);
+  head.rotation.x = -0.16;
+  group.add(head);
+
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.48, 3.3, 8), materials.dinosaur);
+  tail.position.set(0, 2.23, 2.85);
+  tail.rotation.x = Math.PI / 2.7;
+  group.add(tail);
+
+  const legs = [];
+  for (const x of [-0.62, 0.62]) {
+    for (const z of [-1.15, 1.15]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 1.85, 7), materials.dinosaur);
+      leg.position.set(x, 0.92, z);
+      leg.rotation.z = x < 0 ? 0.08 : -0.08;
+      group.add(leg);
+      legs.push(leg);
+    }
+  }
+
+  const crest = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 5), materials.dinosaurBelly);
+  crest.position.set(0, 4.22, -2.95);
+  crest.rotation.x = Math.PI;
+  group.add(crest);
+
+  group.scale.setScalar(1.45 + seededRandom(seed + 19) * 0.35);
+  group.userData.walkLegs = legs;
+  group.userData.walkTail = tail;
+  return group;
+}
+
+function createTurtle(seed) {
+  const group = new THREE.Group();
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1.35, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.58), materials.turtleShell);
+  shell.scale.set(1.45, 0.72, 1.05);
+  shell.position.y = 0.78;
+  group.add(shell);
+
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.7, 8), materials.turtleBody);
+  body.rotation.x = Math.PI / 2;
+  body.position.y = 0.5;
+  group.add(body);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), materials.turtleBody);
+  head.position.set(0, 0.58, -1.55);
+  group.add(head);
+
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 7), materials.turtleBody);
+  tail.position.set(0, 0.42, 1.52);
+  tail.rotation.x = Math.PI / 2;
+  group.add(tail);
+
+  const legs = [];
+  for (const x of [-0.92, 0.92]) {
+    for (const z of [-0.78, 0.78]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.72), materials.turtleBody);
+      leg.rotation.z = Math.PI / 2;
+      leg.position.set(x, 0.28, z);
+      group.add(leg);
+      legs.push(leg);
+    }
+  }
+
+  group.scale.setScalar(1.2 + seededRandom(seed + 23) * 0.28);
+  group.userData.walkLegs = legs;
+  group.userData.walkTail = tail;
+  return group;
+}
+
+function animateWildlifeWalk(group, phase, type) {
+  const legs = group.userData.walkLegs || [];
+  for (let i = 0; i < legs.length; i++) {
+    const swing = Math.sin(phase + i * Math.PI) * (type === "dinosaur" ? 0.28 : 0.12);
+    legs[i].rotation.x = swing;
+  }
+  if (group.userData.walkTail) {
+    group.userData.walkTail.rotation.z = Math.sin(phase * 0.55) * (type === "dinosaur" ? 0.18 : 0.08);
   }
 }
 
