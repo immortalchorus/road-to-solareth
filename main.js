@@ -10,6 +10,9 @@ const CONFIG = {
   tankHoverHeight: 4.8,
   verticalThrust: 34,
   hoverGravity: 26,
+  landingCushionHeight: 8,
+  landingDamping: 0.68,
+  landingSpring: 18,
   flightYawSpeed: 1.35,
   flightPitchSpeed: 1.2,
   flightLevelSpeed: 2.4,
@@ -463,10 +466,16 @@ class Tank {
     this.group.position.addScaledVector(forward, this.speed * delta);
     const targetHoverY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
     this.verticalVelocity -= CONFIG.hoverGravity * delta;
+    const hoverClearance = this.group.position.y - targetHoverY;
+    if (hoverClearance < CONFIG.landingCushionHeight && this.verticalVelocity < 0) {
+      const cushion = THREE.MathUtils.clamp(1 - hoverClearance / CONFIG.landingCushionHeight, 0, 1);
+      this.verticalVelocity += CONFIG.landingSpring * cushion * delta;
+      this.verticalVelocity *= 1 - CONFIG.landingDamping * cushion * delta;
+    }
     this.group.position.y += this.verticalVelocity * delta;
     if (this.group.position.y <= targetHoverY) {
       this.group.position.y = targetHoverY;
-      this.verticalVelocity = 0;
+      this.verticalVelocity = Math.max(0, this.verticalVelocity * 0.18);
     }
     if (terrainManager.resolveTankCollision(this, previousPosition)) {
       this.bumpTimer = 0.28;
