@@ -37,7 +37,6 @@ const CONFIG = {
   enemySpawnChance: 0.42,
   maxEnemies: 5,
   skyDroneCount: 7,
-  dinosaurCount: 5,
   turtleCount: 4,
   worldColors: {
     sand: 0x9b3f28,
@@ -117,8 +116,6 @@ const materials = {
   road: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.road, roughness: 0.92 }),
   terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true }),
   smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false }),
-  dinosaur: new THREE.MeshStandardMaterial({ color: 0x466246, roughness: 0.82 }),
-  dinosaurBelly: new THREE.MeshStandardMaterial({ color: 0x7d8062, roughness: 0.9 }),
   turtleShell: new THREE.MeshStandardMaterial({ color: 0x33472e, roughness: 0.86 }),
   turtleBody: new THREE.MeshStandardMaterial({ color: 0x6d7659, roughness: 0.92 })
 };
@@ -1014,55 +1011,24 @@ class SkyDrone {
       return mesh;
     };
 
-    const body = add(new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.65, 5.6, 6), materials.tankLight));
-    body.rotation.x = Math.PI / 2;
-    body.scale.set(1, 0.72, 1.25);
+    const body = add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.55, 4.8), materials.tankLight));
+    body.position.y = 0.05;
 
-    const nose = add(new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.3, 6), materials.darkMetal));
-    nose.rotation.x = -Math.PI / 2;
-    nose.position.z = -3.65;
+    const wing = add(new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.16, 1.05), materials.tankTrim));
+    wing.position.set(0, -0.02, -0.35);
 
-    const canopy = add(new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.42, 1.55), materials.tankDark));
-    canopy.position.set(0, 0.72, -1.7);
+    const nose = add(new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.36, 0.85), materials.darkMetal));
+    nose.position.set(0, 0.03, -2.72);
 
-    for (const x of [-2.7, 2.7]) {
-      const wing = add(new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 1.2), materials.tankTrim));
-      wing.position.set(x, 0, -0.55);
-      wing.rotation.z = x < 0 ? 0.22 : -0.22;
+    const antenna = add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.3, 0.08), materials.darkMetal));
+    antenna.position.set(0.82, 1.28, 1.45);
+    antenna.rotation.z = -0.1;
 
-      const engine = add(new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.25, 16), materials.darkMetal));
-      engine.rotation.x = Math.PI / 2;
-      engine.position.set(x * 0.72, 0.42, 1.0);
+    const blue = add(new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.08, 0.12), materials.blueGlow));
+    blue.position.set(0, 0.36, -1.2);
 
-      const light = add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.12), materials.blueGlow));
-      light.position.set(x, 0.14, -1.05);
-    }
-
-    for (const [x, z] of [[-4.5, -2.6], [4.5, -2.6], [-4.5, 2.45], [4.5, 2.45]]) {
-      const arm = add(new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.16, 0.24), materials.tankTrim));
-      arm.position.set(x * 0.55, 0, z * 0.55);
-      arm.rotation.y = Math.atan2(x, z);
-
-      const ring = add(new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 28), materials.tankLight));
-      ring.position.set(x, 0.02, z);
-      ring.rotation.x = Math.PI / 2;
-
-      const hub = add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 6), materials.darkMetal));
-      hub.position.set(x, 0.05, z);
-
-      for (let i = 0; i < 3; i++) {
-        const blade = add(new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.04, 0.16), materials.tankDark));
-        blade.position.set(x, 0.05, z);
-        blade.rotation.y = i * Math.PI * 0.66;
-      }
-    }
-
-    const tail = add(new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.4, 4), materials.tankTrim));
-    tail.position.set(0, 1.35, 2.45);
-    tail.rotation.x = 0.35;
-
-    const red = add(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.12), materials.redEye));
-    red.position.set(0, -0.28, -4.55);
+    const red = add(new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.1, 0.1), materials.redEye));
+    red.position.set(0, -0.24, -2.42);
   }
 
   update(delta, tankRef) {
@@ -1097,7 +1063,6 @@ class WildlifeManager {
   }
 
   update(delta, tankRef) {
-    this.ensureCount("dinosaur", CONFIG.dinosaurCount, tankRef);
     this.ensureCount("turtle", CONFIG.turtleCount, tankRef);
 
     for (let i = this.animals.length - 1; i >= 0; i--) {
@@ -1117,9 +1082,9 @@ class WildlifeManager {
   }
 
   spawn(type, tankRef, index) {
-    const seed = performance.now() * 0.001 + index * 173 + (type === "dinosaur" ? 31 : 97);
+    const seed = performance.now() * 0.001 + index * 173 + 97;
     const angle = seededRandom(seed) * Math.PI * 2;
-    const distance = type === "dinosaur" ? 95 + seededRandom(seed + 1) * 280 : 70 + seededRandom(seed + 1) * 210;
+    const distance = 70 + seededRandom(seed + 1) * 210;
     const animal = new Wildlife(type, seed);
     animal.group.position.set(
       tankRef.group.position.x + Math.cos(angle) * distance,
@@ -1138,10 +1103,10 @@ class Wildlife {
   constructor(type, seed) {
     this.type = type;
     this.seed = seed;
-    this.group = type === "dinosaur" ? createDinosaur(seed) : createTurtle(seed);
-    this.speed = type === "dinosaur" ? 5.4 + seededRandom(seed + 7) * 3.2 : 1.4 + seededRandom(seed + 7) * 1.1;
-    this.turnSpeed = type === "dinosaur" ? 0.62 : 0.34;
-    this.groundOffset = type === "dinosaur" ? 1.25 : 0.42;
+    this.group = createTurtle(seed);
+    this.speed = 1.4 + seededRandom(seed + 7) * 1.1;
+    this.turnSpeed = 0.34;
+    this.groundOffset = 0.42;
     this.heading = seededRandom(seed + 11) * Math.PI * 2;
     this.wanderTimer = 0;
     this.legPhase = seededRandom(seed + 13) * Math.PI * 2;
@@ -1151,7 +1116,7 @@ class Wildlife {
     this.wanderTimer -= delta;
     if (this.wanderTimer <= 0) {
       this.heading += (seededRandom(performance.now() * 0.001 + this.seed) - 0.5) * 1.8;
-      this.wanderTimer = this.type === "dinosaur" ? 1.8 + seededRandom(this.seed + performance.now() * 0.002) * 2.2 : 3.0 + seededRandom(this.seed + performance.now() * 0.002) * 3.5;
+      this.wanderTimer = 3.0 + seededRandom(this.seed + performance.now() * 0.002) * 3.5;
     }
 
     const turn = wrapAngle(this.heading - this.group.rotation.y);
@@ -1159,7 +1124,7 @@ class Wildlife {
     const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
     this.group.position.addScaledVector(forward, this.speed * delta);
     this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + this.groundOffset;
-    this.legPhase += delta * this.speed * (this.type === "dinosaur" ? 2.1 : 1.5);
+    this.legPhase += delta * this.speed * 1.5;
     animateWildlifeWalk(this.group, this.legPhase, this.type);
   }
 }
@@ -1492,56 +1457,6 @@ function updateExplosions(delta) {
   }
 }
 
-function createDinosaur(seed) {
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 3.8, 10), materials.dinosaur);
-  body.rotation.x = Math.PI / 2;
-  body.scale.set(1.25, 1.0, 0.92);
-  body.position.y = 2.15;
-  group.add(body);
-
-  const belly = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.48, 2.2, 8), materials.dinosaurBelly);
-  belly.rotation.x = Math.PI / 2;
-  belly.position.set(0.1, 1.75, -0.08);
-  group.add(belly);
-
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 2.2, 8), materials.dinosaur);
-  neck.position.set(0, 3.05, -1.95);
-  neck.rotation.x = -0.48;
-  group.add(neck);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.72, 1.2), materials.dinosaur);
-  head.position.set(0, 3.72, -2.8);
-  head.rotation.x = -0.16;
-  group.add(head);
-
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.48, 3.3, 8), materials.dinosaur);
-  tail.position.set(0, 2.23, 2.85);
-  tail.rotation.x = Math.PI / 2.7;
-  group.add(tail);
-
-  const legs = [];
-  for (const x of [-0.62, 0.62]) {
-    for (const z of [-1.15, 1.15]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 1.85, 7), materials.dinosaur);
-      leg.position.set(x, 0.92, z);
-      leg.rotation.z = x < 0 ? 0.08 : -0.08;
-      group.add(leg);
-      legs.push(leg);
-    }
-  }
-
-  const crest = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 5), materials.dinosaurBelly);
-  crest.position.set(0, 4.22, -2.95);
-  crest.rotation.x = Math.PI;
-  group.add(crest);
-
-  group.scale.setScalar(1.45 + seededRandom(seed + 19) * 0.35);
-  group.userData.walkLegs = legs;
-  group.userData.walkTail = tail;
-  return group;
-}
-
 function createTurtle(seed) {
   const group = new THREE.Group();
   const shell = new THREE.Mesh(new THREE.SphereGeometry(1.35, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.58), materials.turtleShell);
@@ -1583,11 +1498,11 @@ function createTurtle(seed) {
 function animateWildlifeWalk(group, phase, type) {
   const legs = group.userData.walkLegs || [];
   for (let i = 0; i < legs.length; i++) {
-    const swing = Math.sin(phase + i * Math.PI) * (type === "dinosaur" ? 0.28 : 0.12);
+    const swing = Math.sin(phase + i * Math.PI) * 0.12;
     legs[i].rotation.x = swing;
   }
   if (group.userData.walkTail) {
-    group.userData.walkTail.rotation.z = Math.sin(phase * 0.55) * (type === "dinosaur" ? 0.18 : 0.08);
+    group.userData.walkTail.rotation.z = Math.sin(phase * 0.55) * 0.08;
   }
 }
 
