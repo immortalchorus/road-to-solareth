@@ -43,8 +43,7 @@ const CONFIG = {
     road: 0x3a2f34,
     crystal: 0x58f3ff,
     gold: 0xffc45c
-  },
-  solarethVisibility: 0.6
+  }
 };
 
 const canvas = document.querySelector("#game-canvas");
@@ -124,7 +123,6 @@ let projectiles;
 let enemies;
 let skyDrones;
 let audio;
-let solareth;
 const explosionEffects = [];
 
 window.addEventListener("resize", onResize);
@@ -1175,7 +1173,6 @@ projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 skyDrones = new SkyDroneManager(scene);
 audio = new AudioManager();
-solareth = createSolareth();
 
 terrain.update(tank.group.position);
 positionTankOnTerrain();
@@ -1193,7 +1190,6 @@ function animate() {
   skyDrones.update(delta, tank);
   projectiles.update(delta, input, tank, enemies, skyDrones);
   updateCamera(delta);
-  updateSolareth(delta);
   updateExplosions(delta);
   updateHUD(delta);
   audio.update(tank.speed);
@@ -1221,17 +1217,6 @@ function updateCamera(delta) {
   camera.updateProjectionMatrix();
   const look = tank.group.position.clone().add(new THREE.Vector3(0, profile.lookHeight, 0));
   camera.lookAt(look);
-}
-
-function updateSolareth() {
-  const forward = new THREE.Vector3(-Math.sin(tank.group.rotation.y), 0, -Math.cos(tank.group.rotation.y));
-  solareth.position.copy(tank.group.position).addScaledVector(forward, 640);
-  solareth.position.y = terrain.getHeightAt(solareth.position.x, solareth.position.z) + 48 + Math.sin(performance.now() * 0.00022) * 8;
-  solareth.rotation.y = tank.group.rotation.y;
-  const fade = CONFIG.solarethVisibility * (0.55 + Math.sin(performance.now() * 0.00012 + distanceTravelled * 0.002) * 0.45);
-  solareth.traverse(child => {
-    if (child.material && child.material.transparent) child.material.opacity = 0.12 + fade * 0.72;
-  });
 }
 
 function updateHUD(delta) {
@@ -1263,19 +1248,6 @@ function emergencyClearAroundTank() {
     hud.status.textContent = "The path opens through dust and sparks.";
     statusTimer = 7;
   }
-}
-
-function createSolareth() {
-  const group = createDistantCity(CONFIG.worldColors.gold);
-  group.name = "Solareth";
-  group.scale.setScalar(2.8);
-  group.traverse(child => {
-    if (child.isMesh) {
-      child.material = new THREE.MeshBasicMaterial({ color: CONFIG.worldColors.gold, transparent: true, opacity: 0.65, depthWrite: false });
-    }
-  });
-  scene.add(group);
-  return group;
 }
 
 function createDistantCity(colorHex) {
