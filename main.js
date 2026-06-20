@@ -65,7 +65,12 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyY", "ShiftLeft", "ShiftRight"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyY", "ShiftLeft", "ShiftRight", "Tab"]);
+const cameraProfiles = {
+  chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
+  worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
+};
+let cameraMode = "chase";
 const hud = {
   speed: document.querySelector("#speed"),
   turret: document.querySelector("#turret-angle"),
@@ -133,6 +138,7 @@ window.addEventListener("keydown", event => {
   input[event.code] = true;
   if (event.code === "Space") input.fireHeld = true;
   if (event.code === "KeyH") input.heatSeekingHeld = true;
+  if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "Escape") emergencyClearAroundTank();
 }, true);
 window.addEventListener("keyup", event => {
@@ -1200,11 +1206,20 @@ function positionTankOnTerrain() {
   tank.group.position.set(0, terrain.getHeightAt(0, 0) + CONFIG.tankHoverHeight, 0);
 }
 
+function toggleCameraMode() {
+  cameraMode = cameraMode === "chase" ? "worm" : "chase";
+  hud.status.textContent = cameraMode === "worm" ? "Worm's-eye view engaged." : "Chase view restored.";
+  statusTimer = 2.2;
+}
+
 function updateCamera(delta) {
+  const profile = cameraProfiles[cameraMode];
   const behind = new THREE.Vector3(Math.sin(tank.group.rotation.y), 0, Math.cos(tank.group.rotation.y));
-  const target = tank.group.position.clone().add(new THREE.Vector3(0, 16, 0)).addScaledVector(behind, 28);
-  camera.position.lerp(target, 1 - Math.pow(0.035, delta));
-  const look = tank.group.position.clone().add(new THREE.Vector3(0, 5.8, 0));
+  const target = tank.group.position.clone().add(new THREE.Vector3(0, profile.height, 0)).addScaledVector(behind, profile.distance);
+  camera.position.lerp(target, 1 - Math.pow(profile.settle, delta));
+  camera.fov = THREE.MathUtils.lerp(camera.fov, profile.fov, 1 - Math.pow(0.025, delta));
+  camera.updateProjectionMatrix();
+  const look = tank.group.position.clone().add(new THREE.Vector3(0, profile.lookHeight, 0));
   camera.lookAt(look);
 }
 
