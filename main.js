@@ -113,6 +113,12 @@ const materials = {
   redEye: new THREE.MeshStandardMaterial({ color: 0xff2e2e, emissive: 0xff1010, emissiveIntensity: 2.4 }),
   ruin: new THREE.MeshStandardMaterial({ color: 0x57555f, metalness: 0.32, roughness: 0.76 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
+  pyramidGlass: new THREE.MeshStandardMaterial({ color: 0x071018, metalness: 0.86, roughness: 0.18 }),
+  pyramidBronze: new THREE.MeshStandardMaterial({ color: 0x2d2117, metalness: 0.72, roughness: 0.24 }),
+  pyramidTrim: new THREE.MeshStandardMaterial({ color: 0xb68a48, metalness: 0.8, roughness: 0.28 }),
+  hotelCyan: new THREE.MeshStandardMaterial({ color: 0x54f5ff, emissive: 0x21d9ff, emissiveIntensity: 1.9 }),
+  hotelMagenta: new THREE.MeshStandardMaterial({ color: 0xff4fd8, emissive: 0xff20b7, emissiveIntensity: 1.45 }),
+  hotelAmber: new THREE.MeshStandardMaterial({ color: 0xffb34f, emissive: 0xff7c20, emissiveIntensity: 1.55 }),
   plant: new THREE.MeshStandardMaterial({ color: 0x384f39, roughness: 0.76 }),
   plantMouth: new THREE.MeshStandardMaterial({ color: 0x762343, emissive: 0x2b0015, roughness: 0.6 }),
   water: new THREE.MeshStandardMaterial({ color: 0x5ed5ff, emissive: 0x1b7d9a, transparent: true, opacity: 0.52, side: THREE.DoubleSide }),
@@ -129,6 +135,8 @@ let skyDrones;
 let audio;
 const explosionEffects = [];
 const universeTargets = [];
+const pyramidBeacons = [];
+let beaconTime = 0;
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
@@ -1291,6 +1299,7 @@ function animate() {
   projectiles.update(delta, input, tank, enemies, skyDrones);
   updateCamera(delta);
   updateExplosions(delta);
+  updatePyramidBeacons(delta);
   updateHUD(delta);
   audio.update(tank.speed);
 
@@ -1507,6 +1516,22 @@ function updateExplosions(delta) {
   }
 }
 
+function updatePyramidBeacons(delta) {
+  beaconTime += delta;
+  for (let i = pyramidBeacons.length - 1; i >= 0; i--) {
+    const beacon = pyramidBeacons[i];
+    if (!beacon.root.parent || !beacon.root.parent.parent) {
+      pyramidBeacons.splice(i, 1);
+      continue;
+    }
+    const pulse = 0.5 + 0.5 * Math.sin(beaconTime * 5.2 + beacon.phase);
+    const blink = pulse > 0.58 ? 1 : 0.16;
+    beacon.beacon.material.opacity = 0.42 + blink * 0.58;
+    beacon.halo.material.opacity = 0.06 + blink * 0.34;
+    beacon.halo.scale.setScalar(0.85 + blink * 0.45);
+  }
+}
+
 function createRock(seed) {
   const group = new THREE.Group();
   const count = 1 + Math.floor(seededRandom(seed) * 4);
@@ -1563,18 +1588,57 @@ function createBrokenArch(seed) {
 
 function createHighTechPyramid(seed) {
   const group = new THREE.Group();
-  const pyramid = new THREE.Mesh(new THREE.ConeGeometry(8 + seededRandom(seed) * 8, 12 + seededRandom(seed + 1) * 15, 4), materials.darkMetal);
-  pyramid.position.y = pyramid.geometry.parameters.height * 0.5;
+  const radius = 8 + seededRandom(seed) * 8;
+  const height = 12 + seededRandom(seed + 1) * 15;
+  const bodyMaterial = seededRandom(seed + 67) > 0.54 ? materials.pyramidBronze : materials.pyramidGlass;
+  const pyramid = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 4), bodyMaterial);
+  pyramid.position.y = height * 0.5;
   pyramid.rotation.y = Math.PI / 4;
   pyramid.castShadow = true;
   group.add(pyramid);
-  const seam = new THREE.Mesh(new THREE.BoxGeometry(0.35, pyramid.geometry.parameters.height * 0.8, 0.35), materials.orangeGlow);
-  seam.position.y = pyramid.geometry.parameters.height * 0.55;
-  seam.position.z = pyramid.geometry.parameters.radius * 0.5;
-  group.add(seam);
-  const orb = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 10), materials.blueGlow);
-  orb.position.y = pyramid.geometry.parameters.height + 3 + Math.sin(seed) * 0.5;
-  group.add(orb);
+
+  const baseGlow = seededRandom(seed + 3) > 0.5 ? materials.hotelCyan : materials.hotelAmber;
+  const accentGlow = seededRandom(seed + 5) > 0.48 ? materials.hotelMagenta : materials.hotelCyan;
+  const faceAngles = [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
+  for (let face = 0; face < faceAngles.length; face++) {
+    const angle = faceAngles[face];
+    const faceGlow = face % 2 === 0 ? baseGlow : accentGlow;
+    for (let row = 0; row < 4; row++) {
+      const y = height * (0.18 + row * 0.16);
+      const faceRadius = radius * (1 - y / height) + 0.16;
+      const stripWidth = Math.max(1.25, radius * (0.72 - row * 0.11));
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(stripWidth, 0.18, 0.16), faceGlow);
+      strip.position.set(Math.sin(angle) * faceRadius, y, Math.cos(angle) * faceRadius);
+      strip.rotation.y = angle;
+      group.add(strip);
+    }
+
+    const verticalSeam = new THREE.Mesh(new THREE.BoxGeometry(0.18, height * 0.62, 0.16), materials.pyramidTrim);
+    const seamRadius = radius * 0.48;
+    verticalSeam.position.set(Math.sin(angle) * seamRadius, height * 0.41, Math.cos(angle) * seamRadius);
+    verticalSeam.rotation.y = angle;
+    group.add(verticalSeam);
+  }
+
+  const podium = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.84, radius * 1.08, 1.15, 4), materials.darkMetal);
+  podium.position.y = 0.58;
+  podium.rotation.y = Math.PI / 4;
+  group.add(podium);
+
+  const apexNeedle = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 2.5, 6), materials.pyramidTrim);
+  apexNeedle.position.y = height + 1.25;
+  group.add(apexNeedle);
+
+  const beaconMaterial = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.95 });
+  const beaconGlowMaterial = new THREE.MeshBasicMaterial({ color: 0xff2b17, transparent: true, opacity: 0.28, depthWrite: false });
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 8), beaconMaterial);
+  beacon.position.y = height + 2.65;
+  group.add(beacon);
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(1.45, 14, 8), beaconGlowMaterial);
+  halo.position.copy(beacon.position);
+  group.add(halo);
+  pyramidBeacons.push({ root: group, beacon, halo, phase: seededRandom(seed + 97) * Math.PI * 2 });
+
   return group;
 }
 
