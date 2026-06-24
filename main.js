@@ -178,13 +178,16 @@ function initLights() {
 
 function createSky() {
   const skyGeo = new THREE.SphereGeometry(1500, 32, 16);
-  const panorama = new THREE.TextureLoader().load("assets/mountain-panorama.png");
+  const panorama = new THREE.TextureLoader().load("assets/mountain-panorama.png?v=panorama-visible-1");
   panorama.encoding = THREE.sRGBEncoding;
   panorama.wrapS = THREE.RepeatWrapping;
+  panorama.minFilter = THREE.LinearFilter;
   const skyMat = new THREE.MeshBasicMaterial({
     map: panorama,
     side: THREE.BackSide,
-    depthWrite: false
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
   });
   scene.add(new THREE.Mesh(skyGeo, skyMat));
 
