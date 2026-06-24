@@ -24,6 +24,10 @@ const CONFIG = {
   projectileCooldown: 0.085,
   projectileRadius: 0.34,
   projectileCollisionRadius: 0.52,
+  bombRadius: 0.82,
+  bombDropCount: 8,
+  bombGravity: 38,
+  bombPayloadSpread: 2.8,
   maxProjectiles: 46,
   homingAimDistance: 680,
   homingAimCone: 0.86,
@@ -124,6 +128,7 @@ let enemies;
 let skyDrones;
 let audio;
 const explosionEffects = [];
+const universeTargets = [];
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
@@ -136,6 +141,7 @@ window.addEventListener("keydown", event => {
   input[event.code] = true;
   if (event.code === "Space") input.fireHeld = true;
   if (event.code === "KeyH") input.heatSeekingHeld = true;
+  if (event.code === "KeyB" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret();
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
@@ -198,6 +204,7 @@ function createMoon(x, y, z, radius, color, ringed) {
   );
   moon.position.set(x, y, z);
   scene.add(moon);
+  registerUniverseTarget(moon, radius * 1.1);
   if (ringed) {
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(radius * 1.38, 2.4, 8, 96),
@@ -207,6 +214,7 @@ function createMoon(x, y, z, radius, color, ringed) {
     ring.rotation.z = Math.PI * 0.12;
     ring.position.copy(moon.position);
     scene.add(ring);
+    registerUniverseTarget(ring, radius * 1.7);
   }
 }
 
@@ -218,6 +226,7 @@ function createCloudBand(x, y, z, width) {
   cloud.position.set(x, y, z);
   cloud.rotation.x = -0.08;
   scene.add(cloud);
+  registerUniverseTarget(cloud, width * 0.52);
 }
 
 function createMountains() {
@@ -232,6 +241,7 @@ function createMountains() {
     mountain.position.set(Math.cos(angle) * radius, height * 0.5 - 28, Math.sin(angle) * radius);
     mountain.rotation.y = seededRandom(i) * Math.PI;
     scene.add(mountain);
+    registerUniverseTarget(mountain, height * 0.42);
   }
 }
 
@@ -641,6 +651,7 @@ class TerrainManager {
       road.rotation.z = (r - 0.5) * 0.55;
       road.position.y = 0.22;
       road.receiveShadow = true;
+      this.registerDestructible(road, group, this.size * 0.65, { solid: false });
       group.add(road);
     }
   }
@@ -693,7 +704,7 @@ class TerrainManager {
     }
   }
 
-  registerDestructible(object, chunk, radius) {
+  registerDestructible(object, chunk, radius, options = {}) {
     object.userData.destructible = true;
     object.userData.collisionRadius = radius;
     const position = new THREE.Vector3(
@@ -701,7 +712,7 @@ class TerrainManager {
       chunk.position.y + object.position.y,
       chunk.position.z + object.position.z
     );
-    this.destructibles.push({ object, chunk, radius, position });
+    this.destructibles.push({ object, chunk, radius, position, solid: options.solid !== false });
   }
 
   destroyDestructible(item) {
@@ -754,6 +765,7 @@ class TerrainManager {
     const tankHoverY = this.getHeightAt(tankPosition.x, tankPosition.z) + CONFIG.tankHoverHeight;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
+      if (!item.solid) continue;
       const obstacleTop = item.position.y + Math.max(8, item.radius * 0.75);
       if (tankPosition.y > obstacleTop) continue;
       const dx = tankPosition.x - item.position.x;
@@ -1041,12 +1053,12 @@ class SkyDrone {
     this.dead = true;
     destroyedEnemies++;
     createExplosion(this.group.position, {
-      color: 0xffd46b,
+      color: 0xff2a1f,
       opacity: 0.92,
       radius: 2.4,
       growth: 28,
       life: 0.82,
-      coreColor: 0xffffff
+      coreColor: 0xffd0c0
     });
     audio.playExplosion();
   }
@@ -1057,10 +1069,12 @@ class ProjectileManager {
     this.parent = parent;
     this.projectiles = [];
     this.cooldown = 0;
+    this.bombCooldown = 0;
   }
 
   update(delta, keys, tankRef, enemyManager, skyDroneManager) {
     this.cooldown -= delta;
+    this.bombCooldown -= delta;
     if (keys.fireHeld && this.cooldown <= 0) {
       this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld);
       this.cooldown = CONFIG.projectileCooldown;
@@ -1070,7 +1084,9 @@ class ProjectileManager {
       const shot = this.projectiles[i];
       shot.life -= delta;
       shot.previousPosition.copy(shot.mesh.position);
-      if (shot.homingTarget && !shot.homingTarget.dead) {
+      if (shot.kind === "bomb") {
+        shot.velocity.y -= CONFIG.bombGravity * delta;
+      } else if (shot.homingTarget && !shot.homingTarget.dead) {
         const toTarget = shot.homingTarget.group.position.clone().sub(shot.mesh.position);
         if (toTarget.lengthSq() > 0.001) {
           const desiredVelocity = toTarget.normalize().multiplyScalar(CONFIG.homingSpeed);
@@ -1082,12 +1098,17 @@ class ProjectileManager {
         shot.homingTarget = null;
       }
       shot.mesh.position.addScaledVector(shot.velocity, delta);
-      shot.trail.position.copy(shot.mesh.position).addScaledVector(shot.direction, -1.6);
-      shot.trail.quaternion.copy(shot.quaternion);
-      shot.trail.scale.multiplyScalar(0.965);
+      if (shot.trail) {
+        shot.trail.position.copy(shot.mesh.position).addScaledVector(shot.direction, -1.6);
+        shot.trail.quaternion.copy(shot.quaternion);
+        shot.trail.scale.multiplyScalar(0.965);
+      }
 
       const groundHeight = terrain.getHeightAt(shot.mesh.position.x, shot.mesh.position.z);
-      if (shot.mesh.position.y <= groundHeight + shot.radius * 0.4 && shot.velocity.y < 0) {
+      if (shot.kind === "bomb" && shot.mesh.position.y <= groundHeight + shot.radius && shot.velocity.y < 0) {
+        this.detonateBomb(shot.mesh.position, enemyManager, skyDroneManager);
+        shot.life = -1;
+      } else if (shot.mesh.position.y <= groundHeight + shot.radius * 0.4 && shot.velocity.y < 0) {
         const normal = terrain.getNormalAt(shot.mesh.position.x, shot.mesh.position.z);
         shot.velocity.reflect(normal).multiplyScalar(0.82);
         shot.velocity.y = Math.max(shot.velocity.y, 18);
@@ -1111,6 +1132,11 @@ class ProjectileManager {
       }
 
       if (shot.life > 0 && terrain.hitDestructible(shot.mesh.position, shot.radius)) {
+        shot.life = -1;
+        audio.playExplosion();
+      }
+
+      if (shot.life > 0 && hitUniverseTarget(shot.mesh.position, shot.radius)) {
         shot.life = -1;
         audio.playExplosion();
       }
@@ -1149,6 +1175,62 @@ class ProjectileManager {
       radius: CONFIG.projectileCollisionRadius
     });
     audio.playFire();
+  }
+
+  dropBombPayload(tankRef) {
+    if (this.bombCooldown > 0) return;
+    this.bombCooldown = 0.75;
+    const forward = new THREE.Vector3(-Math.sin(tankRef.group.rotation.y), 0, -Math.cos(tankRef.group.rotation.y));
+    const right = new THREE.Vector3(Math.cos(tankRef.group.rotation.y), 0, -Math.sin(tankRef.group.rotation.y));
+    const baseVelocity = forward.clone().multiplyScalar(tankRef.speed);
+    const origin = tankRef.group.position.clone().add(new THREE.Vector3(0, -1.2, 0));
+
+    for (let i = 0; i < CONFIG.bombDropCount; i++) {
+      const row = i < 4 ? -0.9 : 0.9;
+      const col = (i % 4 - 1.5) * CONFIG.bombPayloadSpread;
+      const position = origin.clone().addScaledVector(right, col).addScaledVector(forward, row);
+      this.dropBomb(position, baseVelocity);
+    }
+    hud.status.textContent = "Bomb payload released.";
+    statusTimer = 2.5;
+  }
+
+  dropBomb(position, baseVelocity) {
+    if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(CONFIG.bombRadius, 10, 8), materials.darkMetal);
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 1.2), materials.redEye);
+    marker.position.y = 0.18;
+    mesh.add(marker);
+    mesh.position.copy(position);
+    group.add(mesh);
+    this.parent.add(group);
+    this.projectiles.push({
+      kind: "bomb",
+      group,
+      mesh,
+      direction: new THREE.Vector3(0, -1, 0),
+      quaternion: new THREE.Quaternion(),
+      velocity: baseVelocity.clone().add(new THREE.Vector3(0, -3, 0)),
+      homingTarget: null,
+      bounces: 0,
+      life: 7,
+      previousPosition: position.clone(),
+      radius: CONFIG.bombRadius
+    });
+  }
+
+  detonateBomb(position, enemyManager, skyDroneManager) {
+    createExplosion(position, { radius: 2.8, growth: 34, life: 0.85, color: 0xff2318, opacity: 0.9, coreColor: 0xfff1c6 });
+    terrain.destroyNear(position, 24);
+    destroyUniverseNear(position, 42);
+    for (const enemy of enemyManager.enemies) {
+      if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + 24) enemy.destroy();
+    }
+    for (const drone of skyDroneManager.drones) {
+      if (!drone.dead && drone.group.position.distanceTo(position) <= drone.collisionRadius + 28) drone.destroy();
+    }
+    audio.playExplosion();
   }
 
   removeProjectile(index) {
@@ -1331,7 +1413,7 @@ function createExplosion(position, options = {}) {
   const radius = options.radius ?? 1.2;
   const life = options.life ?? 0.55;
   const growth = options.growth ?? 14;
-  const color = options.color ?? 0xffb05c;
+  const color = options.color ?? 0xff3424;
   const opacity = options.opacity ?? 0.65;
   while (explosionEffects.length >= 12) {
     const oldest = explosionEffects.shift();
@@ -1357,6 +1439,52 @@ function createExplosion(position, options = {}) {
   }
   scene.add(group);
   explosionEffects.push({ group, sphere, life, maxLife: life, growth, opacity });
+}
+
+function registerUniverseTarget(object, radius) {
+  object.userData.destructible = true;
+  universeTargets.push({ object, radius, position: object.position.clone() });
+}
+
+function destroyUniverseTarget(target) {
+  if (!target || !target.object.parent) return false;
+  createExplosion(target.position);
+  target.object.parent.remove(target.object);
+  disposeObject(target.object);
+  const index = universeTargets.indexOf(target);
+  if (index >= 0) universeTargets.splice(index, 1);
+  return true;
+}
+
+function hitUniverseTarget(position, radius) {
+  let closest = null;
+  let closestDistance = Infinity;
+  for (const target of universeTargets) {
+    if (!target.object.parent) continue;
+    const hitRadius = radius + target.radius;
+    const dx = target.position.x - position.x;
+    const dy = target.position.y - position.y;
+    const dz = target.position.z - position.z;
+    const distanceSq = dx * dx + dy * dy + dz * dz;
+    if (distanceSq <= hitRadius * hitRadius && distanceSq < closestDistance) {
+      closest = target;
+      closestDistance = distanceSq;
+    }
+  }
+  return destroyUniverseTarget(closest);
+}
+
+function destroyUniverseNear(position, radius) {
+  let destroyed = 0;
+  for (const target of [...universeTargets]) {
+    if (!target.object.parent) continue;
+    const hitRadius = radius + target.radius;
+    const dx = target.position.x - position.x;
+    const dy = target.position.y - position.y;
+    const dz = target.position.z - position.z;
+    if (dx * dx + dy * dy + dz * dz <= hitRadius * hitRadius && destroyUniverseTarget(target)) destroyed++;
+  }
+  return destroyed;
 }
 
 function updateExplosions(delta) {
