@@ -1254,11 +1254,14 @@ class ProjectileManager {
 class AudioManager {
   constructor() {
     this.started = false;
+    this.context = null;
+    this.master = null;
   }
 
   async start() {
     if (this.started) return;
     this.started = true;
+    this.ensureContext();
     hud.musicButton.textContent = "Silent Mode";
   }
 
@@ -1266,9 +1269,60 @@ class AudioManager {
   }
 
   playFire() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    const now = ctx.currentTime;
+
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.type = "sine";
+    boom.frequency.setValueAtTime(78, now);
+    boom.frequency.exponentialRampToValueAtTime(38, now + 0.13);
+    boomGain.gain.setValueAtTime(0.0001, now);
+    boomGain.gain.exponentialRampToValueAtTime(0.55, now + 0.006);
+    boomGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    boom.connect(boomGain).connect(this.master);
+    boom.start(now);
+    boom.stop(now + 0.24);
+
+    const crack = ctx.createBufferSource();
+    crack.buffer = this.createNoiseBuffer(0.08);
+    const crackFilter = ctx.createBiquadFilter();
+    const crackGain = ctx.createGain();
+    crackFilter.type = "bandpass";
+    crackFilter.frequency.setValueAtTime(850, now);
+    crackFilter.Q.setValueAtTime(0.85, now);
+    crackGain.gain.setValueAtTime(0.0001, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.34, now + 0.004);
+    crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
+    crack.connect(crackFilter).connect(crackGain).connect(this.master);
+    crack.start(now);
   }
 
   playExplosion() {
+  }
+
+  ensureContext() {
+    if (this.context) return this.context;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    this.context = new AudioContextClass();
+    this.master = this.context.createGain();
+    this.master.gain.value = 0.42;
+    this.master.connect(this.context.destination);
+    return this.context;
+  }
+
+  createNoiseBuffer(duration) {
+    const sampleRate = this.context.sampleRate;
+    const buffer = this.context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const fade = 1 - i / data.length;
+      data[i] = (Math.random() * 2 - 1) * fade;
+    }
+    return buffer;
   }
 }
 
@@ -1734,3 +1788,4 @@ function disposeObject(object) {
     }
   });
 }
+
