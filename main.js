@@ -1061,10 +1061,12 @@ class SkyDroneManager {
     if (orb) {
       const portalSign = index % 2 === 0 ? -1 : 1;
       const portalY = orb.shell.geometry.parameters.radius * 0.96 * portalSign;
+      const exitY = orb.shell.geometry.parameters.radius * 1.62 * portalSign;
       drone.launchFrom = orb.group.position.clone().add(new THREE.Vector3(0, portalY, 0));
+      drone.launchExit = orb.group.position.clone().add(new THREE.Vector3(0, exitY, 0));
       drone.launchTarget = patrolPosition.clone();
-      drone.launchTime = 1.8;
-      drone.launchDuration = 1.8;
+      drone.launchTime = 2.45;
+      drone.launchDuration = 2.45;
       drone.group.position.copy(drone.launchFrom);
     } else {
       drone.group.position.copy(patrolPosition);
@@ -1168,10 +1170,16 @@ class SkyDrone {
   }
 
   update(delta, tankRef) {
-    if (this.launchTime > 0 && this.launchFrom && this.launchTarget) {
+    if (this.launchTime > 0 && this.launchFrom && this.launchExit && this.launchTarget) {
       this.launchTime = Math.max(0, this.launchTime - delta);
       const progress = 1 - this.launchTime / this.launchDuration;
-      this.group.position.lerpVectors(this.launchFrom, this.launchTarget, THREE.MathUtils.smoothstep(progress, 0, 1));
+      if (progress < 0.38) {
+        const ejectProgress = THREE.MathUtils.smoothstep(progress / 0.38, 0, 1);
+        this.group.position.lerpVectors(this.launchFrom, this.launchExit, ejectProgress);
+      } else {
+        const patrolProgress = THREE.MathUtils.smoothstep((progress - 0.38) / 0.62, 0, 1);
+        this.group.position.lerpVectors(this.launchExit, this.launchTarget, patrolProgress);
+      }
       this.group.lookAt(tankRef.group.position.x, this.group.position.y - 8, tankRef.group.position.z);
       return;
     }
@@ -1558,10 +1566,10 @@ class AudioManager {
       carrier.frequency.setValueAtTime(f, now + t);
       formant.frequency.setValueAtTime(f * (1.8 + Math.random() * 1.3), now + t);
       gate.gain.setValueAtTime(0.0001, now + t);
-      gate.gain.linearRampToValueAtTime(0.07 + Math.random() * 0.05, now + t + 0.025);
+      gate.gain.linearRampToValueAtTime(0.12 + Math.random() * 0.08, now + t + 0.025);
       gate.gain.exponentialRampToValueAtTime(0.0001, now + t + 0.11 + Math.random() * 0.09);
     }
-    staticGain.gain.setValueAtTime(0.026, now);
+    staticGain.gain.setValueAtTime(0.045, now);
     staticGain.gain.exponentialRampToValueAtTime(0.0001, now + phraseLength);
     carrier.connect(formant).connect(gate).connect(this.master);
     staticSource.connect(staticFilter).connect(staticGain).connect(this.master);
