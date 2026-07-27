@@ -24,6 +24,8 @@ const CONFIG = {
   fuelDrainPerMinute: 50,
   refuelTowerCount: 12,
   refuelTowerRadius: 8.5,
+  maxAmmo: 1000,
+  radioChatterEvery: 30,
   tankCollisionRadius: 5.2,
   projectileCooldown: 0.085,
   projectileRadius: 0.34,
@@ -84,12 +86,13 @@ const hud = {
   distance: document.querySelector("#distance"),
   destroyed: document.querySelector("#destroyed"),
   fuel: document.querySelector("#fuel"),
+  ammo: document.querySelector("#ammo"),
   status: document.querySelector("#status"),
   musicButton: document.querySelector("#music-button")
 };
 
 const poeticStatuses = [
-  "Low moons over the red waste.",
+  "Metallic orbs watch the red waste.",
   "The road remembers an empire.",
   "Solareth glimmers beyond the dust.",
   "Signal ghosts move through the ruins.",
@@ -107,6 +110,7 @@ let distanceTravelled = 0;
 let statusTimer = 0;
 let currentStatus = 0;
 let fuel = CONFIG.maxFuel;
+let ammo = CONFIG.maxAmmo;
 
 const materials = {
   tankDark: new THREE.MeshStandardMaterial({ color: 0x181a20, metalness: 0.72, roughness: 0.42 }),
@@ -143,6 +147,7 @@ let audio;
 const explosionEffects = [];
 const universeTargets = [];
 const pyramidBeacons = [];
+const droneOrbs = [];
 let beaconTime = 0;
 
 window.addEventListener("resize", onResize);
@@ -154,6 +159,7 @@ window.addEventListener("keydown", event => {
     event.stopPropagation();
   }
   input[event.code] = true;
+  if (audio && !audio.started) audio.start();
   if (event.code === "Space") input.fireHeld = true;
   if (event.code === "KeyH") input.heatSeekingHeld = true;
   if (event.code === "KeyB" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
@@ -207,31 +213,65 @@ function createSky() {
   });
   scene.add(new THREE.Mesh(skyGeo, skyMat));
 
-  createMoon(-280, 170, -520, 66, 0xdab7ff, true);
-  createMoon(360, 110, -430, 42, 0xf3c184, false);
+  createDroneOrb(-280, 170, -520, 66, true);
+  createDroneOrb(360, 110, -430, 42, false);
   createCloudBand(-360, 72, -520, 260);
   createCloudBand(180, 64, -650, 330);
   createMountains();
 }
 
-function createMoon(x, y, z, radius, color, ringed) {
-  const moon = new THREE.Mesh(
+function createDroneOrb(x, y, z, radius, ringed) {
+  const group = new THREE.Group();
+  group.position.set(x, y, z);
+  const shell = new THREE.Mesh(
     new THREE.SphereGeometry(radius, 32, 16),
-    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.18, roughness: 0.9 })
+    new THREE.MeshStandardMaterial({ color: 0x8998a0, metalness: 0.94, roughness: 0.18 })
   );
-  moon.position.set(x, y, z);
-  scene.add(moon);
-  registerUniverseTarget(moon, radius * 1.1);
+  group.add(shell);
+
+  const equator = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 1.03, 1.8, 8, 96),
+    new THREE.MeshBasicMaterial({ color: 0x5bf7ff, transparent: true, opacity: 0.34 })
+  );
+  equator.rotation.x = Math.PI * 0.5;
+  group.add(equator);
+
+  const topPortal = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 0.22, 2.6, 10, 64),
+    new THREE.MeshBasicMaterial({ color: 0x44eaff, transparent: true, opacity: 0.72, depthWrite: false })
+  );
+  topPortal.position.y = radius * 0.96;
+  topPortal.rotation.x = Math.PI * 0.5;
+  group.add(topPortal);
+
+  const bottomPortal = topPortal.clone();
+  bottomPortal.position.y = -radius * 0.96;
+  group.add(bottomPortal);
+
   if (ringed) {
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(radius * 1.38, 2.4, 8, 96),
-      new THREE.MeshBasicMaterial({ color: 0xf9d79a, transparent: true, opacity: 0.38 })
+      new THREE.MeshBasicMaterial({ color: 0xaeeeff, transparent: true, opacity: 0.32 })
     );
     ring.rotation.x = Math.PI * 0.58;
     ring.rotation.z = Math.PI * 0.12;
-    ring.position.copy(moon.position);
-    scene.add(ring);
-    registerUniverseTarget(ring, radius * 1.7);
+    group.add(ring);
+  }
+
+  scene.add(group);
+  droneOrbs.push({ group, shell, topPortal, bottomPortal, phase: seededRandom(radius) * Math.PI * 2 });
+  registerUniverseTarget(group, radius * 1.2);
+}
+
+function updateDroneOrbs(delta) {
+  for (const orb of droneOrbs) {
+    if (!orb.group.parent) continue;
+    orb.group.rotation.y += delta * 0.035;
+    const pulse = 0.58 + Math.sin(performance.now() * 0.003 + orb.phase) * 0.24;
+    orb.topPortal.material.opacity = 0.45 + pulse * 0.35;
+    orb.bottomPortal.material.opacity = 0.45 + pulse * 0.35;
+    orb.topPortal.scale.setScalar(0.92 + pulse * 0.12);
+    orb.bottomPortal.scale.setScalar(0.92 + pulse * 0.12);
   }
 }
 
@@ -470,6 +510,15 @@ class Tank {
     this.turret.add(this.turretBeaconHalo);
     this.group.add(this.turret);
 
+    this.paintMaterials = [];
+    this.group.traverse(child => {
+      if (!child.material) return;
+      if ([materials.tankDark, materials.tankTrim, materials.tankLight].includes(child.material)) {
+        child.material = child.material.clone();
+        child.material.userData.baseColor = child.material.color.clone();
+        this.paintMaterials.push(child.material);
+      }
+    });
     parent.add(this.group);
   }
 
@@ -545,6 +594,7 @@ class Tank {
     this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
     this.cannon.rotation.x = this.turretPitch;
     this.updateTurretBeacon(delta);
+    this.updateFuelTint(fuel / CONFIG.maxFuel);
 
     const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
     const previousPosition = this.group.position.clone();
@@ -598,6 +648,15 @@ class Tank {
     this.turretBeacon.material.opacity = 0.38 + blink * 0.62;
     this.turretBeaconHalo.material.opacity = 0.07 + blink * 0.36;
     this.turretBeaconHalo.scale.setScalar(0.82 + blink * 0.46);
+  }
+
+  updateFuelTint(fuelRatio) {
+    const heat = THREE.MathUtils.clamp(1 - fuelRatio, 0, 1);
+    for (const material of this.paintMaterials) {
+      material.color.copy(material.userData.baseColor).lerp(new THREE.Color(0xff1e18), heat * 0.82);
+      material.emissive = material.emissive || new THREE.Color(0x000000);
+      material.emissive.set(0x000000).lerp(new THREE.Color(0x7a0503), heat * 0.42);
+    }
   }
 
   centerTurret() {
@@ -992,11 +1051,24 @@ class SkyDroneManager {
     const angle = seededRandom(performance.now() * 0.001 + index * 47) * Math.PI * 2;
     const distance = 180 + seededRandom(index * 97 + Math.floor(tankRef.group.position.x)) * 260;
     const drone = new SkyDrone(index + Math.floor(performance.now() * 0.01));
-    drone.group.position.set(
+    const patrolPosition = new THREE.Vector3(
       tankRef.group.position.x + Math.cos(angle) * distance,
       tankRef.group.position.y + 56 + seededRandom(index * 31) * 55,
       tankRef.group.position.z + Math.sin(angle) * distance
     );
+    const activeOrbs = droneOrbs.filter(orb => orb.group.parent);
+    const orb = activeOrbs.length ? activeOrbs[index % activeOrbs.length] : null;
+    if (orb) {
+      const portalSign = index % 2 === 0 ? -1 : 1;
+      const portalY = orb.shell.geometry.parameters.radius * 0.96 * portalSign;
+      drone.launchFrom = orb.group.position.clone().add(new THREE.Vector3(0, portalY, 0));
+      drone.launchTarget = patrolPosition.clone();
+      drone.launchTime = 1.8;
+      drone.launchDuration = 1.8;
+      drone.group.position.copy(drone.launchFrom);
+    } else {
+      drone.group.position.copy(patrolPosition);
+    }
     drone.anchor.copy(tankRef.group.position);
     drone.orbitRadius = distance;
     drone.orbitAngle = angle;
@@ -1096,6 +1168,13 @@ class SkyDrone {
   }
 
   update(delta, tankRef) {
+    if (this.launchTime > 0 && this.launchFrom && this.launchTarget) {
+      this.launchTime = Math.max(0, this.launchTime - delta);
+      const progress = 1 - this.launchTime / this.launchDuration;
+      this.group.position.lerpVectors(this.launchFrom, this.launchTarget, THREE.MathUtils.smoothstep(progress, 0, 1));
+      this.group.lookAt(tankRef.group.position.x, this.group.position.y - 8, tankRef.group.position.z);
+      return;
+    }
     this.anchor.lerp(tankRef.group.position, 0.018);
     this.orbitAngle += this.speed * delta;
     const sideDrift = Math.sin(performance.now() * 0.00035 + this.seed) * 22;
@@ -1152,7 +1231,7 @@ class RefuelTowerManager {
       const aboveBase = tankRef.group.position.y >= tower.group.position.y - 2;
       const belowTop = tankRef.group.position.y <= tower.group.position.y + tower.height + 6;
       if (horizontalDistance <= CONFIG.refuelTowerRadius && aboveBase && belowTop) {
-        refillFuel();
+        resupplyTank();
         tower.pulse = 1;
       }
     }
@@ -1171,10 +1250,10 @@ class RefuelTower {
   }
 
   build() {
-    const towerMat = new THREE.MeshStandardMaterial({ color: 0x24313a, metalness: 0.72, roughness: 0.32 });
+    const towerMat = new THREE.MeshStandardMaterial({ color: 0x0079d6, emissive: 0x003b80, emissiveIntensity: 0.55, metalness: 0.72, roughness: 0.24 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x101820, metalness: 0.78, roughness: 0.36 });
-    this.glowMat = new THREE.MeshBasicMaterial({ color: 0x35f4ff, transparent: true, opacity: 0.58, depthWrite: false });
-    this.coreMat = new THREE.MeshBasicMaterial({ color: 0x93fff5, transparent: true, opacity: 0.72, depthWrite: false });
+    this.glowMat = new THREE.MeshBasicMaterial({ color: 0x009dff, transparent: true, opacity: 0.9, depthWrite: false });
+    this.coreMat = new THREE.MeshBasicMaterial({ color: 0x2ed7ff, transparent: true, opacity: 1, depthWrite: false });
 
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.9, this.height, 8), towerMat);
     stem.position.y = this.height * 0.5;
@@ -1221,7 +1300,12 @@ class ProjectileManager {
     this.cooldown -= delta;
     this.bombCooldown -= delta;
     if (keys.fireHeld && this.cooldown <= 0) {
-      this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld);
+      if (ammo > 0) {
+        this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld);
+      } else {
+        hud.status.textContent = "Ammo depleted. Find a resupply tower.";
+        statusTimer = 2.2;
+      }
       this.cooldown = CONFIG.projectileCooldown;
     }
 
@@ -1319,6 +1403,7 @@ class ProjectileManager {
       previousPosition: position.clone(),
       radius: CONFIG.projectileCollisionRadius
     });
+    ammo = Math.max(0, ammo - 1);
     audio.playFire();
   }
 
@@ -1392,6 +1477,7 @@ class AudioManager {
     this.started = false;
     this.context = null;
     this.master = null;
+    this.radioTimer = CONFIG.radioChatterEvery;
   }
 
   async start() {
@@ -1401,7 +1487,13 @@ class AudioManager {
     hud.musicButton.textContent = "Silent Mode";
   }
 
-  update() {
+  update(delta) {
+    if (!this.started) return;
+    this.radioTimer -= delta;
+    if (this.radioTimer <= 0) {
+      this.radioTimer = CONFIG.radioChatterEvery;
+      this.playRadioChatter();
+    }
   }
 
   playFire() {
@@ -1437,6 +1529,46 @@ class AudioManager {
   }
 
   playExplosion() {
+  }
+
+  playRadioChatter() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    const now = ctx.currentTime;
+    const syllables = [310, 375, 455, 520, 610, 690, 780, 860];
+    const phraseLength = 1.9 + Math.random() * 0.9;
+    const carrier = ctx.createOscillator();
+    const formant = ctx.createBiquadFilter();
+    const staticSource = ctx.createBufferSource();
+    const staticFilter = ctx.createBiquadFilter();
+    const gate = ctx.createGain();
+    const staticGain = ctx.createGain();
+    carrier.type = "sawtooth";
+    formant.type = "bandpass";
+    formant.Q.value = 5.5;
+    staticSource.buffer = this.createNoiseBuffer(phraseLength);
+    staticFilter.type = "bandpass";
+    staticFilter.frequency.value = 1800;
+    staticFilter.Q.value = 0.7;
+    gate.gain.setValueAtTime(0.0001, now);
+    staticGain.gain.setValueAtTime(0.0001, now);
+    for (let t = 0; t < phraseLength; t += 0.13 + Math.random() * 0.08) {
+      const f = syllables[Math.floor(Math.random() * syllables.length)] * (0.92 + Math.random() * 0.16);
+      carrier.frequency.setValueAtTime(f, now + t);
+      formant.frequency.setValueAtTime(f * (1.8 + Math.random() * 1.3), now + t);
+      gate.gain.setValueAtTime(0.0001, now + t);
+      gate.gain.linearRampToValueAtTime(0.07 + Math.random() * 0.05, now + t + 0.025);
+      gate.gain.exponentialRampToValueAtTime(0.0001, now + t + 0.11 + Math.random() * 0.09);
+    }
+    staticGain.gain.setValueAtTime(0.026, now);
+    staticGain.gain.exponentialRampToValueAtTime(0.0001, now + phraseLength);
+    carrier.connect(formant).connect(gate).connect(this.master);
+    staticSource.connect(staticFilter).connect(staticGain).connect(this.master);
+    carrier.start(now);
+    carrier.stop(now + phraseLength);
+    staticSource.start(now);
+    staticSource.stop(now + phraseLength);
   }
 
   ensureContext() {
@@ -1493,8 +1625,9 @@ function animate() {
   updateCamera(delta);
   updateExplosions(delta);
   updatePyramidBeacons(delta);
+  updateDroneOrbs(delta);
   updateHUD(delta);
-  audio.update(tank.speed);
+  audio.update(delta);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
@@ -1527,6 +1660,7 @@ function updateHUD(delta) {
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
   hud.destroyed.textContent = destroyedEnemies;
   hud.fuel.textContent = Math.max(0, Math.ceil(fuel));
+  hud.ammo.textContent = ammo;
   statusTimer -= delta;
   if (statusTimer <= 0) {
     currentStatus = (currentStatus + 1) % poeticStatuses.length;
@@ -1540,7 +1674,7 @@ function updateFuel(delta) {
     fuel = 0;
     tank.speed = moveToward(tank.speed, 0, tank.friction * delta * 2.6);
     if (statusTimer <= 0.2) {
-      hud.status.textContent = "Fuel exhausted. Find a refueling tower.";
+      hud.status.textContent = "Fuel exhausted. Find a resupply tower.";
       statusTimer = 2.2;
     }
     return;
@@ -1552,9 +1686,10 @@ function updateFuel(delta) {
   }
 }
 
-function refillFuel() {
+function resupplyTank() {
   fuel = CONFIG.maxFuel;
-  hud.status.textContent = "Refueling tower connected. Fuel restored.";
+  ammo = CONFIG.maxAmmo;
+  hud.status.textContent = "Resupply tower connected. Fuel and ammo restored.";
   statusTimer = 4;
 }
 function emergencyClearAroundTank() {
