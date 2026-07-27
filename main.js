@@ -20,6 +20,10 @@ const CONFIG = {
   flightLevelSpeed: 2.4,
   maxFlightPitch: 0.38,
   maxFlightRoll: 0.52,
+  maxFuel: 1000,
+  fuelDrainPerMinute: 50,
+  refuelTowerCount: 12,
+  refuelTowerRadius: 8.5,
   tankCollisionRadius: 5.2,
   projectileCooldown: 0.085,
   projectileRadius: 0.34,
@@ -79,6 +83,7 @@ const hud = {
   turret: document.querySelector("#turret-angle"),
   distance: document.querySelector("#distance"),
   destroyed: document.querySelector("#destroyed"),
+  fuel: document.querySelector("#fuel"),
   status: document.querySelector("#status"),
   musicButton: document.querySelector("#music-button")
 };
@@ -101,6 +106,7 @@ let destroyedEnemies = 0;
 let distanceTravelled = 0;
 let statusTimer = 0;
 let currentStatus = 0;
+let fuel = CONFIG.maxFuel;
 
 const materials = {
   tankDark: new THREE.MeshStandardMaterial({ color: 0x181a20, metalness: 0.72, roughness: 0.42 }),
@@ -132,6 +138,7 @@ let tank;
 let projectiles;
 let enemies;
 let skyDrones;
+let refuelTowers;
 let audio;
 const explosionEffects = [];
 const universeTargets = [];
@@ -466,13 +473,13 @@ class Tank {
     parent.add(this.group);
   }
 
-  update(delta, keys, terrainManager) {
+  update(delta, keys, terrainManager, hasFuel = true) {
     const pitchMode = keys.KeyY;
     const targetHoverYBeforeMove = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
     const airborne = this.group.position.y > targetHoverYBeforeMove + 0.35 || this.verticalVelocity > 0.1;
-    const bankMode = keys.KeyB && airborne;
-    const forwardInput = keys.ArrowUp && !pitchMode ? 1 : 0;
-    const reverseInput = keys.ArrowDown && !pitchMode ? 1 : 0;
+    const bankMode = hasFuel && keys.KeyB && airborne;
+    const forwardInput = hasFuel && keys.ArrowUp && !pitchMode ? 1 : 0;
+    const reverseInput = hasFuel && keys.ArrowDown && !pitchMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
 
     if (forwardInput) this.speed += this.acceleration * delta;
@@ -484,8 +491,9 @@ class Tank {
       this.speed *= 0.985;
       this.bumpTimer -= delta;
     }
-    const altitudeRelease = keys.KeyF && (keys.ShiftLeft || keys.ShiftRight);
-    const altitudeClimb = keys.KeyF && !altitudeRelease;
+    const altitudeRelease = hasFuel && keys.KeyF && (keys.ShiftLeft || keys.ShiftRight);
+    const altitudeClimb = hasFuel && keys.KeyF && !altitudeRelease;
+    if (!hasFuel) this.altitudeHoldY = null;
     if (altitudeRelease) {
       this.releaseAltitudeHold();
     } else if (altitudeClimb) {
@@ -523,8 +531,8 @@ class Tank {
       if (keys.ArrowDown) this.turretPitch -= this.turretPitchSpeed * delta;
     } else {
       const turnScale = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0.25, 1);
-      if (keys.ArrowLeft) this.group.rotation.y += this.turnSpeed * turnScale * delta;
-      if (keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * delta;
+      if (hasFuel && keys.ArrowLeft) this.group.rotation.y += this.turnSpeed * turnScale * delta;
+      if (hasFuel && keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * delta;
     }
 
     if (!bankMode) {
@@ -1112,6 +1120,95 @@ class SkyDrone {
   }
 }
 
+class RefuelTowerManager {
+  constructor(parent, terrainManager) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.towers = [];
+    this.spawnTowers();
+  }
+
+  spawnTowers() {
+    for (let i = 0; i < CONFIG.refuelTowerCount; i++) {
+      const angle = (i / CONFIG.refuelTowerCount) * Math.PI * 2 + seededRandom(i * 41) * 0.35;
+      const ring = i % 3;
+      const radius = 120 + ring * 105 + seededRandom(i * 53) * 52;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const tower = new RefuelTower(i, this.terrain, x, z);
+      this.parent.add(tower.group);
+      registerUniverseTarget(tower.group, CONFIG.refuelTowerRadius + 2.5);
+      this.towers.push(tower);
+    }
+  }
+
+  update(delta, tankRef) {
+    for (const tower of this.towers) {
+      if (!tower.group.parent) continue;
+      tower.update(delta);
+      const dx = tankRef.group.position.x - tower.group.position.x;
+      const dz = tankRef.group.position.z - tower.group.position.z;
+      const horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+      const aboveBase = tankRef.group.position.y >= tower.group.position.y - 2;
+      const belowTop = tankRef.group.position.y <= tower.group.position.y + tower.height + 6;
+      if (horizontalDistance <= CONFIG.refuelTowerRadius && aboveBase && belowTop) {
+        refillFuel();
+        tower.pulse = 1;
+      }
+    }
+  }
+}
+
+class RefuelTower {
+  constructor(index, terrainManager, x, z) {
+    this.index = index;
+    this.group = new THREE.Group();
+    this.height = 22 + (index % 4) * 3;
+    this.pulse = 0;
+    const y = terrainManager.getHeightAt(x, z);
+    this.group.position.set(x, y, z);
+    this.build();
+  }
+
+  build() {
+    const towerMat = new THREE.MeshStandardMaterial({ color: 0x24313a, metalness: 0.72, roughness: 0.32 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x101820, metalness: 0.78, roughness: 0.36 });
+    this.glowMat = new THREE.MeshBasicMaterial({ color: 0x35f4ff, transparent: true, opacity: 0.58, depthWrite: false });
+    this.coreMat = new THREE.MeshBasicMaterial({ color: 0x93fff5, transparent: true, opacity: 0.72, depthWrite: false });
+
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.9, this.height, 8), towerMat);
+    stem.position.y = this.height * 0.5;
+    stem.castShadow = true;
+    this.group.add(stem);
+
+    const gate = new THREE.Mesh(new THREE.TorusGeometry(CONFIG.refuelTowerRadius, 0.16, 8, 48), this.glowMat);
+    gate.position.y = 6.2;
+    gate.rotation.x = Math.PI * 0.5;
+    this.group.add(gate);
+    this.gate = gate;
+
+    const top = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.0, 4.2), darkMat);
+    top.position.y = this.height + 0.65;
+    top.castShadow = true;
+    this.group.add(top);
+
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.82, 12, 8), this.coreMat);
+    beacon.position.y = this.height + 1.55;
+    this.group.add(beacon);
+    this.beacon = beacon;
+  }
+
+  update(delta) {
+    this.pulse = Math.max(0, this.pulse - delta * 1.8);
+    const blink = 0.45 + Math.sin(performance.now() * 0.004 + this.index) * 0.22;
+    const refillFlash = this.pulse * 0.55;
+    this.glowMat.opacity = 0.42 + blink * 0.2 + refillFlash;
+    this.coreMat.opacity = 0.55 + blink * 0.26 + refillFlash;
+    const scale = 1 + this.pulse * 0.16;
+    this.gate.scale.set(scale, scale, scale);
+    this.beacon.scale.setScalar(1 + this.pulse * 0.55);
+  }
+}
 class ProjectileManager {
   constructor(parent) {
     this.parent = parent;
@@ -1373,6 +1470,7 @@ tank = new Tank(scene);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 skyDrones = new SkyDroneManager(scene);
+refuelTowers = new RefuelTowerManager(scene, terrain);
 audio = new AudioManager();
 
 terrain.update(tank.group.position);
@@ -1383,12 +1481,14 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.045);
   const previous = tank.group.position.clone();
 
-  tank.update(delta, input, terrain);
+  updateFuel(delta);
+  tank.update(delta, input, terrain, fuel > 0);
   const moved = tank.group.position.distanceTo(previous);
   distanceTravelled += moved;
   terrain.update(tank.group.position);
   enemies.update(delta, tank);
   skyDrones.update(delta, tank);
+  refuelTowers.update(delta, tank);
   projectiles.update(delta, input, tank, enemies, skyDrones);
   updateCamera(delta);
   updateExplosions(delta);
@@ -1426,6 +1526,7 @@ function updateHUD(delta) {
   hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${Math.round(THREE.MathUtils.radToDeg(tank.turretPitch))} deg`;
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
   hud.destroyed.textContent = destroyedEnemies;
+  hud.fuel.textContent = Math.max(0, Math.ceil(fuel));
   statusTimer -= delta;
   if (statusTimer <= 0) {
     currentStatus = (currentStatus + 1) % poeticStatuses.length;
@@ -1434,6 +1535,28 @@ function updateHUD(delta) {
   }
 }
 
+function updateFuel(delta) {
+  if (fuel <= 0) {
+    fuel = 0;
+    tank.speed = moveToward(tank.speed, 0, tank.friction * delta * 2.6);
+    if (statusTimer <= 0.2) {
+      hud.status.textContent = "Fuel exhausted. Find a refueling tower.";
+      statusTimer = 2.2;
+    }
+    return;
+  }
+  fuel = Math.max(0, fuel - (CONFIG.fuelDrainPerMinute / 60) * delta);
+  if (fuel === 0) {
+    hud.status.textContent = "Fuel exhausted. Movement systems offline.";
+    statusTimer = 4;
+  }
+}
+
+function refillFuel() {
+  fuel = CONFIG.maxFuel;
+  hud.status.textContent = "Refueling tower connected. Fuel restored.";
+  statusTimer = 4;
+}
 function emergencyClearAroundTank() {
   if (!tank || !terrain || !enemies) return;
   const center = tank.group.position;
