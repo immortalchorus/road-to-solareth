@@ -1047,6 +1047,8 @@ class SkyDroneManager {
   }
 
   spawn(tankRef) {
+    const activeOrbs = droneOrbs.filter(orb => orb.group.parent);
+    if (!activeOrbs.length) return;
     const index = this.drones.length;
     const angle = seededRandom(performance.now() * 0.001 + index * 47) * Math.PI * 2;
     const distance = 180 + seededRandom(index * 97 + Math.floor(tankRef.group.position.x)) * 260;
@@ -1056,9 +1058,8 @@ class SkyDroneManager {
       tankRef.group.position.y + 56 + seededRandom(index * 31) * 55,
       tankRef.group.position.z + Math.sin(angle) * distance
     );
-    const activeOrbs = droneOrbs.filter(orb => orb.group.parent);
-    const orb = activeOrbs.length ? activeOrbs[index % activeOrbs.length] : null;
-    if (orb) {
+    const orb = activeOrbs[index % activeOrbs.length];
+    {
       const portalSign = index % 2 === 0 ? -1 : 1;
       const portalY = orb.shell.geometry.parameters.radius * 0.96 * portalSign;
       const exitY = orb.shell.geometry.parameters.radius * 1.62 * portalSign;
@@ -1068,8 +1069,6 @@ class SkyDroneManager {
       drone.launchTime = 2.45;
       drone.launchDuration = 2.45;
       drone.group.position.copy(drone.launchFrom);
-    } else {
-      drone.group.position.copy(patrolPosition);
     }
     drone.anchor.copy(tankRef.group.position);
     drone.orbitRadius = distance;
@@ -1537,6 +1536,35 @@ class AudioManager {
   }
 
   playExplosion() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    const now = ctx.currentTime;
+
+    const thump = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thump.type = "triangle";
+    thump.frequency.setValueAtTime(95, now);
+    thump.frequency.exponentialRampToValueAtTime(42, now + 0.16);
+    thumpGain.gain.setValueAtTime(0.0001, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.46, now + 0.01);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+    thump.connect(thumpGain).connect(this.master);
+    thump.start(now);
+    thump.stop(now + 0.26);
+
+    const snap = ctx.createBufferSource();
+    snap.buffer = this.createNoiseBuffer(0.16);
+    const snapFilter = ctx.createBiquadFilter();
+    const snapGain = ctx.createGain();
+    snapFilter.type = "highpass";
+    snapFilter.frequency.setValueAtTime(720, now);
+    snapGain.gain.setValueAtTime(0.0001, now);
+    snapGain.gain.exponentialRampToValueAtTime(0.28, now + 0.006);
+    snapGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    snap.connect(snapFilter).connect(snapGain).connect(this.master);
+    snap.start(now);
+    snap.stop(now + 0.17);
   }
 
   playRadioChatter() {
