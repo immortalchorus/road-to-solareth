@@ -1699,7 +1699,7 @@ class AudioManager {
     const thrustLevel = input.KeyF && !(input.ShiftLeft || input.ShiftRight) ? 0.72 : 0;
     const motionLevel = Math.max(driveLevel, verticalLevel, thrustLevel);
     const targetGain = motionLevel > 0.025 ? (0.03 + motionLevel * 0.075) * this.rotorVolume : 0;
-    const targetPulse = 5.2 + motionLevel * 3.2;
+    const targetPulse = 14 + motionLevel * 11;
     this.rotorOutput.gain.setTargetAtTime(targetGain, ctx.currentTime, targetGain > 0 ? 0.12 : 0.28);
     this.rotorPulse.frequency.setTargetAtTime(targetPulse, ctx.currentTime, 0.18);
   }
@@ -1716,30 +1716,34 @@ class AudioManager {
     const rotorFilter = ctx.createBiquadFilter();
     const air = ctx.createBufferSource();
     const airFilter = ctx.createBiquadFilter();
+    const airCeiling = ctx.createBiquadFilter();
     const airGain = ctx.createGain();
 
     mix.gain.value = 0;
-    pulseGain.gain.value = 0.64;
-    pulse.type = "sine";
-    pulse.frequency.value = 5.2;
-    pulseDepth.gain.value = 0.34;
+    pulseGain.gain.value = 0.52;
+    pulse.type = "square";
+    pulse.frequency.value = 14;
+    pulseDepth.gain.value = 0.48;
     lowRotor.type = "triangle";
     lowRotor.frequency.value = 54;
-    lowRotorGain.gain.value = 0.58;
+    lowRotorGain.gain.value = 0.12;
     rotorFilter.type = "lowpass";
     rotorFilter.frequency.value = 190;
     rotorFilter.Q.value = 1.1;
 
     air.buffer = this.createLoopNoiseBuffer(1.4);
     air.loop = true;
-    airFilter.type = "bandpass";
-    airFilter.frequency.value = 135;
-    airFilter.Q.value = 0.72;
-    airGain.gain.value = 0.22;
+    airFilter.type = "highpass";
+    airFilter.frequency.value = 360;
+    airFilter.Q.value = 0.4;
+    airCeiling.type = "lowpass";
+    airCeiling.frequency.value = 3600;
+    airCeiling.Q.value = 0.35;
+    airGain.gain.value = 0.86;
 
     pulse.connect(pulseDepth).connect(pulseGain.gain);
     lowRotor.connect(lowRotorGain).connect(rotorFilter).connect(pulseGain);
-    air.connect(airFilter).connect(airGain).connect(pulseGain);
+    air.connect(airFilter).connect(airCeiling).connect(airGain).connect(pulseGain);
     pulseGain.connect(mix).connect(this.master);
     pulse.start();
     lowRotor.start();
@@ -1904,10 +1908,8 @@ class AudioManager {
     const sampleRate = this.context.sampleRate;
     const buffer = this.context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
     const data = buffer.getChannelData(0);
-    let smoothed = 0;
     for (let i = 0; i < data.length; i++) {
-      smoothed = smoothed * 0.86 + (Math.random() * 2 - 1) * 0.14;
-      data[i] = smoothed;
+      data[i] = (Math.random() * 2 - 1) * 0.78;
     }
     return buffer;
   }

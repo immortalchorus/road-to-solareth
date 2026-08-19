@@ -212,8 +212,8 @@ body {
 
 #rotor-volume-panel {
   position: fixed;
-  right: 18px;
-  top: 72px;
+  left: calc(50% + 360px);
+  bottom: 18px;
   display: grid;
   grid-template-columns: auto 42px;
   width: 210px;
@@ -293,6 +293,14 @@ body {
   color: #8ff0ff;
 }
 
+@media (min-width: 621px) and (max-width: 1180px) {
+  #rotor-volume-panel {
+    left: auto;
+    right: 18px;
+    bottom: 82px;
+  }
+}
+
 @media (max-width: 620px) {
   #hud {
     top: 12px;
@@ -312,10 +320,10 @@ body {
     min-height: 38px;
   }
   #rotor-volume-panel {
-    top: 62px;
-    right: 12px;
-    width: 150px;
-    grid-template-columns: auto 38px;
+    left: 118px;
+    bottom: 12px;
+    width: 130px;
+    grid-template-columns: auto 34px;
     padding: 8px 10px;
     font-size: 12px;
   }
