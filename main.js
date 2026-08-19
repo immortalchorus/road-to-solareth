@@ -47,6 +47,11 @@ const CONFIG = {
   enemySpawnChance: 0.42,
   maxEnemies: 5,
   skyDroneCount: 7,
+  maxHitPoints: 100,
+  enemyTankHealth: 5,
+  enemyTankDamage: 10,
+  enemyTankFireInterval: 2.1,
+  enemyTankProjectileSpeed: 58,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -87,8 +92,14 @@ const hud = {
   destroyed: document.querySelector("#destroyed"),
   fuel: document.querySelector("#fuel"),
   ammo: document.querySelector("#ammo"),
+  hitPoints: document.querySelector("#hit-points"),
   status: document.querySelector("#status"),
-  musicButton: document.querySelector("#music-button")
+  musicButton: document.querySelector("#music-button"),
+  crosshair: document.querySelector("#crosshair"),
+  hitMarker: document.querySelector("#hit-marker"),
+  damageNumbers: document.querySelector("#damage-numbers"),
+  damageFlash: document.querySelector("#damage-flash"),
+  runSummary: document.querySelector("#run-summary")
 };
 
 const poeticStatuses = [
@@ -111,6 +122,17 @@ let statusTimer = 0;
 let currentStatus = 0;
 let fuel = CONFIG.maxFuel;
 let ammo = CONFIG.maxAmmo;
+let hitPoints = CONFIG.maxHitPoints;
+let gameEnded = false;
+const runStats = {
+  dronesDestroyed: 0,
+  shotsFired: 0,
+  shotsHit: 0,
+  longestShot: 0,
+  ricochetKills: 0,
+  objectsDestroyed: 0,
+  flightTime: 0
+};
 
 const materials = {
   tankDark: new THREE.MeshStandardMaterial({ color: 0x181a20, metalness: 0.72, roughness: 0.42 }),
@@ -145,6 +167,7 @@ let skyDrones;
 let refuelTowers;
 let audio;
 const explosionEffects = [];
+const impactEffects = [];
 const universeTargets = [];
 const pyramidBeacons = [];
 const droneOrbs = [];
@@ -182,6 +205,7 @@ window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
 });
 hud.musicButton.addEventListener("click", () => audio.start());
+document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 
 function initLights() {
   const hemi = new THREE.HemisphereLight(0xffd1a6, 0x2f2038, 1.8);
@@ -926,9 +950,26 @@ class EnemyManager {
     this.parent = parent;
     this.enemies = [];
     this.timer = 3;
+    this.enemyTank = null;
+    this.enemyTankRespawn = 0;
+    this.hostileShots = [];
   }
 
   update(delta, tankRef) {
+    if (gameEnded) return;
+    if (!this.enemyTank) {
+      this.enemyTankRespawn -= delta;
+      if (this.enemyTankRespawn <= 0) this.spawnEnemyTank(tankRef);
+    } else {
+      this.enemyTank.update(delta, tankRef, this);
+      if (this.enemyTank.dead) {
+        this.parent.remove(this.enemyTank.group);
+        disposeObject(this.enemyTank.group);
+        this.enemyTank = null;
+        this.enemyTankRespawn = 10;
+      }
+    }
+    this.updateHostileShots(delta, tankRef);
     this.timer -= delta;
     if (this.timer <= 0) {
       this.timer = CONFIG.enemySpawnEvery + Math.random() * 5;
@@ -961,6 +1002,115 @@ class EnemyManager {
     enemy.group.position.copy(pos);
     this.parent.add(enemy.group);
     this.enemies.push(enemy);
+  }
+
+  spawnEnemyTank(tankRef) {
+    const angle = tankRef.group.rotation.y + Math.PI + (Math.random() - 0.5) * 1.4;
+    const distance = 120 + Math.random() * 55;
+    this.enemyTank = new GroundEnemyTank();
+    this.enemyTank.group.position.set(
+      tankRef.group.position.x + Math.sin(angle) * distance,
+      0,
+      tankRef.group.position.z + Math.cos(angle) * distance
+    );
+    this.enemyTank.group.position.y = terrain.getHeightAt(this.enemyTank.group.position.x, this.enemyTank.group.position.z) + 1.2;
+    this.parent.add(this.enemyTank.group);
+    hud.status.textContent = "Enemy armor detected on the ground.";
+    statusTimer = 4;
+  }
+
+  fireEnemyShell(position, direction) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.46, 10, 7),
+      new THREE.MeshBasicMaterial({ color: 0xff2738 })
+    );
+    mesh.position.copy(position);
+    this.parent.add(mesh);
+    this.hostileShots.push({ mesh, velocity: direction.multiplyScalar(CONFIG.enemyTankProjectileSpeed), life: 5 });
+  }
+
+  updateHostileShots(delta, tankRef) {
+    for (let i = this.hostileShots.length - 1; i >= 0; i--) {
+      const shell = this.hostileShots[i];
+      shell.life -= delta;
+      shell.mesh.position.addScaledVector(shell.velocity, delta);
+      const ground = terrain.getHeightAt(shell.mesh.position.x, shell.mesh.position.z);
+      if (shell.mesh.position.y <= ground + 0.35) shell.life = -1;
+      if (shell.life > 0 && shell.mesh.position.distanceTo(tankRef.group.position) <= CONFIG.tankCollisionRadius + 0.8) {
+        damagePlayer(CONFIG.enemyTankDamage);
+        createExplosion(shell.mesh.position, { radius: 0.7, growth: 11, life: 0.32, color: 0xff2418, coreColor: 0xffd7a0 });
+        shell.life = -1;
+      }
+      if (shell.life <= 0) {
+        this.parent.remove(shell.mesh);
+        disposeObject(shell.mesh);
+        this.hostileShots.splice(i, 1);
+      }
+    }
+  }
+}
+
+class GroundEnemyTank {
+  constructor() {
+    this.group = new THREE.Group();
+    this.turret = new THREE.Group();
+    this.health = CONFIG.enemyTankHealth;
+    this.dead = false;
+    this.collisionRadius = 6.5;
+    this.speed = 7;
+    this.fireTimer = 1.2;
+    this.build();
+  }
+
+  build() {
+    const armor = new THREE.MeshStandardMaterial({ color: 0x512428, metalness: 0.78, roughness: 0.38 });
+    const addBox = (size, position, material = armor, parent = this.group) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+      mesh.position.set(...position);
+      parent.add(mesh);
+      return mesh;
+    };
+    addBox([7.6, 1.25, 10.2], [0, 1.15, 0]);
+    addBox([8.8, 0.75, 2.0], [0, 0.45, -3.8], materials.darkMetal);
+    addBox([8.8, 0.75, 2.0], [0, 0.45, 3.8], materials.darkMetal);
+    this.turret.position.set(0, 2.1, -0.4);
+    addBox([4.2, 1.25, 4.2], [0, 0.55, 0], armor, this.turret);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 8.5, 12), materials.darkMetal);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.55, -5.7);
+    this.turret.add(barrel);
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.24, 0.18), materials.redEye);
+    eye.position.set(0, 1.3, -2.15);
+    this.turret.add(eye);
+    this.group.add(this.turret);
+  }
+
+  update(delta, tankRef, manager) {
+    const toPlayer = tankRef.group.position.clone().sub(this.group.position);
+    const distance = toPlayer.length();
+    const flatDirection = toPlayer.clone().setY(0).normalize();
+    if (distance > 78 && distance < 260) this.group.position.addScaledVector(flatDirection, this.speed * delta);
+    this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + 1.2;
+    this.group.lookAt(tankRef.group.position.x, this.group.position.y, tankRef.group.position.z);
+    this.fireTimer -= delta;
+    if (distance < 245 && this.fireTimer <= 0) {
+      this.fireTimer = CONFIG.enemyTankFireInterval + Math.random() * 0.7;
+      const muzzle = this.turret.localToWorld(new THREE.Vector3(0, 0.55, -9.8));
+      const direction = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.1, 0)).sub(muzzle).normalize();
+      manager.fireEnemyShell(muzzle, direction);
+    }
+  }
+
+  receiveHit(shot) {
+    if (this.dead) return;
+    this.health--;
+    registerPlayerHit(shot, this.group.position, 20, this.health <= 0 ? "object" : "hit");
+    if (this.health <= 0) {
+      this.dead = true;
+      destroyedEnemies++;
+      createExplosion(this.group.position, { radius: 2.8, growth: 30, life: 0.9, color: 0xff281b, coreColor: 0xffd7aa });
+      audio.playExplosion();
+    }
   }
 }
 
@@ -1019,6 +1169,7 @@ class Enemy {
   }
 
   destroy() {
+    if (this.dead) return;
     this.dead = true;
     destroyedEnemies++;
     createExplosion(this.group.position);
@@ -1097,12 +1248,11 @@ class SkyDroneManager {
       const t = pathLengthSq > 0.001 ? THREE.MathUtils.clamp(toDrone.dot(path) / pathLengthSq, 0, 1) : 0;
       const closest = start.clone().addScaledVector(path, t);
       if (closest.distanceTo(drone.group.position) <= drone.collisionRadius + radius) {
-        drone.destroy();
-        return true;
+        return drone;
       }
     }
 
-    return false;
+    return null;
   }
 
   acquireHomingTarget(origin, direction) {
@@ -1192,8 +1342,10 @@ class SkyDrone {
   }
 
   destroy() {
+    if (this.dead) return;
     this.dead = true;
     destroyedEnemies++;
+    runStats.dronesDestroyed++;
     createExplosion(this.group.position, {
       color: 0xff2a1f,
       opacity: 0.92,
@@ -1357,22 +1509,35 @@ class ProjectileManager {
 
       for (const enemy of enemyManager.enemies) {
         if (!enemy.dead && shot.mesh.position.distanceTo(enemy.group.position) < enemy.collisionRadius + shot.radius) {
+          registerPlayerHit(shot, enemy.group.position, 100, "object");
           enemy.destroy();
           shot.life = -1;
           break;
         }
       }
 
-      if (shot.life > 0 && skyDroneManager.hitDroneAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
+      if (shot.life > 0 && enemyManager.enemyTank && !enemyManager.enemyTank.dead && shot.mesh.position.distanceTo(enemyManager.enemyTank.group.position) < enemyManager.enemyTank.collisionRadius + shot.radius) {
+        enemyManager.enemyTank.receiveHit(shot);
         shot.life = -1;
       }
 
+      if (shot.life > 0) {
+        const droneHit = skyDroneManager.hitDroneAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius);
+        if (droneHit) {
+          registerPlayerHit(shot, droneHit.group.position, 100, "drone");
+          droneHit.destroy();
+          shot.life = -1;
+        }
+      }
+
       if (shot.life > 0 && terrain.hitDestructible(shot.mesh.position, shot.radius)) {
+        registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
         audio.playExplosion();
       }
 
       if (shot.life > 0 && hitUniverseTarget(shot.mesh.position, shot.radius)) {
+        registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
         audio.playExplosion();
       }
@@ -1408,8 +1573,10 @@ class ProjectileManager {
       bounces: 0,
       life: target ? CONFIG.homingLife : 2.8,
       previousPosition: position.clone(),
+      origin: position.clone(),
       radius: CONFIG.projectileCollisionRadius
     });
+    runStats.shotsFired++;
     ammo = Math.max(0, ammo - 1);
     audio.playFire();
   }
@@ -1453,20 +1620,29 @@ class ProjectileManager {
       bounces: 0,
       life: 7,
       previousPosition: position.clone(),
+      origin: position.clone(),
       radius: CONFIG.bombRadius
     });
   }
 
   detonateBomb(position, enemyManager, skyDroneManager) {
     createExplosion(position, { radius: 2.8, growth: 34, life: 0.85, color: 0xff2318, opacity: 0.9, coreColor: 0xfff1c6 });
-    terrain.destroyNear(position, 24);
-    destroyUniverseNear(position, 42);
+    let destroyedByBlast = terrain.destroyNear(position, 24);
+    destroyedByBlast += destroyUniverseNear(position, 42);
     for (const enemy of enemyManager.enemies) {
-      if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + 24) enemy.destroy();
+      if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + 24) {
+        enemy.destroy();
+        destroyedByBlast++;
+      }
+    }
+    if (enemyManager.enemyTank && !enemyManager.enemyTank.dead && enemyManager.enemyTank.group.position.distanceTo(position) <= enemyManager.enemyTank.collisionRadius + 24) {
+      enemyManager.enemyTank.health = 1;
+      enemyManager.enemyTank.receiveHit({ kind: "bomb", origin: position, direction: new THREE.Vector3(0, -1, 0), bounces: 0 });
     }
     for (const drone of skyDroneManager.drones) {
       if (!drone.dead && drone.group.position.distanceTo(position) <= drone.collisionRadius + 28) drone.destroy();
     }
+    runStats.objectsDestroyed += destroyedByBlast;
     audio.playExplosion();
   }
 
@@ -1567,6 +1743,22 @@ class AudioManager {
     snap.stop(now + 0.17);
   }
 
+  playHitMarker() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const ping = ctx.createOscillator();
+    const gain = ctx.createGain();
+    ping.type = "square";
+    ping.frequency.setValueAtTime(1180, now);
+    ping.frequency.exponentialRampToValueAtTime(720, now + 0.055);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+    ping.connect(gain).connect(this.master);
+    ping.start(now);
+    ping.stop(now + 0.075);
+  }
+
   playRadioChatter() {
     const ctx = this.ensureContext();
     if (!ctx) return;
@@ -1649,21 +1841,26 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.045);
   const previous = tank.group.position.clone();
 
-  updateFuel(delta);
-  tank.update(delta, input, terrain, fuel > 0);
-  const moved = tank.group.position.distanceTo(previous);
-  distanceTravelled += moved;
-  terrain.update(tank.group.position);
-  enemies.update(delta, tank);
-  skyDrones.update(delta, tank);
-  refuelTowers.update(delta, tank);
-  projectiles.update(delta, input, tank, enemies, skyDrones);
-  updateCamera(delta);
+  if (!gameEnded) {
+    updateFuel(delta);
+    tank.update(delta, input, terrain, fuel > 0);
+    const moved = tank.group.position.distanceTo(previous);
+    distanceTravelled += moved;
+    const normalHoverY = terrain.getHeightAt(tank.group.position.x, tank.group.position.z) + CONFIG.tankHoverHeight;
+    if (tank.group.position.y > normalHoverY + 1) runStats.flightTime += delta;
+    terrain.update(tank.group.position);
+    enemies.update(delta, tank);
+    skyDrones.update(delta, tank);
+    refuelTowers.update(delta, tank);
+    projectiles.update(delta, input, tank, enemies, skyDrones);
+    updateCamera(delta);
+    updateHUD(delta);
+    audio.update(delta);
+  }
   updateExplosions(delta);
+  updateImpactEffects(delta);
   updatePyramidBeacons(delta);
   updateDroneOrbs(delta);
-  updateHUD(delta);
-  audio.update(delta);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
@@ -1697,6 +1894,8 @@ function updateHUD(delta) {
   hud.destroyed.textContent = destroyedEnemies;
   hud.fuel.textContent = Math.max(0, Math.ceil(fuel));
   hud.ammo.textContent = ammo;
+  hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
+  hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
   statusTimer -= delta;
   if (statusTimer <= 0) {
     currentStatus = (currentStatus + 1) % poeticStatuses.length;
@@ -1725,7 +1924,8 @@ function updateFuel(delta) {
 function resupplyTank() {
   fuel = CONFIG.maxFuel;
   ammo = CONFIG.maxAmmo;
-  hud.status.textContent = "Resupply tower connected. Fuel and ammo restored.";
+  hitPoints = CONFIG.maxHitPoints;
+  hud.status.textContent = "Resupply tower connected. Fuel, ammo, and armor restored.";
   statusTimer = 4;
 }
 function emergencyClearAroundTank() {
@@ -1836,6 +2036,119 @@ function createExplosion(position, options = {}) {
   }
   scene.add(group);
   explosionEffects.push({ group, sphere, life, maxLife: life, growth, opacity });
+}
+
+function registerPlayerHit(shot, position, damage, targetType) {
+  const isBullet = shot.kind !== "bomb";
+  if (isBullet) {
+    runStats.shotsHit++;
+    const shotDistance = shot.origin ? shot.origin.distanceTo(position) : 0;
+    runStats.longestShot = Math.max(runStats.longestShot, shotDistance);
+    if (shot.bounces > 0 && (targetType === "drone" || targetType === "object")) runStats.ricochetKills++;
+  }
+  if (targetType === "object") runStats.objectsDestroyed++;
+  flashHitFeedback();
+  showDamageNumber(position, damage);
+  createImpactSparks(position, shot.direction || new THREE.Vector3(0, 1, 0));
+  audio.playHitMarker();
+}
+
+function flashHitFeedback() {
+  hud.crosshair.classList.remove("flash");
+  hud.hitMarker.classList.remove("active");
+  void hud.hitMarker.offsetWidth;
+  hud.crosshair.classList.add("flash");
+  hud.hitMarker.classList.add("active");
+  window.setTimeout(() => {
+    hud.crosshair.classList.remove("flash");
+    hud.hitMarker.classList.remove("active");
+  }, 130);
+}
+
+function showDamageNumber(position, damage) {
+  const projected = position.clone().project(camera);
+  if (projected.z < -1 || projected.z > 1) return;
+  const number = document.createElement("span");
+  number.className = "damage-number";
+  number.textContent = `-${damage}`;
+  number.style.left = `${(projected.x * 0.5 + 0.5) * window.innerWidth}px`;
+  number.style.top = `${(-projected.y * 0.5 + 0.5) * window.innerHeight}px`;
+  hud.damageNumbers.appendChild(number);
+  window.setTimeout(() => number.remove(), 800);
+}
+
+function createImpactSparks(position, direction) {
+  while (impactEffects.length >= 10) {
+    const oldest = impactEffects.shift();
+    scene.remove(oldest.group);
+    disposeObject(oldest.group);
+  }
+  const group = new THREE.Group();
+  group.position.copy(position);
+  const sparks = [];
+  for (let i = 0; i < 7; i++) {
+    const spark = new THREE.Mesh(
+      new THREE.SphereGeometry(0.11, 5, 4),
+      new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffe49a : 0xff5a24, transparent: true, opacity: 1 })
+    );
+    const velocity = direction.clone().multiplyScalar(-5 - Math.random() * 5);
+    velocity.x += (Math.random() - 0.5) * 14;
+    velocity.y += 4 + Math.random() * 10;
+    velocity.z += (Math.random() - 0.5) * 14;
+    group.add(spark);
+    sparks.push({ mesh: spark, velocity });
+  }
+  scene.add(group);
+  impactEffects.push({ group, sparks, life: 0.34, maxLife: 0.34 });
+}
+
+function updateImpactEffects(delta) {
+  for (let i = impactEffects.length - 1; i >= 0; i--) {
+    const effect = impactEffects[i];
+    effect.life -= delta;
+    for (const spark of effect.sparks) {
+      spark.velocity.y -= 24 * delta;
+      spark.mesh.position.addScaledVector(spark.velocity, delta);
+      spark.mesh.material.opacity = Math.max(0, effect.life / effect.maxLife);
+    }
+    if (effect.life <= 0) {
+      scene.remove(effect.group);
+      disposeObject(effect.group);
+      impactEffects.splice(i, 1);
+    }
+  }
+}
+
+function damagePlayer(amount) {
+  if (gameEnded) return;
+  hitPoints = Math.max(0, hitPoints - amount);
+  hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
+  hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
+  hud.damageFlash.classList.remove("active");
+  void hud.damageFlash.offsetWidth;
+  hud.damageFlash.classList.add("active");
+  window.setTimeout(() => hud.damageFlash.classList.remove("active"), 90);
+  hud.status.textContent = `Enemy shell hit. ${hitPoints} hit points remain.`;
+  statusTimer = 3;
+  tank.bumpTimer = 0.5;
+  if (hitPoints <= 0) endRun();
+}
+
+function endRun() {
+  if (gameEnded) return;
+  gameEnded = true;
+  input.fireHeld = false;
+  tank.speed = 0;
+  const accuracy = runStats.shotsFired > 0 ? Math.round(runStats.shotsHit / runStats.shotsFired * 100) : 0;
+  const minutes = Math.floor(runStats.flightTime / 60);
+  const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
+  document.querySelector("#stat-drones").textContent = runStats.dronesDestroyed;
+  document.querySelector("#stat-accuracy").textContent = `${accuracy}%`;
+  document.querySelector("#stat-longest").textContent = `${Math.round(runStats.longestShot)} m`;
+  document.querySelector("#stat-ricochets").textContent = runStats.ricochetKills;
+  document.querySelector("#stat-objects").textContent = runStats.objectsDestroyed;
+  document.querySelector("#stat-flight").textContent = `${minutes}:${seconds}`;
+  hud.runSummary.hidden = false;
 }
 
 function registerUniverseTarget(object, radius) {

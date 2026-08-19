@@ -29,6 +29,130 @@ body {
   touch-action: none;
 }
 
+#crosshair,
+#hit-marker {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+#crosshair::before,
+#crosshair::after,
+#crosshair i::before,
+#crosshair i::after {
+  position: absolute;
+  content: "";
+  background: rgba(190, 246, 255, 0.82);
+  box-shadow: 0 0 5px rgba(85, 225, 255, 0.72);
+  transition: background 80ms ease, box-shadow 80ms ease;
+}
+
+#crosshair::before,
+#crosshair::after { left: 16px; width: 2px; height: 8px; }
+#crosshair::before { top: 0; }
+#crosshair::after { bottom: 0; }
+#crosshair i::before,
+#crosshair i::after { top: 16px; width: 8px; height: 2px; }
+#crosshair i::before { left: 0; }
+#crosshair i::after { right: 0; }
+
+#crosshair.flash::before,
+#crosshair.flash::after,
+#crosshair.flash i::before,
+#crosshair.flash i::after {
+  background: #fff2a6;
+  box-shadow: 0 0 12px #ff5b32;
+}
+
+#hit-marker::before,
+#hit-marker::after {
+  position: absolute;
+  left: 16px;
+  top: 7px;
+  width: 2px;
+  height: 20px;
+  content: "";
+  background: #fff;
+  opacity: 0;
+  transform: rotate(45deg) scale(1.5);
+  transition: opacity 130ms ease, transform 130ms ease;
+  box-shadow: 0 0 8px #ff4d2e;
+}
+
+#hit-marker::after { transform: rotate(-45deg) scale(1.5); }
+#hit-marker.active::before { opacity: 1; transform: rotate(45deg) scale(1); }
+#hit-marker.active::after { opacity: 1; transform: rotate(-45deg) scale(1); }
+
+#damage-numbers {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.damage-number {
+  position: absolute;
+  color: #fff3a6;
+  font: 800 16px "Segoe UI", system-ui, sans-serif;
+  text-shadow: 0 0 6px #ff3b20, 0 2px 2px #000;
+  animation: damage-rise 760ms ease-out forwards;
+}
+
+@keyframes damage-rise {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(0.82); }
+  to { opacity: 0; transform: translate(-50%, -110px) scale(1.12); }
+}
+
+#damage-flash {
+  position: fixed;
+  inset: 0;
+  border: 0 solid rgba(255, 30, 22, 0);
+  box-shadow: inset 0 0 0 rgba(255, 20, 12, 0);
+  pointer-events: none;
+  transition: box-shadow 420ms ease, border-width 420ms ease;
+}
+
+#damage-flash.active {
+  border-width: 12px;
+  box-shadow: inset 0 0 85px rgba(255, 20, 12, 0.72);
+  transition: none;
+}
+
+#run-summary {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 5, 10, 0.76);
+  backdrop-filter: blur(8px);
+}
+
+#run-summary[hidden] { display: none; }
+
+.summary-panel {
+  width: min(480px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(255, 91, 50, 0.56);
+  border-radius: 8px;
+  background: rgba(20, 12, 18, 0.94);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58);
+}
+
+.summary-kicker { color: #ff7d5e; font-size: 13px; font-weight: 800; text-transform: uppercase; }
+.summary-panel h1 { margin: 4px 0 20px; color: #fff1d2; font-size: 30px; }
+.summary-panel dl { margin: 0 0 24px; }
+.summary-panel dl div { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.summary-panel dt { color: #c8bdba; }
+.summary-panel dd { margin: 0; color: #85f5ff; font-weight: 800; font-variant-numeric: tabular-nums; }
+#restart-button { width: 100%; min-height: 46px; border: 1px solid #ff7753; border-radius: 6px; background: #8f2b27; color: #fff; font: 800 15px "Segoe UI", system-ui, sans-serif; cursor: pointer; }
+#restart-button:hover, #restart-button:focus-visible { background: #b53b31; outline: 2px solid #8ff0ff; outline-offset: 2px; }
+
 #hud {
   position: fixed;
   top: 18px;
@@ -148,18 +272,24 @@ body {
   #music-button {
     top: auto;
     right: 12px;
-    bottom: 76px;
+    bottom: 12px;
+    min-height: 38px;
   }
   #fuel-panel {
     right: 12px;
-    bottom: 124px;
+    bottom: 62px;
     font-size: 13px;
   }
 
   #instructions {
-    bottom: 10px;
-    flex-direction: column;
-    gap: 2px;
-    text-align: center;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    transform: none;
+    padding: 9px 12px;
+  }
+
+  #instructions span {
+    display: none;
   }
 }

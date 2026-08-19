@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Road to Solareth</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="style.css?v=orb-only-drone-sfx-1">
+    <link rel="stylesheet" href="style.css?v=combat-feedback-1">
   </head>
   <body>
     <main id="game">
@@ -18,7 +18,29 @@
         <div>Turret: <span id="turret-angle">0</span></div>
         <div>Distance: <span id="distance">0.0 km</span></div>
         <div>Machines stilled: <span id="destroyed">0</span></div>
+        <div>Hit points: <span id="hit-points">100 / 100</span></div>
         <div id="status">Metallic orbs watch the red waste.</div>
+      </section>
+
+      <div id="crosshair" aria-hidden="true"><i></i><b></b></div>
+      <div id="hit-marker" aria-hidden="true"></div>
+      <div id="damage-numbers" aria-hidden="true"></div>
+      <div id="damage-flash" aria-hidden="true"></div>
+
+      <section id="run-summary" hidden>
+        <div class="summary-panel">
+          <div class="summary-kicker">Mission ended</div>
+          <h1>Run Statistics</h1>
+          <dl>
+            <div><dt>Drones destroyed</dt><dd id="stat-drones">0</dd></div>
+            <div><dt>Accuracy</dt><dd id="stat-accuracy">0%</dd></div>
+            <div><dt>Longest shot</dt><dd id="stat-longest">0 m</dd></div>
+            <div><dt>Ricochet kills</dt><dd id="stat-ricochets">0</dd></div>
+            <div><dt>Objects destroyed</dt><dd id="stat-objects">0</dd></div>
+            <div><dt>Flight time</dt><dd id="stat-flight">0:00</dd></div>
+          </dl>
+          <button id="restart-button" type="button">Start new run</button>
+        </div>
       </section>
 
       <section id="fuel-panel" aria-live="polite"><div>Fuel <span id="fuel">1000</span></div><div>Ammo <span id="ammo">1000</span></div></section>
@@ -32,7 +54,7 @@
     </main>
 
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-    <script src="main.js?v=orb-only-drone-sfx-1"></script>
+    <script src="main.js?v=combat-feedback-1"></script>
   </body>
 </html>
 
