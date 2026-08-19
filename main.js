@@ -52,6 +52,10 @@ const CONFIG = {
   enemyTankDamage: 10,
   enemyTankFireInterval: 2.1,
   enemyTankProjectileSpeed: 58,
+  escortDroneCount: 4,
+  escortDroneAmmo: 10,
+  escortDroneDamage: 2,
+  escortDroneProjectileSpeed: 68,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -960,6 +964,7 @@ class EnemyManager {
     this.enemyTank = null;
     this.enemyTankRespawn = 0;
     this.hostileShots = [];
+    this.escortDrones = [];
   }
 
   update(delta, tankRef) {
@@ -970,10 +975,24 @@ class EnemyManager {
     } else {
       this.enemyTank.update(delta, tankRef, this);
       if (this.enemyTank.dead) {
+        for (const escort of this.escortDrones) {
+          this.parent.remove(escort.group);
+          disposeObject(escort.group);
+        }
+        this.escortDrones.length = 0;
         this.parent.remove(this.enemyTank.group);
         disposeObject(this.enemyTank.group);
         this.enemyTank = null;
         this.enemyTankRespawn = 10;
+      }
+    }
+    for (let i = this.escortDrones.length - 1; i >= 0; i--) {
+      const escort = this.escortDrones[i];
+      escort.update(delta, tankRef, this.enemyTank, this);
+      if (escort.dead) {
+        this.parent.remove(escort.group);
+        disposeObject(escort.group);
+        this.escortDrones.splice(i, 1);
       }
     }
     this.updateHostileShots(delta, tankRef);
@@ -1022,6 +1041,13 @@ class EnemyManager {
     );
     this.enemyTank.group.position.y = terrain.getHeightAt(this.enemyTank.group.position.x, this.enemyTank.group.position.z) + 1.2;
     this.parent.add(this.enemyTank.group);
+    const escortCorners = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+    for (let i = 0; i < CONFIG.escortDroneCount; i++) {
+      const escort = new EscortDrone(i, escortCorners[i]);
+      escort.group.position.copy(this.enemyTank.group.position).add(new THREE.Vector3(escortCorners[i][0] * 10, 8, escortCorners[i][1] * 11));
+      this.parent.add(escort.group);
+      this.escortDrones.push(escort);
+    }
     hud.status.textContent = "Enemy armor detected on the ground.";
     statusTimer = 4;
   }
@@ -1033,7 +1059,19 @@ class EnemyManager {
     );
     mesh.position.copy(position);
     this.parent.add(mesh);
-    this.hostileShots.push({ mesh, velocity: direction.multiplyScalar(CONFIG.enemyTankProjectileSpeed), life: 5 });
+    this.hostileShots.push({ mesh, velocity: direction.multiplyScalar(CONFIG.enemyTankProjectileSpeed), life: 5, damage: CONFIG.enemyTankDamage, radius: 0.8 });
+    audio.playEnemyFire();
+  }
+
+  fireEscortShot(position, direction) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x85f6ff })
+    );
+    mesh.position.copy(position);
+    this.parent.add(mesh);
+    this.hostileShots.push({ mesh, velocity: direction.multiplyScalar(CONFIG.escortDroneProjectileSpeed), life: 4, damage: CONFIG.escortDroneDamage, radius: 0.35 });
+    audio.playDroneFire();
   }
 
   updateHostileShots(delta, tankRef) {
@@ -1043,9 +1081,9 @@ class EnemyManager {
       shell.mesh.position.addScaledVector(shell.velocity, delta);
       const ground = terrain.getHeightAt(shell.mesh.position.x, shell.mesh.position.z);
       if (shell.mesh.position.y <= ground + 0.35) shell.life = -1;
-      if (shell.life > 0 && shell.mesh.position.distanceTo(tankRef.group.position) <= CONFIG.tankCollisionRadius + 0.8) {
-        damagePlayer(CONFIG.enemyTankDamage);
-        createExplosion(shell.mesh.position, { radius: 0.7, growth: 11, life: 0.32, color: 0xff2418, coreColor: 0xffd7a0 });
+      if (shell.life > 0 && shell.mesh.position.distanceTo(tankRef.group.position) <= CONFIG.tankCollisionRadius + shell.radius) {
+        damagePlayer(shell.damage);
+        createExplosion(shell.mesh.position, { radius: shell.damage > 2 ? 0.7 : 0.35, growth: 11, life: 0.32, color: shell.damage > 2 ? 0xff2418 : 0x63efff, coreColor: 0xfff1d0 });
         shell.life = -1;
       }
       if (shell.life <= 0) {
@@ -1061,6 +1099,7 @@ class GroundEnemyTank {
   constructor() {
     this.group = new THREE.Group();
     this.turret = new THREE.Group();
+    this.cannonPivot = new THREE.Group();
     this.health = CONFIG.enemyTankHealth;
     this.dead = false;
     this.collisionRadius = 6.5;
@@ -1082,10 +1121,12 @@ class GroundEnemyTank {
     addBox([8.8, 0.75, 2.0], [0, 0.45, 3.8], materials.darkMetal);
     this.turret.position.set(0, 2.1, -0.4);
     addBox([4.2, 1.25, 4.2], [0, 0.55, 0], armor, this.turret);
+    this.cannonPivot.position.set(0, 0.55, -1.45);
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 8.5, 12), materials.darkMetal);
     barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.55, -5.7);
-    this.turret.add(barrel);
+    barrel.position.set(0, 0, -4.25);
+    this.cannonPivot.add(barrel);
+    this.turret.add(this.cannonPivot);
     const eye = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.24, 0.18), materials.redEye);
     eye.position.set(0, 1.3, -2.15);
     this.turret.add(eye);
@@ -1098,13 +1139,24 @@ class GroundEnemyTank {
     const flatDirection = toPlayer.clone().setY(0).normalize();
     if (distance > 78 && distance < 260) this.group.position.addScaledVector(flatDirection, this.speed * delta);
     this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + 1.2;
-    this.group.lookAt(tankRef.group.position.x, this.group.position.y, tankRef.group.position.z);
+    const hullTargetYaw = Math.atan2(-flatDirection.x, -flatDirection.z);
+    this.group.rotation.y += wrapAngle(hullTargetYaw - this.group.rotation.y) * Math.min(1, delta * 1.7);
+    const turretTargetYaw = wrapAngle(hullTargetYaw - this.group.rotation.y);
+    this.turret.rotation.y += wrapAngle(turretTargetYaw - this.turret.rotation.y) * Math.min(1, delta * 3.4);
+    const pivotPosition = this.cannonPivot.getWorldPosition(new THREE.Vector3());
+    const aimPoint = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.1, 0));
+    const toAimPoint = aimPoint.clone().sub(pivotPosition);
+    const pitchTarget = THREE.MathUtils.clamp(Math.atan2(toAimPoint.y, Math.hypot(toAimPoint.x, toAimPoint.z)), -0.12, 0.48);
+    this.cannonPivot.rotation.x = THREE.MathUtils.lerp(this.cannonPivot.rotation.x, pitchTarget, Math.min(1, delta * 3.2));
     this.fireTimer -= delta;
     if (distance < 245 && this.fireTimer <= 0) {
-      this.fireTimer = CONFIG.enemyTankFireInterval + Math.random() * 0.7;
-      const muzzle = this.turret.localToWorld(new THREE.Vector3(0, 0.55, -9.8));
-      const direction = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.1, 0)).sub(muzzle).normalize();
-      manager.fireEnemyShell(muzzle, direction);
+      const muzzle = this.cannonPivot.localToWorld(new THREE.Vector3(0, 0, -8.5));
+      const barrelDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(this.cannonPivot.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      const directAim = aimPoint.clone().sub(muzzle).normalize();
+      if (barrelDirection.dot(directAim) > 0.995) {
+        this.fireTimer = CONFIG.enemyTankFireInterval + Math.random() * 0.7;
+        manager.fireEnemyShell(muzzle, barrelDirection);
+      }
     }
   }
 
@@ -1118,6 +1170,75 @@ class GroundEnemyTank {
       createExplosion(this.group.position, { radius: 2.8, growth: 30, life: 0.9, color: 0xff281b, coreColor: 0xffd7aa });
       audio.playExplosion();
     }
+  }
+}
+
+class EscortDrone {
+  constructor(index, corner) {
+    this.index = index;
+    this.corner = corner;
+    this.group = new THREE.Group();
+    this.gunPivot = new THREE.Group();
+    this.ammo = CONFIG.escortDroneAmmo;
+    this.fireTimer = 1.8 + index * 0.65;
+    this.collisionRadius = 2.6;
+    this.dead = false;
+    this.phase = index * Math.PI * 0.5;
+    this.build();
+  }
+
+  build() {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.65, 4.1), materials.enemy);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.18, 1.15), materials.darkMetal);
+    const antenna = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.8, 0.1), materials.darkMetal);
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 0.12), materials.redEye);
+    wing.position.z = 0.3;
+    antenna.position.set(this.corner[0] * 0.8, 1.05, 0.8);
+    eye.position.set(0, 0.05, -2.1);
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 2.4, 8), materials.darkMetal);
+    gun.rotation.x = Math.PI / 2;
+    gun.position.z = -1.2;
+    this.gunPivot.position.set(0, -0.25, -1.8);
+    this.gunPivot.add(gun);
+    this.group.add(body, wing, antenna, eye, this.gunPivot);
+  }
+
+  update(delta, playerTank, enemyTank, manager) {
+    if (!enemyTank || enemyTank.dead) return;
+    const offset = new THREE.Vector3(this.corner[0] * 11, 0, this.corner[1] * 12).applyAxisAngle(new THREE.Vector3(0, 1, 0), enemyTank.group.rotation.y);
+    const target = enemyTank.group.position.clone().add(offset);
+    target.y = terrain.getHeightAt(target.x, target.z) + 8.5 + Math.sin(performance.now() * 0.003 + this.phase) * 1.2;
+    this.group.position.lerp(target, 1 - Math.pow(0.025, delta));
+
+    const aimPoint = playerTank.group.position.clone().add(new THREE.Vector3(0, 1, 0));
+    const flatAim = aimPoint.clone().sub(this.group.position).setY(0).normalize();
+    this.group.rotation.y = Math.atan2(-flatAim.x, -flatAim.z);
+    const pivotPosition = this.gunPivot.getWorldPosition(new THREE.Vector3());
+    const toAim = aimPoint.clone().sub(pivotPosition);
+    const pitchTarget = THREE.MathUtils.clamp(Math.atan2(toAim.y, Math.hypot(toAim.x, toAim.z)), -0.2, 0.62);
+    this.gunPivot.rotation.x = THREE.MathUtils.lerp(this.gunPivot.rotation.x, pitchTarget, Math.min(1, delta * 4.2));
+
+    this.fireTimer -= delta;
+    const distance = toAim.length();
+    if (this.ammo > 0 && distance < 205 && this.fireTimer <= 0) {
+      const muzzle = this.gunPivot.localToWorld(new THREE.Vector3(0, 0, -2.4));
+      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(this.gunPivot.getWorldQuaternion(new THREE.Quaternion())).normalize();
+      const directAim = aimPoint.clone().sub(muzzle).normalize();
+      if (direction.dot(directAim) > 0.992) {
+        this.ammo--;
+        this.fireTimer = 3.4 + Math.random() * 2.2;
+        manager.fireEscortShot(muzzle, direction);
+      }
+    }
+  }
+
+  destroy() {
+    if (this.dead) return;
+    this.dead = true;
+    destroyedEnemies++;
+    runStats.dronesDestroyed++;
+    createExplosion(this.group.position, { radius: 1.4, growth: 18, life: 0.55, color: 0xff3328, coreColor: 0xffdfbb });
+    audio.playExplosion();
   }
 }
 
@@ -1529,6 +1650,22 @@ class ProjectileManager {
       }
 
       if (shot.life > 0) {
+        for (const escort of enemyManager.escortDrones) {
+          const shotPath = shot.mesh.position.clone().sub(shot.previousPosition);
+          const pathLengthSq = shotPath.lengthSq();
+          const toEscort = escort.group.position.clone().sub(shot.previousPosition);
+          const alongPath = pathLengthSq > 0.001 ? THREE.MathUtils.clamp(toEscort.dot(shotPath) / pathLengthSq, 0, 1) : 0;
+          const closestPoint = shot.previousPosition.clone().addScaledVector(shotPath, alongPath);
+          if (!escort.dead && closestPoint.distanceTo(escort.group.position) < escort.collisionRadius + shot.radius) {
+            registerPlayerHit(shot, escort.group.position, 100, "drone");
+            escort.destroy();
+            shot.life = -1;
+            break;
+          }
+        }
+      }
+
+      if (shot.life > 0) {
         const droneHit = skyDroneManager.hitDroneAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius);
         if (droneHit) {
           registerPlayerHit(shot, droneHit.group.position, 100, "drone");
@@ -1646,6 +1783,9 @@ class ProjectileManager {
       enemyManager.enemyTank.health = 1;
       enemyManager.enemyTank.receiveHit({ kind: "bomb", origin: position, direction: new THREE.Vector3(0, -1, 0), bounces: 0 });
     }
+    for (const escort of enemyManager.escortDrones) {
+      if (!escort.dead && escort.group.position.distanceTo(position) <= escort.collisionRadius + 24) escort.destroy();
+    }
     for (const drone of skyDroneManager.drones) {
       if (!drone.dead && drone.group.position.distanceTo(position) <= drone.collisionRadius + 28) drone.destroy();
     }
@@ -1760,6 +1900,44 @@ class AudioManager {
   setRotorVolume(volume) {
     this.rotorVolume = THREE.MathUtils.clamp(volume, 0, 1);
     if (this.rotorVolume === 0) this.silenceRotor();
+  }
+
+  playEnemyFire() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    const now = ctx.currentTime;
+    const blast = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    blast.type = "sawtooth";
+    blast.frequency.setValueAtTime(260, now);
+    blast.frequency.exponentialRampToValueAtTime(82, now + 0.18);
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(900, now);
+    filter.frequency.exponentialRampToValueAtTime(240, now + 0.18);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.24, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    blast.connect(filter).connect(gain).connect(this.master);
+    blast.start(now);
+    blast.stop(now + 0.23);
+  }
+
+  playDroneFire() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const chirp = ctx.createOscillator();
+    const gain = ctx.createGain();
+    chirp.type = "square";
+    chirp.frequency.setValueAtTime(980, now);
+    chirp.frequency.exponentialRampToValueAtTime(420, now + 0.07);
+    gain.gain.setValueAtTime(0.055, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+    chirp.connect(gain).connect(this.master);
+    chirp.start(now);
+    chirp.stop(now + 0.085);
   }
 
   playFire() {
