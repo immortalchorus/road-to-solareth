@@ -210,6 +210,42 @@ body {
   outline-offset: 2px;
 }
 
+#rotor-volume-panel {
+  position: fixed;
+  right: 18px;
+  top: 72px;
+  display: grid;
+  grid-template-columns: auto 42px;
+  width: 210px;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(105, 226, 255, 0.34);
+  border-radius: 8px;
+  background: rgba(11, 19, 27, 0.72);
+  color: #d8f8ff;
+  font: 700 13px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(9px);
+}
+
+#rotor-volume-panel > span {
+  grid-column: 1 / -1;
+}
+
+#rotor-volume {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  accent-color: #69e2ff;
+  cursor: pointer;
+}
+
+#rotor-volume-value {
+  color: #8ff0ff;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 #fuel-panel {
   position: fixed;
   right: 18px;
@@ -274,6 +310,14 @@ body {
     right: 12px;
     bottom: 12px;
     min-height: 38px;
+  }
+  #rotor-volume-panel {
+    top: 62px;
+    right: 12px;
+    width: 150px;
+    grid-template-columns: auto 38px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
   #fuel-panel {
     right: 12px;

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Road to Solareth</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="style.css?v=motion-rotor-1">
+    <link rel="stylesheet" href="style.css?v=rotor-volume-1">
   </head>
   <body>
     <main id="game">
@@ -47,6 +47,12 @@
 
       <button id="music-button" type="button">Silent Mode</button>
 
+      <label id="rotor-volume-panel" for="rotor-volume">
+        <span>Rotor Noise</span>
+        <input id="rotor-volume" type="range" min="0" max="100" value="80" step="1">
+        <output id="rotor-volume-value" for="rotor-volume">80%</output>
+      </label>
+
       <aside id="instructions">
         <strong>Tank Driver</strong>
         <span>Arrow keys drive. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Tap B to drop bombs; hold B to bank in flight. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers the turret. Shift + L toggles turret beacon. Space fires. Hold H while firing for drone-seeking ammo. Tab toggles camera height. Escape clears nearby obstacles.</span>
@@ -54,7 +60,7 @@
     </main>
 
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-    <script src="main.js?v=motion-rotor-1"></script>
+    <script src="main.js?v=rotor-volume-1"></script>
   </body>
 </html>
 

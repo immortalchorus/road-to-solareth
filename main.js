@@ -101,6 +101,8 @@ const hud = {
   damageFlash: document.querySelector("#damage-flash"),
   runSummary: document.querySelector("#run-summary")
 };
+const rotorVolumeControl = document.querySelector("#rotor-volume");
+const rotorVolumeValue = document.querySelector("#rotor-volume-value");
 
 const poeticStatuses = [
   "Metallic orbs watch the red waste.",
@@ -205,6 +207,11 @@ window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
 });
 hud.musicButton.addEventListener("click", () => audio.start());
+rotorVolumeControl.addEventListener("input", () => {
+  const volume = Number(rotorVolumeControl.value) / 100;
+  rotorVolumeValue.textContent = `${rotorVolumeControl.value}%`;
+  audio.setRotorVolume(volume);
+});
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 
 function initLights() {
@@ -1663,6 +1670,7 @@ class AudioManager {
     this.radioTimer = CONFIG.radioChatterEvery;
     this.rotorOutput = null;
     this.rotorPulse = null;
+    this.rotorVolume = Number(rotorVolumeControl.value) / 100;
   }
 
   async start() {
@@ -1690,7 +1698,7 @@ class AudioManager {
     const verticalLevel = THREE.MathUtils.clamp(Math.abs(tankRef.verticalVelocity) / CONFIG.verticalThrust, 0, 1);
     const thrustLevel = input.KeyF && !(input.ShiftLeft || input.ShiftRight) ? 0.72 : 0;
     const motionLevel = Math.max(driveLevel, verticalLevel, thrustLevel);
-    const targetGain = motionLevel > 0.025 ? 0.014 + motionLevel * 0.034 : 0;
+    const targetGain = motionLevel > 0.025 ? (0.03 + motionLevel * 0.075) * this.rotorVolume : 0;
     const targetPulse = 5.2 + motionLevel * 3.2;
     this.rotorOutput.gain.setTargetAtTime(targetGain, ctx.currentTime, targetGain > 0 ? 0.12 : 0.28);
     this.rotorPulse.frequency.setTargetAtTime(targetPulse, ctx.currentTime, 0.18);
@@ -1743,6 +1751,11 @@ class AudioManager {
   silenceRotor() {
     if (!this.rotorOutput || !this.context) return;
     this.rotorOutput.gain.setTargetAtTime(0, this.context.currentTime, 0.12);
+  }
+
+  setRotorVolume(volume) {
+    this.rotorVolume = THREE.MathUtils.clamp(volume, 0, 1);
+    if (this.rotorVolume === 0) this.silenceRotor();
   }
 
   playFire() {
