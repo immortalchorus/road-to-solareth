@@ -1661,6 +1661,8 @@ class AudioManager {
     this.context = null;
     this.master = null;
     this.radioTimer = CONFIG.radioChatterEvery;
+    this.rotorOutput = null;
+    this.rotorPulse = null;
   }
 
   async start() {
@@ -1670,13 +1672,77 @@ class AudioManager {
     hud.musicButton.textContent = "Silent Mode";
   }
 
-  update(delta) {
+  update(delta, tankRef) {
     if (!this.started) return;
+    this.updateRotor(tankRef);
     this.radioTimer -= delta;
     if (this.radioTimer <= 0) {
       this.radioTimer = CONFIG.radioChatterEvery;
       this.playRadioChatter();
     }
+  }
+
+  updateRotor(tankRef) {
+    const ctx = this.ensureContext();
+    if (!ctx || !tankRef) return;
+    this.ensureRotorLoop();
+    const driveLevel = THREE.MathUtils.clamp(Math.abs(tankRef.speed) / tankRef.maxForwardSpeed, 0, 1);
+    const verticalLevel = THREE.MathUtils.clamp(Math.abs(tankRef.verticalVelocity) / CONFIG.verticalThrust, 0, 1);
+    const thrustLevel = input.KeyF && !(input.ShiftLeft || input.ShiftRight) ? 0.72 : 0;
+    const motionLevel = Math.max(driveLevel, verticalLevel, thrustLevel);
+    const targetGain = motionLevel > 0.025 ? 0.014 + motionLevel * 0.034 : 0;
+    const targetPulse = 5.2 + motionLevel * 3.2;
+    this.rotorOutput.gain.setTargetAtTime(targetGain, ctx.currentTime, targetGain > 0 ? 0.12 : 0.28);
+    this.rotorPulse.frequency.setTargetAtTime(targetPulse, ctx.currentTime, 0.18);
+  }
+
+  ensureRotorLoop() {
+    if (this.rotorOutput || !this.context) return;
+    const ctx = this.context;
+    const mix = ctx.createGain();
+    const pulseGain = ctx.createGain();
+    const pulse = ctx.createOscillator();
+    const pulseDepth = ctx.createGain();
+    const lowRotor = ctx.createOscillator();
+    const lowRotorGain = ctx.createGain();
+    const rotorFilter = ctx.createBiquadFilter();
+    const air = ctx.createBufferSource();
+    const airFilter = ctx.createBiquadFilter();
+    const airGain = ctx.createGain();
+
+    mix.gain.value = 0;
+    pulseGain.gain.value = 0.64;
+    pulse.type = "sine";
+    pulse.frequency.value = 5.2;
+    pulseDepth.gain.value = 0.34;
+    lowRotor.type = "triangle";
+    lowRotor.frequency.value = 54;
+    lowRotorGain.gain.value = 0.58;
+    rotorFilter.type = "lowpass";
+    rotorFilter.frequency.value = 190;
+    rotorFilter.Q.value = 1.1;
+
+    air.buffer = this.createLoopNoiseBuffer(1.4);
+    air.loop = true;
+    airFilter.type = "bandpass";
+    airFilter.frequency.value = 135;
+    airFilter.Q.value = 0.72;
+    airGain.gain.value = 0.22;
+
+    pulse.connect(pulseDepth).connect(pulseGain.gain);
+    lowRotor.connect(lowRotorGain).connect(rotorFilter).connect(pulseGain);
+    air.connect(airFilter).connect(airGain).connect(pulseGain);
+    pulseGain.connect(mix).connect(this.master);
+    pulse.start();
+    lowRotor.start();
+    air.start();
+    this.rotorOutput = mix;
+    this.rotorPulse = pulse;
+  }
+
+  silenceRotor() {
+    if (!this.rotorOutput || !this.context) return;
+    this.rotorOutput.gain.setTargetAtTime(0, this.context.currentTime, 0.12);
   }
 
   playFire() {
@@ -1820,6 +1886,18 @@ class AudioManager {
     }
     return buffer;
   }
+
+  createLoopNoiseBuffer(duration) {
+    const sampleRate = this.context.sampleRate;
+    const buffer = this.context.createBuffer(1, Math.max(1, Math.floor(sampleRate * duration)), sampleRate);
+    const data = buffer.getChannelData(0);
+    let smoothed = 0;
+    for (let i = 0; i < data.length; i++) {
+      smoothed = smoothed * 0.86 + (Math.random() * 2 - 1) * 0.14;
+      data[i] = smoothed;
+    }
+    return buffer;
+  }
 }
 
 initLights();
@@ -1855,7 +1933,7 @@ function animate() {
     projectiles.update(delta, input, tank, enemies, skyDrones);
     updateCamera(delta);
     updateHUD(delta);
-    audio.update(delta);
+    audio.update(delta, tank);
   }
   updateExplosions(delta);
   updateImpactEffects(delta);
@@ -2139,6 +2217,7 @@ function endRun() {
   gameEnded = true;
   input.fireHeld = false;
   tank.speed = 0;
+  audio.silenceRotor();
   const accuracy = runStats.shotsFired > 0 ? Math.round(runStats.shotsHit / runStats.shotsFired * 100) : 0;
   const minutes = Math.floor(runStats.flightTime / 60);
   const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
