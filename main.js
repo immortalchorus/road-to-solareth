@@ -56,6 +56,8 @@ const CONFIG = {
   escortDroneAmmo: 10,
   escortDroneDamage: 2,
   escortDroneProjectileSpeed: 68,
+  escortDroneFireInterval: 10,
+  sessionDuration: 180,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -97,6 +99,7 @@ const hud = {
   fuel: document.querySelector("#fuel"),
   ammo: document.querySelector("#ammo"),
   hitPoints: document.querySelector("#hit-points"),
+  sessionTime: document.querySelector("#session-time"),
   status: document.querySelector("#status"),
   musicButton: document.querySelector("#music-button"),
   crosshair: document.querySelector("#crosshair"),
@@ -130,6 +133,7 @@ let fuel = CONFIG.maxFuel;
 let ammo = CONFIG.maxAmmo;
 let hitPoints = CONFIG.maxHitPoints;
 let gameEnded = false;
+let sessionTimeRemaining = CONFIG.sessionDuration;
 const runStats = {
   dronesDestroyed: 0,
   shotsFired: 0,
@@ -1180,7 +1184,7 @@ class EscortDrone {
     this.group = new THREE.Group();
     this.gunPivot = new THREE.Group();
     this.ammo = CONFIG.escortDroneAmmo;
-    this.fireTimer = 1.8 + index * 0.65;
+    this.fireTimer = CONFIG.escortDroneFireInterval + index * 0.65;
     this.collisionRadius = 2.6;
     this.dead = false;
     this.phase = index * Math.PI * 0.5;
@@ -1226,7 +1230,7 @@ class EscortDrone {
       const directAim = aimPoint.clone().sub(muzzle).normalize();
       if (direction.dot(directAim) > 0.992) {
         this.ammo--;
-        this.fireTimer = 3.4 + Math.random() * 2.2;
+        this.fireTimer = CONFIG.escortDroneFireInterval;
         manager.fireEscortShot(muzzle, direction);
       }
     }
@@ -2159,6 +2163,9 @@ function updateCamera(delta) {
 }
 
 function updateHUD(delta) {
+  sessionTimeRemaining = Math.max(0, sessionTimeRemaining - delta);
+  const missionSeconds = Math.ceil(sessionTimeRemaining);
+  hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   hud.speed.textContent = `${Math.round(Math.abs(tank.speed) * 2.4)} kph`;
   hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${Math.round(THREE.MathUtils.radToDeg(tank.turretPitch))} deg`;
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
@@ -2172,6 +2179,10 @@ function updateHUD(delta) {
     currentStatus = (currentStatus + 1) % poeticStatuses.length;
     hud.status.textContent = poeticStatuses[currentStatus];
     statusTimer = 10 + Math.random() * 8;
+  }
+  if (sessionTimeRemaining <= 0) {
+    hud.status.textContent = "Three-minute mission complete.";
+    endRun();
   }
 }
 
