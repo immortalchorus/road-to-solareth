@@ -8,7 +8,7 @@ const CONFIG = {
   tankAcceleration: 24,
   tankTurnSpeed: 1.55,
   turretTurnSpeed: 2.7,
-  turretPitchSpeed: 1.4,
+  turretPitchSpeed: 0.55,
   tankHoverHeight: 4.8,
   verticalThrust: 34,
   hoverGravity: 26,
@@ -47,7 +47,7 @@ const CONFIG = {
   enemySpawnChance: 0.42,
   maxEnemies: 5,
   skyDroneCount: 7,
-  maxHitPoints: 100,
+  maxHitPoints: 300,
   enemyTankHealth: 5,
   enemyTankDamage: 10,
   enemyTankFireInterval: 2.1,
@@ -2181,7 +2181,7 @@ function updateHUD(delta) {
   const missionSeconds = Math.ceil(sessionTimeRemaining);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   hud.speed.textContent = `${Math.round(Math.abs(tank.speed) * 2.4)} kph`;
-  hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${Math.round(THREE.MathUtils.radToDeg(tank.turretPitch))} deg`;
+  hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${THREE.MathUtils.radToDeg(tank.turretPitch).toFixed(1)} deg`;
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
   hud.destroyed.textContent = destroyedEnemies;
   hud.fuel.textContent = Math.max(0, Math.ceil(fuel));
