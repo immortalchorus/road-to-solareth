@@ -3,6 +3,7 @@ const THREE = window.THREE;
 const CONFIG = {
   maxPixelRatio: 1.35,
   enableShadows: false,
+  gameAudioGain: 0.9,
   tankMaxForwardSpeed: 42,
   tankMaxReverseSpeed: 18,
   tankAcceleration: 24,
@@ -1868,7 +1869,7 @@ class AudioManager {
     this.muted = !this.muted;
     this.music.muted = this.muted;
     if (this.master && this.context) {
-      this.master.gain.setTargetAtTime(this.muted ? 0 : 0.42, this.context.currentTime, 0.04);
+      this.master.gain.setTargetAtTime(this.muted ? 0 : CONFIG.gameAudioGain, this.context.currentTime, 0.04);
     }
     hud.musicButton.textContent = this.muted ? "Sound On" : "Silent Mode";
   }
@@ -2123,7 +2124,7 @@ class AudioManager {
     if (!AudioContextClass) return null;
     this.context = new AudioContextClass();
     this.master = this.context.createGain();
-    this.master.gain.value = 0.42;
+    this.master.gain.value = CONFIG.gameAudioGain;
     this.master.connect(this.context.destination);
     return this.context;
   }
