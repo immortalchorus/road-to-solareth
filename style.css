@@ -241,7 +241,7 @@ body {
   box-shadow: 0 0 20px rgba(61, 210, 255, 0.28), inset 0 0 14px rgba(61, 210, 255, 0.12);
   color: #d8f8ff;
   font-family: "Arial Black", Impact, "Segoe UI Black", sans-serif;
-  text-align: right;
+  text-align: center;
   pointer-events: none;
   backdrop-filter: blur(7px);
 }
@@ -249,7 +249,7 @@ body {
 .hit-points-label {
   display: block;
   color: #ffca62;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
   letter-spacing: 0;
 }

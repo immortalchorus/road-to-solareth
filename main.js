@@ -6,8 +6,8 @@ const CONFIG = {
   gameAudioGain: 0.9,
   tankMaxForwardSpeed: 42,
   tankMaxReverseSpeed: 18,
-  tankAcceleration: 24,
-  tankTurnSpeed: 1.55,
+  tankAcceleration: 36,
+  tankTurnSpeed: 1.12,
   turretTurnSpeed: 2.7,
   turretPitchSpeed: 0.55,
   tankHoverHeight: 4.8,
@@ -1546,10 +1546,12 @@ class RefuelTowerManager {
       const horizontalDistance = Math.sqrt(dx * dx + dz * dz);
       const aboveBase = tankRef.group.position.y >= tower.group.position.y - 2;
       const belowTop = tankRef.group.position.y <= tower.group.position.y + tower.height + 6;
-      if (horizontalDistance <= CONFIG.refuelTowerRadius && aboveBase && belowTop) {
+      const insideStation = horizontalDistance <= CONFIG.refuelTowerRadius && aboveBase && belowTop;
+      if (insideStation && !tower.wasInside) {
         resupplyTank();
         tower.pulse = 1;
       }
+      tower.wasInside = insideStation;
     }
   }
 }
@@ -1560,6 +1562,7 @@ class RefuelTower {
     this.group = new THREE.Group();
     this.height = 22 + (index % 4) * 3;
     this.pulse = 0;
+    this.wasInside = false;
     const y = terrainManager.getHeightAt(x, z);
     this.group.position.set(x, y, z);
     this.build();
@@ -2260,8 +2263,10 @@ function updateFuel(delta) {
 function resupplyTank() {
   fuel = CONFIG.maxFuel;
   ammo = CONFIG.maxAmmo;
-  hitPoints = CONFIG.maxHitPoints;
-  hud.status.textContent = "Resupply tower connected. Fuel, ammo, and armor restored.";
+  const previousHitPoints = hitPoints;
+  hitPoints = Math.min(CONFIG.maxHitPoints, hitPoints + 25);
+  const repairedHitPoints = hitPoints - previousHitPoints;
+  hud.status.textContent = `Resupply complete. Fuel and ammo restored; armor repaired +${repairedHitPoints}.`;
   statusTimer = 4;
 }
 function emergencyClearAroundTank() {
