@@ -149,9 +149,9 @@ const runStats = {
 };
 
 const materials = {
-  tankDark: new THREE.MeshStandardMaterial({ color: 0x181a20, metalness: 0.72, roughness: 0.42 }),
-  tankTrim: new THREE.MeshStandardMaterial({ color: 0x263945, metalness: 0.6, roughness: 0.35 }),
-  tankLight: new THREE.MeshStandardMaterial({ color: 0x6f828b, metalness: 0.58, roughness: 0.38 }),
+  tankDark: new THREE.MeshStandardMaterial({ color: 0x0d141b, metalness: 0.78, roughness: 0.34 }),
+  tankTrim: new THREE.MeshStandardMaterial({ color: 0x192e3b, metalness: 0.72, roughness: 0.3 }),
+  tankLight: new THREE.MeshStandardMaterial({ color: 0x304b5b, metalness: 0.68, roughness: 0.32 }),
   warmMechanics: new THREE.MeshStandardMaterial({ color: 0x5b3f2c, metalness: 0.5, roughness: 0.62 }),
   blueGlow: new THREE.MeshStandardMaterial({ color: 0x58e9ff, emissive: 0x32cfff, emissiveIntensity: 1.6 }),
   orangeGlow: new THREE.MeshStandardMaterial({ color: 0xff9b32, emissive: 0xff5f12, emissiveIntensity: 2.2 }),
@@ -391,7 +391,7 @@ class Tank {
       const direction = end.clone().sub(start);
       const length = direction.length();
       const unitDirection = direction.clone().normalize();
-      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, length, 10), materials.tankDark);
+      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, length, 10), materials.tankDark);
       stalk.position.copy(mid);
       stalk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), unitDirection);
       stalk.castShadow = true;
@@ -407,16 +407,16 @@ class Tank {
       const pod = new THREE.Group();
       pod.position.set(x, 1.58, z);
 
-      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.72, 2.05, 0.62, 32), materials.tankLight);
+      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.95, 2.28, 0.7, 32), materials.tankLight);
       bowl.castShadow = true;
       pod.add(bowl);
 
-      const skirt = new THREE.Mesh(new THREE.CylinderGeometry(1.95, 1.75, 0.42, 32), materials.darkMetal);
+      const skirt = new THREE.Mesh(new THREE.CylinderGeometry(2.18, 1.92, 0.48, 32), materials.darkMetal);
       skirt.position.y = -0.48;
       skirt.castShadow = true;
       pod.add(skirt);
 
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.16, 10, 36), materials.darkMetal);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.19, 10, 36), materials.darkMetal);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = 0.38;
       pod.add(ring);
@@ -444,6 +444,11 @@ class Tank {
     addBox([7.8, 1.0, 10.2], [0, 1.18, 0], materials.tankDark);
     addBox([7.0, 0.72, 8.6], [0, 2.0, -0.2], materials.tankLight);
     addBox([6.25, 0.26, 7.1], [0, 2.46, -0.28], materials.tankTrim);
+    addBox([5.5, 0.52, 4.3], [0, 2.72, -2.65], materials.tankLight, [-0.16, 0, 0]);
+    addBox([3.15, 0.72, 4.9], [-2.55, 2.34, -2.28], materials.tankTrim, [-0.08, 0, -0.14]);
+    addBox([3.15, 0.72, 4.9], [2.55, 2.34, -2.28], materials.tankTrim, [-0.08, 0, 0.14]);
+    addBox([1.1, 0.5, 3.8], [-3.65, 2.13, -2.72], materials.tankLight, [-0.04, 0, -0.2]);
+    addBox([1.1, 0.5, 3.8], [3.65, 2.13, -2.72], materials.tankLight, [-0.04, 0, 0.2]);
     addBox([6.45, 0.42, 1.9], [0, 1.88, -4.75], materials.tankLight, [-0.3, 0, 0]);
     addBox([6.45, 0.42, 1.45], [0, 1.8, 4.6], materials.tankTrim, [0.24, 0, 0]);
     addBox([2.65, 0.32, 7.65], [-2.2, 2.58, -0.32], materials.tankLight, [0, 0, -0.1]);
@@ -485,6 +490,8 @@ class Tank {
     for (const x of [-2.1, 0, 2.1]) {
       addBox([1.15, 0.24, 0.24], [x, 2.58, -4.72], materials.blueGlow);
     }
+    addBox([2.1, 0.32, 0.18], [-2.55, 2.86, -4.52], materials.blueGlow, [-0.1, 0, -0.08]);
+    addBox([2.1, 0.32, 0.18], [2.55, 2.86, -4.52], materials.blueGlow, [-0.1, 0, 0.08]);
     addBox([1.35, 0.18, 0.18], [-3.3, 2.42, -4.0], materials.orangeGlow);
     addBox([1.35, 0.18, 0.18], [3.3, 2.42, -4.0], materials.orangeGlow);
     addBox([0.72, 0.22, 0.2], [-1.45, 1.72, 4.92], materials.redEye);
@@ -514,8 +521,10 @@ class Tank {
     const turretRing = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.45, 0.48, 24), materials.darkMetal);
     turretRing.castShadow = true;
     this.turret.add(turretRing);
-    addTurretBox([4.35, 0.78, 3.5], [0, 0.48, -0.1], materials.tankLight);
-    addTurretBox([3.55, 0.42, 2.65], [0, 1.02, -0.2], materials.tankTrim);
+    addTurretBox([4.8, 0.82, 3.8], [0, 0.48, -0.1], materials.tankLight);
+    addTurretBox([3.9, 0.42, 2.9], [0, 1.02, -0.2], materials.tankTrim);
+    addTurretBox([2.1, 0.42, 3.15], [-1.45, 0.88, 0], materials.tankLight, [0, 0, -0.12]);
+    addTurretBox([2.1, 0.42, 3.15], [1.45, 0.88, 0], materials.tankLight, [0, 0, 0.12]);
     addTurretBox([3.45, 0.42, 0.9], [0, 0.7, -1.9], materials.tankLight, [-0.08, 0, 0]);
     addTurretBox([2.2, 0.5, 1.05], [-0.1, 1.38, 0.92], materials.tankLight);
     addTurretBox([2.15, 0.2, 0.22], [-0.1, 1.72, 0.24], materials.blueGlow);
@@ -539,10 +548,11 @@ class Tank {
     addBarrelSegment(0.25, 0.32, 3.7, -5.3, materials.darkMetal);
     addBarrelSegment(0.28, 0.28, 3.6, -8.85, materials.darkMetal);
     addBarrelSegment(0.34, 0.34, 0.95, -10.95, materials.tankTrim);
-    this.barrel = addBarrelSegment(0.19, 0.22, 2.1, -12.45, materials.darkMetal);
-    addBarrelSegment(0.42, 0.34, 0.78, -13.85, materials.tankTrim);
+    this.barrel = addBarrelSegment(0.2, 0.24, 3.6, -13.2, materials.darkMetal);
+    addBarrelSegment(0.44, 0.34, 1.05, -15.45, materials.tankTrim);
+    addBarrelSegment(0.26, 0.34, 0.72, -16.3, materials.darkMetal);
     const muzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), materials.orangeGlow);
-    muzzleGlow.position.set(0, 0, -14.35);
+    muzzleGlow.position.set(0, 0, -16.72);
     this.cannon.add(muzzleGlow);
     this.turret.add(this.cannon);
     const turretAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.5, 8), materials.darkMetal);
@@ -740,7 +750,7 @@ class Tank {
   }
 
   getMuzzleWorldPosition() {
-    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -14.35));
+    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -16.72));
   }
 }
 
