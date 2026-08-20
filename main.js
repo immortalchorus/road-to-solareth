@@ -108,6 +108,8 @@ const hud = {
   damageFlash: document.querySelector("#damage-flash"),
   runSummary: document.querySelector("#run-summary")
 };
+const splashScreen = document.querySelector("#splash-screen");
+const playButton = document.querySelector("#play-button");
 const rotorVolumeControl = document.querySelector("#rotor-volume");
 const rotorVolumeValue = document.querySelector("#rotor-volume-value");
 
@@ -133,6 +135,7 @@ let fuel = CONFIG.maxFuel;
 let ammo = CONFIG.maxAmmo;
 let hitPoints = CONFIG.maxHitPoints;
 let gameEnded = false;
+let gameStarted = false;
 let sessionTimeRemaining = CONFIG.sessionDuration;
 const runStats = {
   dronesDestroyed: 0,
@@ -191,6 +194,7 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     event.stopPropagation();
   }
+  if (!gameStarted) return;
   input[event.code] = true;
   if (audio && !audio.started) audio.start();
   if (event.code === "Space") input.fireHeld = true;
@@ -221,6 +225,14 @@ rotorVolumeControl.addEventListener("input", () => {
   audio.setRotorVolume(volume);
 });
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
+playButton.addEventListener("click", () => {
+  gameStarted = true;
+  splashScreen.hidden = true;
+  clock.getDelta();
+  audio.start();
+  hud.status.textContent = "Mission clock started. Reach Solareth.";
+  statusTimer = 4;
+});
 
 function initLights() {
   const hemi = new THREE.HemisphereLight(0xffd1a6, 0x2f2038, 1.8);
@@ -2116,7 +2128,7 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.045);
   const previous = tank.group.position.clone();
 
-  if (!gameEnded) {
+  if (gameStarted && !gameEnded) {
     updateFuel(delta);
     tank.update(delta, input, terrain, fuel > 0);
     const moved = tank.group.position.distanceTo(previous);
