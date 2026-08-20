@@ -150,9 +150,9 @@ const runStats = {
 };
 
 const materials = {
-  tankDark: new THREE.MeshStandardMaterial({ color: 0x0d141b, metalness: 0.78, roughness: 0.34 }),
-  tankTrim: new THREE.MeshStandardMaterial({ color: 0x192e3b, metalness: 0.72, roughness: 0.3 }),
-  tankLight: new THREE.MeshStandardMaterial({ color: 0x304b5b, metalness: 0.68, roughness: 0.32 }),
+  tankDark: new THREE.MeshStandardMaterial({ color: 0x17212a, metalness: 0.84, roughness: 0.3 }),
+  tankTrim: new THREE.MeshStandardMaterial({ color: 0x2a3541, metalness: 0.78, roughness: 0.32 }),
+  tankLight: new THREE.MeshStandardMaterial({ color: 0x43515e, metalness: 0.74, roughness: 0.36 }),
   warmMechanics: new THREE.MeshStandardMaterial({ color: 0x5b3f2c, metalness: 0.5, roughness: 0.62 }),
   blueGlow: new THREE.MeshStandardMaterial({ color: 0x58e9ff, emissive: 0x32cfff, emissiveIntensity: 1.6 }),
   orangeGlow: new THREE.MeshStandardMaterial({ color: 0xff9b32, emissive: 0xff5f12, emissiveIntensity: 2.2 }),
@@ -173,6 +173,58 @@ const materials = {
   terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true }),
   smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false })
 };
+
+function createTankArmorTexture() {
+  const surface = document.createElement("canvas");
+  surface.width = 256;
+  surface.height = 256;
+  const context = surface.getContext("2d");
+  context.fillStyle = "#e1e4e7";
+  context.fillRect(0, 0, 256, 256);
+  context.strokeStyle = "rgba(20, 26, 31, 0.48)";
+  context.lineWidth = 4;
+  context.strokeRect(3, 3, 250, 250);
+  context.beginPath();
+  context.moveTo(0, 78);
+  context.lineTo(102, 78);
+  context.lineTo(126, 101);
+  context.lineTo(256, 101);
+  context.moveTo(0, 190);
+  context.lineTo(72, 190);
+  context.lineTo(94, 168);
+  context.lineTo(256, 168);
+  context.stroke();
+
+  let seed = 7419;
+  const random = () => {
+    seed = seed * 16807 % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let i = 0; i < 46; i++) {
+    const x = random() * 246 + 5;
+    const y = random() * 246 + 5;
+    const length = 3 + random() * 18;
+    context.strokeStyle = `rgba(20, 24, 28, ${0.06 + random() * 0.14})`;
+    context.lineWidth = 0.6 + random() * 1.1;
+    context.beginPath();
+    context.moveTo(x, y);
+    context.lineTo(x + length, y + (random() - 0.5) * 3);
+    context.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(surface);
+  texture.encoding = THREE.sRGBEncoding;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  return texture;
+}
+
+const tankArmorTexture = createTankArmorTexture();
+for (const material of [materials.tankDark, materials.tankTrim, materials.tankLight]) {
+  material.map = tankArmorTexture;
+  material.needsUpdate = true;
+}
 
 let terrain;
 let tank;
@@ -398,50 +450,51 @@ class Tank {
       const direction = end.clone().sub(start);
       const length = direction.length();
       const unitDirection = direction.clone().normalize();
-      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, length, 10), materials.tankDark);
+      const stalk = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.42, length), materials.tankDark);
       stalk.position.copy(mid);
-      stalk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), unitDirection);
+      stalk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), unitDirection);
       stalk.castShadow = true;
       this.group.add(stalk);
 
-      const highlight = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, length * 0.92, 8), materials.blueGlow);
-      highlight.position.copy(mid).add(new THREE.Vector3(0, 0.08, 0));
+      const highlight = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, length * 0.88), materials.blueGlow);
+      highlight.position.copy(mid).add(new THREE.Vector3(0, 0.24, 0));
       highlight.quaternion.copy(stalk.quaternion);
       this.group.add(highlight);
+
+      for (const point of [start, end]) {
+        const knuckle = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.52, 12), materials.darkMetal);
+        knuckle.position.copy(point);
+        knuckle.rotation.x = Math.PI / 2;
+        knuckle.castShadow = true;
+        this.group.add(knuckle);
+      }
     };
 
     const addFanPod = (x, z) => {
       const pod = new THREE.Group();
       pod.position.set(x, 1.58, z);
 
-      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.95, 2.28, 0.7, 32), materials.tankLight);
-      bowl.castShadow = true;
-      pod.add(bowl);
+      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.48, 10, 28), materials.tankTrim);
+      outerRing.rotation.x = Math.PI / 2;
+      outerRing.castShadow = true;
+      pod.add(outerRing);
 
-      const skirt = new THREE.Mesh(new THREE.CylinderGeometry(2.18, 1.92, 0.48, 32), materials.darkMetal);
-      skirt.position.y = -0.48;
-      skirt.castShadow = true;
-      pod.add(skirt);
-
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.19, 10, 36), materials.darkMetal);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.58, 0.13, 8, 28), materials.blueGlow);
       ring.rotation.x = Math.PI / 2;
-      ring.position.y = 0.38;
       pod.add(ring);
 
-      const hub = new THREE.Mesh(new THREE.SphereGeometry(0.38, 14, 8), materials.tankTrim);
-      hub.position.y = 0.42;
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.34, 12), materials.darkMetal);
       pod.add(hub);
 
       for (let i = 0; i < 4; i++) {
         const blade = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.26), materials.tankDark);
-        blade.position.y = 0.42;
         blade.rotation.y = i * Math.PI / 2 + 0.22;
         blade.castShadow = true;
         pod.add(blade);
       }
 
       const glow = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.18, 0.04, 28), materials.blueGlow);
-      glow.position.y = -0.75;
+      glow.position.y = -0.5;
       pod.add(glow);
 
       this.group.add(pod);
@@ -485,14 +538,14 @@ class Tank {
       this.group.add(underWheel);
     }
     addBox([6.2, 0.34, 0.45], [0, 0.22, 4.25], materials.warmMechanics);
-    addStalk(-3.25, -2.25, -7.65, -6.05);
-    addStalk(3.25, -2.25, 7.65, -6.05);
-    addStalk(-3.25, 2.25, -7.65, 6.05);
-    addStalk(3.25, 2.25, 7.65, 6.05);
-    addFanPod(-7.95, -6.3);
-    addFanPod(7.95, -6.3);
-    addFanPod(-7.95, 6.3);
-    addFanPod(7.95, 6.3);
+    addStalk(-3.25, -2.25, -8.65, -6.25);
+    addStalk(3.25, -2.25, 8.65, -6.25);
+    addStalk(-3.25, 2.25, -8.65, 6.25);
+    addStalk(3.25, 2.25, 8.65, 6.25);
+    addFanPod(-9.0, -6.55);
+    addFanPod(9.0, -6.55);
+    addFanPod(-9.0, 6.55);
+    addFanPod(9.0, 6.55);
 
     for (const x of [-2.1, 0, 2.1]) {
       addBox([1.15, 0.24, 0.24], [x, 2.58, -4.72], materials.blueGlow);
@@ -504,6 +557,22 @@ class Tank {
     addBox([0.72, 0.22, 0.2], [-1.45, 1.72, 4.92], materials.redEye);
     addBox([0.72, 0.22, 0.2], [1.45, 1.72, 4.92], materials.redEye);
     addBox([1.5, 0.26, 0.24], [0, 2.78, 2.55], materials.blueGlow);
+
+    // Layered wedge armor gives the hull the broad, low silhouette of the splash vehicle.
+    addBox([3.45, 0.78, 5.9], [-2.35, 2.72, -1.45], materials.tankLight, [-0.08, 0, -0.13]);
+    addBox([3.45, 0.78, 5.9], [2.35, 2.72, -1.45], materials.tankLight, [-0.08, 0, 0.13]);
+    addBox([2.5, 0.62, 4.7], [-3.65, 2.38, -2.25], materials.tankTrim, [-0.14, 0, -0.2]);
+    addBox([2.5, 0.62, 4.7], [3.65, 2.38, -2.25], materials.tankTrim, [-0.14, 0, 0.2]);
+    addBox([2.35, 0.52, 5.6], [0, 3.0, -0.8], materials.tankTrim, [-0.04, 0, 0]);
+    addBox([1.85, 0.48, 3.2], [-3.7, 1.92, -3.75], materials.tankDark, [-0.18, 0, -0.18]);
+    addBox([1.85, 0.48, 3.2], [3.7, 1.92, -3.75], materials.tankDark, [-0.18, 0, 0.18]);
+    addBox([1.38, 0.18, 0.22], [-3.72, 2.15, -5.05], materials.blueGlow, [-0.14, 0, -0.15]);
+    addBox([1.38, 0.18, 0.22], [3.72, 2.15, -5.05], materials.blueGlow, [-0.14, 0, 0.15]);
+    for (const side of [-1, 1]) {
+      for (let z = -2.8; z <= 2.8; z += 1.4) {
+        addBox([0.12, 0.16, 0.72], [side * 4.55, 1.72, z], materials.warmMechanics);
+      }
+    }
 
     const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.66, 1.35), materials.tankLight);
     cockpit.position.set(-1.25, 3.06, 1.85);
@@ -528,8 +597,8 @@ class Tank {
     const turretRing = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.45, 0.48, 24), materials.darkMetal);
     turretRing.castShadow = true;
     this.turret.add(turretRing);
-    addTurretBox([4.8, 0.82, 3.8], [0, 0.48, -0.1], materials.tankLight);
-    addTurretBox([3.9, 0.42, 2.9], [0, 1.02, -0.2], materials.tankTrim);
+    addTurretBox([5.35, 0.72, 4.25], [0, 0.42, -0.1], materials.tankLight);
+    addTurretBox([4.45, 0.38, 3.15], [0, 0.94, -0.2], materials.tankTrim);
     addTurretBox([2.1, 0.42, 3.15], [-1.45, 0.88, 0], materials.tankLight, [0, 0, -0.12]);
     addTurretBox([2.1, 0.42, 3.15], [1.45, 0.88, 0], materials.tankLight, [0, 0, 0.12]);
     addTurretBox([3.45, 0.42, 0.9], [0, 0.7, -1.9], materials.tankLight, [-0.08, 0, 0]);
@@ -538,6 +607,10 @@ class Tank {
     addTurretBox([0.86, 0.86, 0.86], [1.75, 0.45, 0.55], materials.warmMechanics);
     addTurretBox([0.42, 0.18, 0.16], [-1.1, 0.18, 1.72], materials.redEye);
     addTurretBox([0.42, 0.18, 0.16], [1.1, 0.18, 1.72], materials.redEye);
+    addTurretBox([1.8, 0.28, 2.7], [-2.15, 1.16, -0.05], materials.tankTrim, [0, 0, -0.16]);
+    addTurretBox([1.8, 0.28, 2.7], [2.15, 1.16, -0.05], materials.tankTrim, [0, 0, 0.16]);
+    addTurretBox([1.55, 0.18, 0.18], [-1.58, 0.88, -2.02], materials.blueGlow);
+    addTurretBox([1.55, 0.18, 0.18], [1.58, 0.88, -2.02], materials.blueGlow);
 
     this.cannon = new THREE.Group();
     this.cannon.position.set(0, 0.66, -1.6);
@@ -558,7 +631,7 @@ class Tank {
     this.barrel = addBarrelSegment(0.2, 0.24, 3.6, -13.2, materials.darkMetal);
     addBarrelSegment(0.44, 0.34, 1.05, -15.45, materials.tankTrim);
     addBarrelSegment(0.26, 0.34, 0.72, -16.3, materials.darkMetal);
-    const muzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), materials.orangeGlow);
+    const muzzleGlow = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), materials.blueGlow);
     muzzleGlow.position.set(0, 0, -16.72);
     this.cannon.add(muzzleGlow);
     this.turret.add(this.cannon);
