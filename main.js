@@ -137,6 +137,7 @@ let hitPoints = CONFIG.maxHitPoints;
 let gameEnded = false;
 let gameStarted = false;
 let sessionTimeRemaining = CONFIG.sessionDuration;
+let missionEndsAt = 0;
 const runStats = {
   dronesDestroyed: 0,
   shotsFired: 0,
@@ -227,6 +228,7 @@ rotorVolumeControl.addEventListener("input", () => {
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 playButton.addEventListener("click", () => {
   gameStarted = true;
+  missionEndsAt = performance.now() + CONFIG.sessionDuration * 1000;
   splashScreen.hidden = true;
   clock.getDelta();
   audio.start();
@@ -2175,7 +2177,7 @@ function updateCamera(delta) {
 }
 
 function updateHUD(delta) {
-  sessionTimeRemaining = Math.max(0, sessionTimeRemaining - delta);
+  sessionTimeRemaining = Math.max(0, (missionEndsAt - performance.now()) / 1000);
   const missionSeconds = Math.ceil(sessionTimeRemaining);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   hud.speed.textContent = `${Math.round(Math.abs(tank.speed) * 2.4)} kph`;
@@ -2425,7 +2427,10 @@ function damagePlayer(amount) {
   hud.status.textContent = `Enemy shell hit. ${hitPoints} hit points remain.`;
   statusTimer = 3;
   tank.bumpTimer = 0.5;
-  if (hitPoints <= 0) endRun();
+  if (hitPoints <= 0) {
+    hud.status.textContent = "Hull integrity depleted. Emergency systems are keeping the tank operational.";
+    statusTimer = 4;
+  }
 }
 
 function endRun() {
