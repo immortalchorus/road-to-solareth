@@ -39,7 +39,8 @@ body {
   background-color: #140b0c;
   background-image: url("assets/hovertank-quest-splash.png");
   background-position: center;
-  background-size: cover;
+  background-repeat: no-repeat;
+  background-size: contain;
 }
 
 #splash-screen[hidden] {

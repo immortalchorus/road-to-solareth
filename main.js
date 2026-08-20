@@ -57,7 +57,7 @@ const CONFIG = {
   escortDroneDamage: 2,
   escortDroneProjectileSpeed: 68,
   escortDroneFireInterval: 10,
-  sessionDuration: 180,
+  sessionDuration: 300,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -2193,7 +2193,7 @@ function updateHUD(delta) {
     statusTimer = 10 + Math.random() * 8;
   }
   if (sessionTimeRemaining <= 0) {
-    hud.status.textContent = "Three-minute mission complete.";
+    hud.status.textContent = "Five-minute mission complete.";
     endRun();
   }
 }
