@@ -227,13 +227,19 @@ rotorVolumeControl.addEventListener("input", () => {
   audio.setRotorVolume(volume);
 });
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
-playButton.addEventListener("click", () => {
+playButton.addEventListener("click", async () => {
+  playButton.disabled = true;
+  playButton.textContent = "LOADING";
+  const sessionDuration = await audio.prepareSessionDuration();
+  await audio.start();
   gameStarted = true;
-  missionEndsAt = performance.now() + CONFIG.sessionDuration * 1000;
+  sessionTimeRemaining = sessionDuration;
+  missionEndsAt = performance.now() + sessionDuration * 1000;
+  const missionSeconds = Math.ceil(sessionDuration);
+  hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   splashScreen.hidden = true;
   clock.getDelta();
-  audio.start();
-  hud.status.textContent = "Mission clock started. Reach Solareth.";
+  hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
 });
 
@@ -1852,7 +1858,14 @@ class AudioManager {
     this.rotorPulse = null;
     this.rotorVolume = Number(rotorVolumeControl.value) / 100;
     this.muted = false;
-    this.music = new Audio("assets/iron-circuit.mp3");
+    this.playlist = [
+      { title: "Iron Circuit", src: "assets/iron-circuit.mp3" },
+      { title: "Shardfall Circuit", src: "assets/shardfall-circuit.mp3" },
+      { title: "Shattergrid", src: "assets/shattergrid.mp3" },
+      { title: "Black Voltage Maze", src: "assets/black-voltage-maze.mp3" }
+    ];
+    this.currentTrack = this.selectTrack();
+    this.music = new Audio(this.currentTrack.src);
     this.music.id = "soundtrack";
     this.music.setAttribute("aria-hidden", "true");
     this.music.preload = "auto";
@@ -1860,12 +1873,52 @@ class AudioManager {
     document.body.appendChild(this.music);
   }
 
+  selectTrack() {
+    let lastTrack = "";
+    try {
+      lastTrack = window.localStorage.getItem("hovertank-last-track") || "";
+    } catch (_) {
+      lastTrack = "";
+    }
+    const choices = this.playlist.filter(track => track.src !== lastTrack);
+    const selected = choices[Math.floor(Math.random() * choices.length)] || this.playlist[0];
+    try {
+      window.localStorage.setItem("hovertank-last-track", selected.src);
+    } catch (_) {
+      // Playback still works when storage is unavailable.
+    }
+    return selected;
+  }
+
+  prepareSessionDuration() {
+    if (Number.isFinite(this.music.duration) && this.music.duration > 0) {
+      return Promise.resolve(this.music.duration + 2);
+    }
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = duration => {
+        if (settled) return;
+        settled = true;
+        resolve(duration);
+      };
+      this.music.addEventListener("loadedmetadata", () => {
+        const duration = Number.isFinite(this.music.duration) && this.music.duration > 0
+          ? this.music.duration + 2
+          : CONFIG.sessionDuration;
+        finish(duration);
+      }, { once: true });
+      this.music.addEventListener("error", () => finish(CONFIG.sessionDuration), { once: true });
+      this.music.load();
+      window.setTimeout(() => finish(CONFIG.sessionDuration), 12000);
+    });
+  }
+
   async start() {
     if (this.started) return;
     this.started = true;
     this.ensureContext();
     this.music.currentTime = 0;
-    this.music.play().catch(() => {
+    await this.music.play().catch(() => {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
     });
@@ -2272,7 +2325,7 @@ function updateHUD(delta) {
     statusTimer = 10 + Math.random() * 8;
   }
   if (sessionTimeRemaining <= 0) {
-    hud.status.textContent = "Three-minute mission complete.";
+    hud.status.textContent = "Soundtrack mission complete.";
     endRun();
   }
 }
