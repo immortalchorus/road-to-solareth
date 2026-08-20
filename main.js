@@ -57,7 +57,7 @@ const CONFIG = {
   escortDroneDamage: 2,
   escortDroneProjectileSpeed: 68,
   escortDroneFireInterval: 10,
-  sessionDuration: 300,
+  sessionDuration: 180,
   worldColors: {
     sand: 0x9b3f28,
     darkSand: 0x5f2923,
@@ -219,7 +219,7 @@ window.addEventListener("keyup", event => {
 window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
 });
-hud.musicButton.addEventListener("click", () => audio.start());
+hud.musicButton.addEventListener("click", () => audio.toggleMute());
 rotorVolumeControl.addEventListener("input", () => {
   const volume = Number(rotorVolumeControl.value) / 100;
   rotorVolumeValue.textContent = `${rotorVolumeControl.value}%`;
@@ -1839,13 +1839,42 @@ class AudioManager {
     this.rotorOutput = null;
     this.rotorPulse = null;
     this.rotorVolume = Number(rotorVolumeControl.value) / 100;
+    this.muted = false;
+    this.music = new Audio("assets/iron-circuit.mp3");
+    this.music.id = "soundtrack";
+    this.music.setAttribute("aria-hidden", "true");
+    this.music.preload = "auto";
+    this.music.volume = 0.58;
+    document.body.appendChild(this.music);
   }
 
   async start() {
     if (this.started) return;
     this.started = true;
     this.ensureContext();
+    this.music.currentTime = 0;
+    this.music.play().catch(() => {
+      hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
+      statusTimer = 3;
+    });
     hud.musicButton.textContent = "Silent Mode";
+  }
+
+  toggleMute() {
+    if (!this.started) {
+      this.start();
+      return;
+    }
+    this.muted = !this.muted;
+    this.music.muted = this.muted;
+    if (this.master && this.context) {
+      this.master.gain.setTargetAtTime(this.muted ? 0 : 0.42, this.context.currentTime, 0.04);
+    }
+    hud.musicButton.textContent = this.muted ? "Sound On" : "Silent Mode";
+  }
+
+  stopMusic() {
+    this.music.pause();
   }
 
   update(delta, tankRef) {
@@ -2205,7 +2234,7 @@ function updateHUD(delta) {
     statusTimer = 10 + Math.random() * 8;
   }
   if (sessionTimeRemaining <= 0) {
-    hud.status.textContent = "Five-minute mission complete.";
+    hud.status.textContent = "Three-minute mission complete.";
     endRun();
   }
 }
@@ -2449,6 +2478,7 @@ function endRun() {
   input.fireHeld = false;
   tank.speed = 0;
   audio.silenceRotor();
+  audio.stopMusic();
   const accuracy = runStats.shotsFired > 0 ? Math.round(runStats.shotsHit / runStats.shotsFired * 100) : 0;
   const minutes = Math.floor(runStats.flightTime / 60);
   const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
