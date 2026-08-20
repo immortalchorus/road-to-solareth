@@ -1559,7 +1559,7 @@ class RefuelTowerManager {
       const z = Math.sin(angle) * radius;
       const tower = new RefuelTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
-      registerUniverseTarget(tower.group, CONFIG.refuelTowerRadius + 2.5);
+      registerUniverseTarget(tower.group, CONFIG.refuelTowerRadius + 2.5, { playerDestructible: false });
       this.towers.push(tower);
     }
   }
@@ -2626,9 +2626,10 @@ function endRun() {
   hud.runSummary.hidden = false;
 }
 
-function registerUniverseTarget(object, radius) {
-  object.userData.destructible = true;
-  universeTargets.push({ object, radius, position: object.position.clone() });
+function registerUniverseTarget(object, radius, options = {}) {
+  const playerDestructible = options.playerDestructible !== false;
+  object.userData.destructible = playerDestructible;
+  universeTargets.push({ object, radius, position: object.position.clone(), playerDestructible });
 }
 
 function destroyUniverseTarget(target) {
@@ -2645,7 +2646,7 @@ function hitUniverseTarget(position, radius) {
   let closest = null;
   let closestDistance = Infinity;
   for (const target of universeTargets) {
-    if (!target.object.parent) continue;
+    if (!target.object.parent || !target.playerDestructible) continue;
     const hitRadius = radius + target.radius;
     const dx = target.position.x - position.x;
     const dy = target.position.y - position.y;
@@ -2662,7 +2663,7 @@ function hitUniverseTarget(position, radius) {
 function destroyUniverseNear(position, radius) {
   let destroyed = 0;
   for (const target of [...universeTargets]) {
-    if (!target.object.parent) continue;
+    if (!target.object.parent || !target.playerDestructible) continue;
     const hitRadius = radius + target.radius;
     const dx = target.position.x - position.x;
     const dy = target.position.y - position.y;
