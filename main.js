@@ -1521,6 +1521,27 @@ class SkyDrone {
   }
 }
 
+let refuelTowerModelPromise = null;
+
+function loadRefuelTowerModel() {
+  if (refuelTowerModelPromise) return refuelTowerModelPromise;
+
+  refuelTowerModelPromise = new Promise((resolve, reject) => {
+    const path = "assets/models/";
+    const materialLoader = new THREE.MTLLoader();
+    materialLoader.setPath(path);
+    materialLoader.load("Fuel-Tower_001.mtl", materials => {
+      materials.preload();
+      const objectLoader = new THREE.OBJLoader();
+      objectLoader.setMaterials(materials);
+      objectLoader.setPath(path);
+      objectLoader.load("Fuel-Tower_001.obj", resolve, undefined, reject);
+    }, undefined, reject);
+  });
+
+  return refuelTowerModelPromise;
+}
+
 class RefuelTowerManager {
   constructor(parent, terrainManager) {
     this.parent = parent;
@@ -1583,26 +1604,41 @@ class RefuelTower {
   }
 
   build() {
-    const towerMat = new THREE.MeshStandardMaterial({ color: 0x0079d6, emissive: 0x003b80, emissiveIntensity: 0.55, metalness: 0.72, roughness: 0.24 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x101820, metalness: 0.78, roughness: 0.36 });
     this.glowMat = new THREE.MeshBasicMaterial({ color: 0x009dff, transparent: true, opacity: 0.9, depthWrite: false });
     this.coreMat = new THREE.MeshBasicMaterial({ color: 0x2ed7ff, transparent: true, opacity: 1, depthWrite: false });
 
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.9, this.height, 8), towerMat);
-    stem.position.y = this.height * 0.5;
-    stem.castShadow = true;
-    this.group.add(stem);
+    loadRefuelTowerModel().then(source => {
+      if (this.consumed || !this.group.parent) return;
+      const model = source.clone(true);
+      model.traverse(child => {
+        if (!child.isMesh) return;
+        child.geometry = child.geometry.clone();
+        child.material = child.material.clone();
+        child.material.color.setHex(0x008be8);
+        if (child.material.emissive) child.material.emissive.setHex(0x003b80);
+        child.material.metalness = 0.68;
+        child.material.roughness = 0.3;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      });
+
+      const bounds = new THREE.Box3().setFromObject(model);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      const scale = this.height / Math.max(size.y, 0.001);
+      model.scale.setScalar(scale);
+      model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+      this.group.add(model);
+      this.model = model;
+    }).catch(error => {
+      console.error("Fuel tower model failed to load", error);
+    });
 
     const gate = new THREE.Mesh(new THREE.TorusGeometry(CONFIG.refuelTowerRadius, 0.16, 8, 48), this.glowMat);
     gate.position.y = 6.2;
     gate.rotation.x = Math.PI * 0.5;
     this.group.add(gate);
     this.gate = gate;
-
-    const top = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.0, 4.2), darkMat);
-    top.position.y = this.height + 0.65;
-    top.castShadow = true;
-    this.group.add(top);
 
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.82, 12, 8), this.coreMat);
     beacon.position.y = this.height + 1.55;
