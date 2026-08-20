@@ -479,14 +479,14 @@ class Tank {
       this.group.add(underWheel);
     }
     addBox([6.2, 0.34, 0.45], [0, 0.22, 4.25], materials.warmMechanics);
-    addStalk(-3.25, -2.25, -6.25, -5.25);
-    addStalk(3.25, -2.25, 6.25, -5.25);
-    addStalk(-3.25, 2.25, -6.25, 5.25);
-    addStalk(3.25, 2.25, 6.25, 5.25);
-    addFanPod(-6.45, -5.45);
-    addFanPod(6.45, -5.45);
-    addFanPod(-6.45, 5.45);
-    addFanPod(6.45, 5.45);
+    addStalk(-3.25, -2.25, -7.65, -6.05);
+    addStalk(3.25, -2.25, 7.65, -6.05);
+    addStalk(-3.25, 2.25, -7.65, 6.05);
+    addStalk(3.25, 2.25, 7.65, 6.05);
+    addFanPod(-7.95, -6.3);
+    addFanPod(7.95, -6.3);
+    addFanPod(-7.95, 6.3);
+    addFanPod(7.95, 6.3);
 
     for (const x of [-2.1, 0, 2.1]) {
       addBox([1.15, 0.24, 0.24], [x, 2.58, -4.72], materials.blueGlow);
@@ -2210,8 +2210,11 @@ function toggleCameraMode() {
 
 function updateCamera(delta) {
   const profile = cameraProfiles[cameraMode];
+  const narrowViewport = window.innerWidth <= 620;
+  const cameraDistance = profile.distance * (narrowViewport ? 1.35 : 1);
+  const cameraHeight = profile.height + (narrowViewport ? 2.5 : 0);
   const behind = new THREE.Vector3(Math.sin(tank.group.rotation.y), 0, Math.cos(tank.group.rotation.y));
-  const target = tank.group.position.clone().add(new THREE.Vector3(0, profile.height, 0)).addScaledVector(behind, profile.distance);
+  const target = tank.group.position.clone().add(new THREE.Vector3(0, cameraHeight, 0)).addScaledVector(behind, cameraDistance);
   camera.position.lerp(target, 1 - Math.pow(profile.settle, delta));
   camera.fov = THREE.MathUtils.lerp(camera.fov, profile.fov, 1 - Math.pow(0.025, delta));
   camera.updateProjectionMatrix();
@@ -2289,18 +2292,19 @@ function emergencyClearAroundTank() {
 
 function createDistantCity(colorHex) {
   const group = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.55, transparent: true, opacity: 0.75 });
+  const mat = new THREE.MeshStandardMaterial({ color: 0x101820, metalness: 0.82, roughness: 0.3 });
+  const accent = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.82 });
+  const warning = new THREE.MeshBasicMaterial({ color: 0xff2b20, transparent: true, opacity: 0.9 });
   for (let i = 0; i < 11; i++) {
     const h = 10 + seededRandom(i * 15) * 42;
     const w = 5 + seededRandom(i * 17) * 6;
-    const spire = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.3, w, h, 6), mat);
+    const spire = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.2, w, h, 4), mat);
     spire.position.set((i - 5) * 10, h * 0.5, seededRandom(i * 21) * 15);
+    spire.rotation.y = Math.PI * 0.25;
     group.add(spire);
-    if (i % 3 === 0) {
-      const dome = new THREE.Mesh(new THREE.SphereGeometry(w * 0.9, 12, 8), mat);
-      dome.position.set(spire.position.x, h + w * 0.35, spire.position.z);
-      group.add(dome);
-    }
+    const band = new THREE.Mesh(new THREE.BoxGeometry(w * 1.05, 0.28, 0.16), i % 3 === 0 ? warning : accent);
+    band.position.set(spire.position.x, h * 0.62, spire.position.z - w * 0.58);
+    group.add(band);
   }
   return group;
 }
@@ -2316,11 +2320,16 @@ function createBurningDystopianCity(seed) {
     const w = 4 + seededRandom(seed + i * 7) * 7;
     const x = (i - 6.5) * 8 + (seededRandom(seed + i * 3) - 0.5) * 6;
     const z = (seededRandom(seed + i * 11) - 0.5) * 24;
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.75), towerMat);
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.32, w, h, 4), towerMat);
     tower.position.set(x, h * 0.5, z);
+    tower.rotation.y = Math.PI * 0.25;
     tower.rotation.z = (seededRandom(seed + i * 17) - 0.5) * 0.14;
     tower.castShadow = true;
     group.add(tower);
+
+    const warningBand = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.22, 0.14), materials.redEye);
+    warningBand.position.set(x, h * 0.68, z - w * 0.55);
+    group.add(warningBand);
 
     if (seededRandom(seed + i * 19) > 0.28) {
       const flame = new THREE.Mesh(new THREE.ConeGeometry(w * 0.45, 5 + seededRandom(seed + i * 23) * 7, 7), flameMat);
@@ -2634,9 +2643,9 @@ function createBrokenArch(seed) {
 
 function createHighTechPyramid(seed) {
   const group = new THREE.Group();
-  const radius = 8 + seededRandom(seed) * 8;
-  const height = 12 + seededRandom(seed + 1) * 15;
-  const bodyMaterial = seededRandom(seed + 67) > 0.54 ? materials.pyramidBronze : materials.pyramidGlass;
+  const radius = 10 + seededRandom(seed) * 9;
+  const height = 19 + seededRandom(seed + 1) * 21;
+  const bodyMaterial = seededRandom(seed + 67) > 0.82 ? materials.pyramidBronze : materials.pyramidGlass;
   const pyramid = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 4), bodyMaterial);
   pyramid.position.y = height * 0.5;
   pyramid.rotation.y = Math.PI / 4;
@@ -2648,7 +2657,7 @@ function createHighTechPyramid(seed) {
   const faceAngles = [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
   for (let face = 0; face < faceAngles.length; face++) {
     const angle = faceAngles[face];
-    const faceGlow = face % 2 === 0 ? baseGlow : accentGlow;
+    const faceGlow = face % 2 === 0 ? baseGlow : materials.redEye;
     for (let row = 0; row < 4; row++) {
       const y = height * (0.18 + row * 0.16);
       const faceRadius = radius * (1 - y / height) + 0.16;
@@ -2659,7 +2668,7 @@ function createHighTechPyramid(seed) {
       group.add(strip);
     }
 
-    const verticalSeam = new THREE.Mesh(new THREE.BoxGeometry(0.18, height * 0.62, 0.16), materials.pyramidTrim);
+    const verticalSeam = new THREE.Mesh(new THREE.BoxGeometry(0.2, height * 0.62, 0.18), face % 2 === 0 ? materials.redEye : accentGlow);
     const seamRadius = radius * 0.48;
     verticalSeam.position.set(Math.sin(angle) * seamRadius, height * 0.41, Math.cos(angle) * seamRadius);
     verticalSeam.rotation.y = angle;
