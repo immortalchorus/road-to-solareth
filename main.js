@@ -3,9 +3,9 @@ const THREE = window.THREE;
 const CONFIG = {
   maxPixelRatio: 1.35,
   enableShadows: false,
-  gameAudioGain: 0.9,
-  tankMaxForwardSpeed: 42,
-  tankMaxReverseSpeed: 18,
+  gameAudioGain: 1.35,
+  tankMaxForwardSpeed: 48,
+  tankMaxReverseSpeed: 22,
   tankAcceleration: 36,
   tankTurnSpeed: 1.12,
   turretTurnSpeed: 2.7,
@@ -1547,12 +1547,20 @@ class RefuelTowerManager {
       const aboveBase = tankRef.group.position.y >= tower.group.position.y - 2;
       const belowTop = tankRef.group.position.y <= tower.group.position.y + tower.height + 6;
       const insideStation = horizontalDistance <= CONFIG.refuelTowerRadius && aboveBase && belowTop;
-      if (insideStation && !tower.wasInside) {
+      if (insideStation) {
         resupplyTank();
-        tower.pulse = 1;
+        audio.playResupplyClick();
+        this.consumeTower(tower);
       }
-      tower.wasInside = insideStation;
     }
+  }
+
+  consumeTower(tower) {
+    const targetIndex = universeTargets.findIndex(target => target.object === tower.group);
+    if (targetIndex >= 0) universeTargets.splice(targetIndex, 1);
+    if (tower.group.parent) tower.group.parent.remove(tower.group);
+    disposeObject(tower.group);
+    tower.consumed = true;
   }
 }
 
@@ -1562,7 +1570,7 @@ class RefuelTower {
     this.group = new THREE.Group();
     this.height = 22 + (index % 4) * 3;
     this.pulse = 0;
-    this.wasInside = false;
+    this.consumed = false;
     const y = terrainManager.getHeightAt(x, z);
     this.group.position.set(x, y, z);
     this.build();
@@ -2081,6 +2089,23 @@ class AudioManager {
     ping.stop(now + 0.075);
   }
 
+  playResupplyClick() {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const click = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    click.buffer = this.createNoiseBuffer(0.055);
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(2600, now);
+    filter.Q.value = 2.8;
+    gain.gain.setValueAtTime(0.34, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.052);
+    click.connect(filter).connect(gain).connect(this.master);
+    click.start(now);
+  }
+
   playRadioChatter() {
     const ctx = this.ensureContext();
     if (!ctx) return;
@@ -2127,8 +2152,14 @@ class AudioManager {
     if (!AudioContextClass) return null;
     this.context = new AudioContextClass();
     this.master = this.context.createGain();
+    const limiter = this.context.createDynamicsCompressor();
+    limiter.threshold.value = -4;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 14;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.16;
     this.master.gain.value = CONFIG.gameAudioGain;
-    this.master.connect(this.context.destination);
+    this.master.connect(limiter).connect(this.context.destination);
     return this.context;
   }
 
