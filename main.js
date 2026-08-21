@@ -648,6 +648,9 @@ class Tank {
     const forwardInput = hasFuel && keys.ArrowUp && !pitchMode ? 1 : 0;
     const reverseInput = hasFuel && keys.ArrowDown && !pitchMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
+    const horizontalInput = Number(Boolean(keys.ArrowLeft)) - Number(Boolean(keys.ArrowRight));
+    const automaticBank = !bankMode && !turningTurret && !pitchMode &&
+      Boolean(forwardInput || reverseInput) && horizontalInput !== 0;
 
     if (forwardInput) this.speed += this.acceleration * delta;
     if (reverseInput) this.speed -= this.acceleration * delta;
@@ -704,7 +707,8 @@ class Tank {
 
     if (!bankMode) {
       this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
-      this.flightRoll = moveToward(this.flightRoll, 0, CONFIG.flightLevelSpeed * delta);
+      const targetRoll = automaticBank ? horizontalInput * CONFIG.maxFlightRoll : 0;
+      this.flightRoll = moveToward(this.flightRoll, targetRoll, CONFIG.flightLevelSpeed * delta);
     }
     this.group.rotation.x = this.flightPitch;
     this.group.rotation.z = this.flightRoll;
