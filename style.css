@@ -49,49 +49,42 @@ body {
 
 .splash-controls {
   display: grid;
-  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr) minmax(130px, 180px);
+  grid-template-columns: minmax(260px, 330px) minmax(560px, 650px) minmax(120px, 150px);
   align-items: stretch;
-  width: 100%;
+  width: min(100%, 1150px);
+  justify-self: center;
   gap: 10px;
 }
 
 .splash-instructions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-column: 2;
   grid-row: 1;
   width: 100%;
-  gap: 16px;
+  gap: 7px 12px;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid rgba(143, 243, 255, 0.42);
   border-radius: 6px;
   background: rgba(7, 13, 19, 0.78);
   box-shadow: 0 0 20px rgba(41, 179, 216, 0.16);
   color: #d8f8ff;
-  font: 600 12px "Segoe UI", system-ui, sans-serif;
+  font: 600 10px "Segoe UI", system-ui, sans-serif;
   backdrop-filter: blur(6px);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.splash-instructions > strong {
-  flex: 0 0 auto;
-  color: #ffffff;
-  font-size: 14px;
-  text-align: center;
 }
 
 .splash-instructions > div {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
+  display: grid;
+  gap: 2px;
   align-items: center;
   min-width: 0;
+  text-align: center;
 }
 
 .splash-instructions kbd {
   color: #8ff3ff;
-  font: 800 11px "Segoe UI", system-ui, sans-serif;
+  font: 800 10px "Segoe UI", system-ui, sans-serif;
   white-space: nowrap;
 }
 
@@ -476,32 +469,46 @@ body {
   }
 }
 
+@media (min-width: 621px) and (max-width: 1000px) {
+  .splash-controls {
+    grid-template-columns: 220px minmax(0, 1fr) 110px;
+  }
+
+  .splash-instructions {
+    gap: 6px 4px;
+  }
+
+  .splash-instructions span {
+    display: none;
+  }
+}
+
 @media (max-width: 620px) {
   #splash-screen {
     padding: 0 8px 8px;
   }
 
   .splash-controls {
-    grid-template-columns: 155px minmax(0, 1fr) 76px;
+    grid-template-columns: 140px minmax(0, 1fr) 70px;
     gap: 6px;
   }
 
   .splash-instructions {
-    gap: 12px;
-    padding: 8px 9px;
-    font-size: 10px;
-  }
-
-  .splash-instructions > strong {
-    font-size: 12px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 5px 2px;
+    padding: 7px 4px;
   }
 
   .splash-instructions > div {
-    gap: 4px;
+    gap: 0;
   }
 
   .splash-instructions kbd {
-    font-size: 9px;
+    font-size: 7px;
+  }
+
+  .splash-instructions span {
+    display: none;
   }
 
   #music-ammo-balance-panel {
