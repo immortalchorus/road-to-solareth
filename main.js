@@ -1967,10 +1967,8 @@ class AudioManager {
     this.rotorVolume = Number(rotorVolumeControl.value) / 100;
     this.muted = false;
     this.playlist = [
-      { title: "Iron Circuit", src: "assets/iron-circuit.mp3?v=embedded-assets-1" },
-      { title: "Shardfall Circuit", src: "assets/shardfall-circuit.mp3?v=embedded-assets-1" },
-      { title: "Shattergrid", src: "assets/shattergrid.mp3?v=embedded-assets-1" },
-      { title: "Black Voltage Maze", src: "assets/black-voltage-maze.mp3?v=embedded-assets-1" }
+      { title: "Iron Circuit", src: "assets/iron-circuit.mp3?v=two-track-soundtrack-1" },
+      { title: "NeuroDark Guitar Solos", src: "assets/neurodark-guitar-solos-16.mp3?v=two-track-soundtrack-1" }
     ];
     this.currentTrack = this.selectTrack();
     this.music = new Audio(this.currentTrack.src);
