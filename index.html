@@ -23,6 +23,7 @@
             <div><kbd>M</kbd><span>Launch missile</span></div>
             <div><kbd>F1 / F2 / F3</kbd><span>Missile range</span></div>
             <div><kbd>G</kbd><span>Toggle scan grid</span></div>
+            <div><kbd>P / Shift + P</kbd><span>Autopilot / phase</span></div>
             <div><kbd>Shift+←→</kbd><span>Turn turret</span></div>
             <div><kbd>Y+↑↓</kbd><span>Aim cannon</span></div>
             <div><kbd>V</kbd><span>Center turret</span></div>
@@ -48,6 +49,11 @@
               <input id="splash-rotor-volume" type="range" min="0" max="100" value="80" step="1">
               <output id="splash-rotor-volume-value" for="splash-rotor-volume">80%</output>
             </label>
+            <label id="comms-volume-panel" for="comms-volume">
+              <span>Comms Volume</span>
+              <input id="comms-volume" type="range" min="0" max="100" value="70" step="1">
+              <output id="comms-volume-value" for="comms-volume">70%</output>
+            </label>
           </div>
           <button id="play-button" type="button">PLAY</button>
         </div>
@@ -61,6 +67,7 @@
         <div>Distance: <span id="distance">0.0 km</span></div>
         <div>Machines stilled: <span id="destroyed">0</span></div>
         <div>Mission time: <span id="session-time">--:--</span></div>
+        <div>Autopilot: <span id="autopilot-status">OFF</span></div>
         <div id="status">Metallic orbs watch the red waste.</div>
       </section>
 
@@ -104,14 +111,14 @@
 
       <aside id="instructions" hidden>
         <strong>Tank Driver</strong>
-        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Space drops bombs; M launches rack missiles. F1/F2/F3 select short, medium, or long missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers yaw and pitch; Shift + V centers yaw while preserving pitch. Ctrl fires. Hold Z while firing for drone-seeking ammo. Red towers reload missiles. Tab toggles camera height. Escape clears nearby obstacles.</span>
+        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. P toggles autopilot; Shift + P changes its altitude phase. Space drops bombs; M launches rack missiles. F1/F2/F3 select short, medium, or long missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers yaw and pitch; Shift + V centers yaw while preserving pitch. Ctrl fires. Hold Z while firing for drone-seeking ammo. Red towers reload missiles. Tab toggles camera height. Escape clears nearby obstacles.</span>
       </aside>
     </main>
 
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=missile-range-grid-1"></script>
+    <script src="main.js?v=autopilot-comms-1"></script>
   </body>
 </html>
 

@@ -85,7 +85,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyG", "KeyM", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -101,6 +101,7 @@ const hud = {
   missiles: document.querySelector("#missiles"),
   hitPoints: document.querySelector("#hit-points"),
   sessionTime: document.querySelector("#session-time"),
+  autopilotStatus: document.querySelector("#autopilot-status"),
   status: document.querySelector("#status"),
   musicButton: document.querySelector("#music-button"),
   pauseButton: document.querySelector("#pause-button"),
@@ -122,8 +123,11 @@ const splashRotorVolumeControl = document.querySelector("#splash-rotor-volume");
 const splashRotorVolumeValue = document.querySelector("#splash-rotor-volume-value");
 const missileRangeControl = document.querySelector("#missile-range");
 const missileRangeValue = document.querySelector("#missile-range-value");
+const commsVolumeControl = document.querySelector("#comms-volume");
+const commsVolumeValue = document.querySelector("#comms-volume-value");
 let audio = null;
 let missileRange = 55;
+let commsVolume = 0.7;
 
 try {
   musicAmmoBalanceControl.value = window.localStorage.getItem("hovertank-music-ammo-balance") || "50";
@@ -191,6 +195,27 @@ function setMissileRange(value, announce = false) {
     hud.status.textContent = `Missile range: ${label} (${missileRange}).`;
     statusTimer = 2.8;
   }
+}
+
+try {
+  const savedCommsVolume = window.localStorage.getItem("hovertank-comms-volume");
+  commsVolume = savedCommsVolume === null ? 0.7 : THREE.MathUtils.clamp(Number(savedCommsVolume) / 100, 0, 1);
+  if (!Number.isFinite(commsVolume)) commsVolume = 0.7;
+} catch (_) {
+  commsVolume = 0.7;
+}
+commsVolumeControl.value = String(Math.round(commsVolume * 100));
+commsVolumeValue.textContent = `${Math.round(commsVolume * 100)}%`;
+
+function setCommsVolume(value) {
+  commsVolume = THREE.MathUtils.clamp(Number(value) / 100, 0, 1);
+  commsVolumeValue.textContent = `${Math.round(commsVolume * 100)}%`;
+  try {
+    window.localStorage.setItem("hovertank-comms-volume", String(Math.round(commsVolume * 100)));
+  } catch (_) {
+    // The selected comms volume still applies for this session.
+  }
+  if (audio) audio.setCommsVolume(commsVolume);
 }
 
 const poeticStatuses = [
@@ -289,6 +314,7 @@ let skyDrones;
 let refuelTowers;
 let missileTowers;
 let tacticalGrid;
+let autopilot;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -306,6 +332,9 @@ window.addEventListener("keydown", event => {
     event.stopPropagation();
   }
   if (!gameStarted || gamePaused) return;
+  const shiftHeld = Boolean(input.ShiftLeft || input.ShiftRight || event.shiftKey);
+  const manualFlightInput = event.code === "KeyF" || (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code) && !shiftHeld && !input.KeyY);
+  if (manualFlightInput && autopilot && autopilot.enabled) autopilot.disengage(true);
   input[event.code] = true;
   if (audio && !audio.started) audio.start();
   if (event.code === "ControlLeft" || event.code === "ControlRight") input.fireHeld = true;
@@ -316,6 +345,10 @@ window.addEventListener("keydown", event => {
   if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
   if (event.code === "F3" && !event.repeat) setMissileRange(90, true);
   if (event.code === "KeyG" && !event.repeat && tacticalGrid) tacticalGrid.toggle();
+  if (event.code === "KeyP" && !event.repeat && autopilot) {
+    if (shiftHeld && autopilot.enabled) autopilot.switchPhase();
+    else autopilot.toggle();
+  }
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret(Boolean(input.ShiftLeft || input.ShiftRight));
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
@@ -346,6 +379,7 @@ musicAmmoBalanceControl.addEventListener("input", updateMusicAmmoBalance);
 rotorVolumeControl.addEventListener("input", () => updateRotorVolume(rotorVolumeControl));
 splashRotorVolumeControl.addEventListener("input", () => updateRotorVolume(splashRotorVolumeControl));
 missileRangeControl.addEventListener("input", () => setMissileRange(Number(missileRangeControl.value)));
+commsVolumeControl.addEventListener("input", () => setCommsVolume(commsVolumeControl.value));
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 playButton.addEventListener("click", async () => {
   playButton.disabled = true;
@@ -1321,6 +1355,117 @@ class TacticalGrid {
       if (point.y <= this.terrain.getHeightAt(point.x, point.z) + 0.7) return point;
     }
     return point;
+  }
+}
+
+class AutopilotManager {
+  constructor() {
+    this.enabled = false;
+    this.phase = "low";
+    this.phaseTimer = 0;
+    this.headingTimer = 0;
+    this.desiredHeading = 0;
+    this.updateHUD();
+  }
+
+  toggle() {
+    if (this.enabled) this.disengage(false);
+    else this.engage();
+  }
+
+  engage() {
+    this.enabled = true;
+    this.phase = "low";
+    this.phaseTimer = 18;
+    this.headingTimer = 0;
+    this.desiredHeading = tank.group.rotation.y;
+    this.updateHUD();
+    hud.status.textContent = "Autopilot engaged. You have the guns.";
+    statusTimer = 4;
+    audio.speakComms("Autopilot engaged. You have the guns.", true);
+  }
+
+  disengage(manualOverride) {
+    if (!this.enabled) return;
+    this.enabled = false;
+    tank.altitudeHoldY = null;
+    this.updateHUD();
+    const message = manualOverride ? "Returning flight control to you." : "Autopilot disengaged.";
+    hud.status.textContent = message;
+    statusTimer = 3;
+    audio.speakComms(message, true);
+  }
+
+  switchPhase() {
+    if (!this.enabled) return;
+    this.phase = this.phase === "low" ? "high" : "low";
+    this.phaseTimer = this.phase === "low" ? 18 : 22;
+    this.announcePhase();
+  }
+
+  announcePhase() {
+    this.updateHUD();
+    const message = this.phase === "low" ? "Preparing to go low, Captain." : "Taking us higher for a better view.";
+    hud.status.textContent = message;
+    statusTimer = 3.5;
+    audio.speakComms(message, true);
+  }
+
+  updateHUD() {
+    hud.autopilotStatus.textContent = this.enabled ? this.phase.toUpperCase() : "OFF";
+    hud.autopilotStatus.style.color = this.enabled ? "#73ffad" : "#f5e9d1";
+  }
+
+  update(delta, tankRef, terrainManager, playerInput) {
+    const controls = { ...playerInput };
+    if (!this.enabled) return controls;
+
+    this.phaseTimer -= delta;
+    this.headingTimer -= delta;
+    if (this.phaseTimer <= 0) this.switchPhase();
+    if (this.headingTimer <= 0) {
+      this.headingTimer = 7 + Math.random() * 5;
+      this.desiredHeading = wrapAngle(this.desiredHeading + (Math.random() - 0.5) * 1.15);
+    }
+
+    const forward = new THREE.Vector3(-Math.sin(this.desiredHeading), 0, -Math.cos(this.desiredHeading));
+    const aheadX = tankRef.group.position.x + forward.x * 52;
+    const aheadZ = tankRef.group.position.z + forward.z * 52;
+    const currentGround = terrainManager.getHeightAt(tankRef.group.position.x, tankRef.group.position.z);
+    if (terrainManager.getHeightAt(aheadX, aheadZ) > currentGround + 8) {
+      const leftHeading = this.desiredHeading + 0.62;
+      const rightHeading = this.desiredHeading - 0.62;
+      const leftHeight = terrainManager.getHeightAt(tankRef.group.position.x - Math.sin(leftHeading) * 55, tankRef.group.position.z - Math.cos(leftHeading) * 55);
+      const rightHeight = terrainManager.getHeightAt(tankRef.group.position.x - Math.sin(rightHeading) * 55, tankRef.group.position.z - Math.cos(rightHeading) * 55);
+      this.desiredHeading = wrapAngle(leftHeight <= rightHeight ? leftHeading : rightHeading);
+      audio.speakComms("Terrain rising. Adjusting course.");
+    }
+
+    for (const item of terrainManager.destructibles) {
+      if (!item.object.parent || !item.solid) continue;
+      const dx = item.position.x - tankRef.group.position.x;
+      const dz = item.position.z - tankRef.group.position.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > item.radius + 48 || distance < 0.001) continue;
+      const alignment = (dx * forward.x + dz * forward.z) / distance;
+      if (alignment > 0.6) {
+        const side = forward.x * dz - forward.z * dx;
+        this.desiredHeading = wrapAngle(this.desiredHeading + (side > 0 ? -0.82 : 0.82));
+        this.headingTimer = 4;
+        break;
+      }
+    }
+
+    const yawError = wrapAngle(this.desiredHeading - tankRef.group.rotation.y);
+    controls.ArrowUp = true;
+    controls.ArrowDown = false;
+    if (!controls.KeyY && !(controls.ShiftLeft || controls.ShiftRight)) {
+      controls.ArrowLeft = yawError > 0.045;
+      controls.ArrowRight = yawError < -0.045;
+    }
+    const clearance = this.phase === "low" ? 8 : 34;
+    tankRef.altitudeHoldY = terrainManager.getHeightAt(tankRef.group.position.x, tankRef.group.position.z) + clearance;
+    return controls;
   }
 }
 
@@ -2462,6 +2607,8 @@ class AudioManager {
     this.rotorOutput = null;
     this.rotorPulse = null;
     this.rotorVolume = Number(rotorVolumeControl.value) / 100;
+    this.commsVolume = commsVolume;
+    this.lastCommsAt = -Infinity;
     this.muted = false;
     this.playlist = [
       { title: "Iron Circuit", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/iron-circuit.mp3" },
@@ -2541,6 +2688,7 @@ class AudioManager {
     if (this.master && this.context) {
       this.master.gain.setTargetAtTime(this.muted ? 0 : CONFIG.gameAudioGain, this.context.currentTime, 0.04);
     }
+    if (this.muted && "speechSynthesis" in window) window.speechSynthesis.cancel();
     hud.musicButton.textContent = this.muted ? "Sound On" : "Sound Off";
   }
 
@@ -2548,11 +2696,13 @@ class AudioManager {
     if (!this.started) return;
     this.music.pause();
     if (this.context && this.context.state === "running") this.context.suspend();
+    if ("speechSynthesis" in window) window.speechSynthesis.pause();
   }
 
   resume() {
     if (!this.started) return;
     if (this.context && this.context.state === "suspended") this.context.resume();
+    if ("speechSynthesis" in window) window.speechSynthesis.resume();
     this.music.play().catch(() => {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
@@ -2561,6 +2711,30 @@ class AudioManager {
 
   stopMusic() {
     this.music.pause();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
+
+  setCommsVolume(volume) {
+    this.commsVolume = THREE.MathUtils.clamp(volume, 0, 1);
+  }
+
+  speakComms(message, force = false) {
+    if (this.muted || this.commsVolume <= 0 || !("speechSynthesis" in window)) return;
+    const now = performance.now();
+    if (!force && now - this.lastCommsAt < 8000) return;
+    this.lastCommsAt = now;
+    const voices = window.speechSynthesis.getVoices();
+    const americanVoices = voices.filter(voice => /^en-US/i.test(voice.lang));
+    const maleNames = /david|guy|mark|alex|christopher|eric|roger|davis|matthew/i;
+    const voice = americanVoices.find(candidate => maleNames.test(candidate.name)) || americanVoices[0] || voices.find(candidate => /^en/i.test(candidate.lang));
+    const utterance = new SpeechSynthesisUtterance(message);
+    if (voice) utterance.voice = voice;
+    utterance.lang = "en-US";
+    utterance.volume = this.commsVolume;
+    utterance.rate = 0.96;
+    utterance.pitch = 0.82;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   }
 
   update(delta, tankRef) {
@@ -2884,6 +3058,7 @@ skyDrones = new SkyDroneManager(scene);
 refuelTowers = new RefuelTowerManager(scene, terrain);
 missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
+autopilot = new AutopilotManager();
 
 terrain.update(tank.group.position);
 positionTankOnTerrain();
@@ -2895,7 +3070,8 @@ function animate() {
 
   if (gameStarted && !gameEnded && !gamePaused) {
     updateFuel(delta);
-    tank.update(delta, input, terrain, fuel > 0);
+    const controls = autopilot.update(delta, tank, terrain, input);
+    tank.update(delta, controls, terrain, fuel > 0);
     const moved = tank.group.position.distanceTo(previous);
     distanceTravelled += moved;
     const normalHoverY = terrain.getHeightAt(tank.group.position.x, tank.group.position.z) + CONFIG.tankHoverHeight;

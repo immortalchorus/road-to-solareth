@@ -141,7 +141,7 @@ body {
 
 #splash-settings-stack {
   display: grid;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: repeat(3, 1fr);
   grid-column: 3;
   grid-row: 1;
   gap: 6px;
@@ -174,6 +174,39 @@ body {
   color: #d8ffe4;
   font: 700 15px "Segoe UI", system-ui, sans-serif;
   backdrop-filter: blur(7px);
+}
+
+#comms-volume-panel {
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) 42px;
+  gap: 3px 8px;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 198, 105, 0.5);
+  border-radius: 6px;
+  background: rgba(22, 15, 7, 0.86);
+  color: #fff1d8;
+  font: 700 15px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(7px);
+}
+
+#comms-volume-panel > span {
+  grid-column: 1 / -1;
+  color: #ffffff;
+  text-align: center;
+}
+
+#comms-volume {
+  width: 100%;
+  margin: 0;
+  accent-color: #ffc669;
+  cursor: pointer;
+}
+
+#comms-volume-value {
+  color: #ffd99b;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 #missile-range-panel > span {
@@ -645,6 +678,19 @@ body {
 
   #missile-range-panel > span,
   #missile-range-value {
+    font-size: 8px;
+    text-align: center;
+  }
+
+  #comms-volume-panel {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 7px 5px;
+    font-size: 8px;
+  }
+
+  #comms-volume-panel > span,
+  #comms-volume-value {
     font-size: 8px;
     text-align: center;
   }
