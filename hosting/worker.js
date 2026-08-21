@@ -12,7 +12,7 @@ function decodeText(base64) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const pathname = url.pathname === "" ? "/" : url.pathname;
     if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
@@ -22,6 +22,7 @@ export default {
         headers: { "content-type": asset.type, "cache-control": "no-store" }
       });
     }
+    if (env.ASSETS) return env.ASSETS.fetch(request);
     return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
 };

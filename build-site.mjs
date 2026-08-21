@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 
 const textAssets = [
   ["/", "index.html", "text/html; charset=utf-8"],
@@ -23,7 +23,7 @@ function decodeText(base64) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     const pathname = url.pathname === "" ? "/" : url.pathname;
     if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
@@ -33,6 +33,7 @@ export default {
         headers: { "content-type": asset.type, "cache-control": "no-store" }
       });
     }
+    if (env.ASSETS) return env.ASSETS.fetch(request);
     return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
 };
@@ -43,4 +44,5 @@ await mkdir("dist/server", { recursive: true });
 await writeFile("hosting/worker.js", worker);
 await writeFile("dist/server/index.js", worker);
 await Promise.all(["index.html", "style.css", "main.js"].map(file => copyFile(file, `dist/${file}`)));
+await cp("assets", "dist/assets", { recursive: true, force: true });
 console.log("Built hosted game bundle.");
