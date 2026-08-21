@@ -76,7 +76,9 @@
       </section>
 
       <div id="bottom-right-controls">
-        <button id="music-button" type="button">Silent Mode</button>
+        <button id="pause-button" type="button" aria-pressed="false">Pause Game</button>
+        <button id="instructions-button" type="button" aria-expanded="false" aria-controls="instructions">Instructions</button>
+        <button id="music-button" type="button">Sound Off</button>
         <label id="rotor-volume-panel" for="rotor-volume">
           <span>Rotor Noise</span>
           <input id="rotor-volume" type="range" min="0" max="100" value="80" step="1">
@@ -85,7 +87,7 @@
         <section id="fuel-panel" aria-live="polite"><div>Fuel <span id="fuel">1000</span></div><div>Ammo <span id="ammo">1000</span></div></section>
       </div>
 
-      <aside id="instructions">
+      <aside id="instructions" hidden>
         <strong>Tank Driver</strong>
         <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Tap B to drop bombs; hold B for aircraft-style flight controls. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers the turret. Shift + L toggles turret beacon. Space fires. Hold H while firing for drone-seeking ammo. Tab toggles camera height. Escape clears nearby obstacles.</span>
       </aside>
@@ -94,7 +96,7 @@
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=three-track-soundtrack-1"></script>
+    <script src="main.js?v=pause-instructions-controls-1"></script>
   </body>
 </html>
 

@@ -103,6 +103,9 @@ const hud = {
   sessionTime: document.querySelector("#session-time"),
   status: document.querySelector("#status"),
   musicButton: document.querySelector("#music-button"),
+  pauseButton: document.querySelector("#pause-button"),
+  instructionsButton: document.querySelector("#instructions-button"),
+  instructions: document.querySelector("#instructions"),
   crosshair: document.querySelector("#crosshair"),
   hitMarker: document.querySelector("#hit-marker"),
   damageNumbers: document.querySelector("#damage-numbers"),
@@ -159,6 +162,7 @@ let ammo = CONFIG.maxAmmo;
 let hitPoints = CONFIG.maxHitPoints;
 let gameEnded = false;
 let gameStarted = false;
+let gamePaused = false;
 let sessionTimeRemaining = CONFIG.sessionDuration;
 let missionEndsAt = 0;
 const runStats = {
@@ -244,7 +248,7 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     event.stopPropagation();
   }
-  if (!gameStarted) return;
+  if (!gameStarted || gamePaused) return;
   input[event.code] = true;
   if (audio && !audio.started) audio.start();
   if (event.code === "Space") input.fireHeld = true;
@@ -269,6 +273,12 @@ window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
 });
 hud.musicButton.addEventListener("click", () => audio.toggleMute());
+hud.instructionsButton.addEventListener("click", () => {
+  const willShow = hud.instructions.hidden;
+  hud.instructions.hidden = !willShow;
+  hud.instructionsButton.setAttribute("aria-expanded", String(willShow));
+});
+hud.pauseButton.addEventListener("click", () => toggleGamePause());
 musicAmmoBalanceControl.addEventListener("input", updateMusicAmmoBalance);
 rotorVolumeControl.addEventListener("input", () => {
   const volume = Number(rotorVolumeControl.value) / 100;
@@ -2070,7 +2080,7 @@ class AudioManager {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
     });
-    hud.musicButton.textContent = "Silent Mode";
+    hud.musicButton.textContent = "Sound Off";
   }
 
   toggleMute() {
@@ -2083,7 +2093,22 @@ class AudioManager {
     if (this.master && this.context) {
       this.master.gain.setTargetAtTime(this.muted ? 0 : CONFIG.gameAudioGain, this.context.currentTime, 0.04);
     }
-    hud.musicButton.textContent = this.muted ? "Sound On" : "Silent Mode";
+    hud.musicButton.textContent = this.muted ? "Sound On" : "Sound Off";
+  }
+
+  pause() {
+    if (!this.started) return;
+    this.music.pause();
+    if (this.context && this.context.state === "running") this.context.suspend();
+  }
+
+  resume() {
+    if (!this.started) return;
+    if (this.context && this.context.state === "suspended") this.context.resume();
+    this.music.play().catch(() => {
+      hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
+      statusTimer = 3;
+    });
   }
 
   stopMusic() {
@@ -2418,7 +2443,7 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.045);
   const previous = tank.group.position.clone();
 
-  if (gameStarted && !gameEnded) {
+  if (gameStarted && !gameEnded && !gamePaused) {
     updateFuel(delta);
     tank.update(delta, input, terrain, fuel > 0);
     const moved = tank.group.position.distanceTo(previous);
@@ -2434,13 +2459,31 @@ function animate() {
     updateHUD(delta);
     audio.update(delta, tank);
   }
-  updateExplosions(delta);
-  updateImpactEffects(delta);
-  updatePyramidBeacons(delta);
-  updateDroneOrbs(delta);
+  if (!gamePaused) {
+    updateExplosions(delta);
+    updateImpactEffects(delta);
+    updatePyramidBeacons(delta);
+    updateDroneOrbs(delta);
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
+}
+
+function toggleGamePause() {
+  if (!gameStarted || gameEnded) return;
+  gamePaused = !gamePaused;
+  for (const key of Object.keys(input)) input[key] = false;
+  if (gamePaused) {
+    sessionTimeRemaining = Math.max(0, (missionEndsAt - performance.now()) / 1000);
+    audio.pause();
+  } else {
+    missionEndsAt = performance.now() + sessionTimeRemaining * 1000;
+    audio.resume();
+    clock.getDelta();
+  }
+  hud.pauseButton.textContent = gamePaused ? "Resume Game" : "Pause Game";
+  hud.pauseButton.setAttribute("aria-pressed", String(gamePaused));
 }
 
 function positionTankOnTerrain() {

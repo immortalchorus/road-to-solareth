@@ -368,6 +368,8 @@ body {
   max-width: calc(100vw - 36px);
 }
 
+#pause-button,
+#instructions-button,
 #music-button {
   height: 40px;
   min-height: 40px;
@@ -382,6 +384,10 @@ body {
   backdrop-filter: blur(9px);
 }
 
+#pause-button:hover,
+#pause-button:focus-visible,
+#instructions-button:hover,
+#instructions-button:focus-visible,
 #music-button:hover,
 #music-button:focus-visible {
   background: rgba(118, 50, 49, 0.86);
@@ -392,7 +398,7 @@ body {
 #rotor-volume-panel {
   display: grid;
   grid-template-columns: auto minmax(70px, 1fr) 42px;
-  width: 210px;
+  width: 240px;
   height: 40px;
   gap: 8px;
   align-items: center;
@@ -469,6 +475,10 @@ body {
 
 #instructions strong {
   color: #8ff0ff;
+}
+
+#instructions[hidden] {
+  display: none;
 }
 
 @media (min-width: 621px) and (max-width: 1000px) {
@@ -571,17 +581,19 @@ body {
     max-width: calc(100vw - 16px);
   }
 
+  #pause-button,
+  #instructions-button,
   #music-button {
     height: 38px;
     min-height: 38px;
-    padding: 0 6px;
-    font-size: 11px;
+    padding: 0 4px;
+    font-size: 8px;
   }
 
   #rotor-volume-panel {
-    width: 110px;
+    width: 70px;
     height: 38px;
-    grid-template-columns: minmax(50px, 1fr) 28px;
+    grid-template-columns: minmax(34px, 1fr) 24px;
     gap: 4px;
     padding: 5px 6px;
     font-size: 10px;
@@ -593,14 +605,14 @@ body {
 
   #fuel-panel {
     height: 38px;
-    min-width: 104px;
-    gap: 5px;
-    padding: 5px 6px;
-    font-size: 11px;
+    min-width: 75px;
+    gap: 3px;
+    padding: 5px 4px;
+    font-size: 8px;
   }
 
   #fuel-panel span {
-    min-width: 34px;
+    min-width: 20px;
   }
 
   #instructions {
