@@ -47,6 +47,56 @@ body {
   display: none;
 }
 
+.splash-controls {
+  display: grid;
+  width: min(560px, 92vw);
+  justify-items: center;
+  gap: 12px;
+}
+
+#music-ammo-balance-panel {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  width: 100%;
+  gap: 7px 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border: 1px solid rgba(143, 243, 255, 0.58);
+  border-radius: 6px;
+  background: rgba(7, 13, 19, 0.86);
+  box-shadow: 0 0 22px rgba(41, 179, 216, 0.24);
+  color: #d8f8ff;
+  font: 700 13px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(7px);
+}
+
+.balance-title,
+#music-ammo-balance-value {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
+.balance-title {
+  color: #ffffff;
+  font-size: 15px;
+}
+
+.balance-endpoint:last-of-type {
+  color: #ffb36e;
+}
+
+#music-ammo-balance {
+  width: 100%;
+  margin: 0;
+  accent-color: #8ff3ff;
+  cursor: pointer;
+}
+
+#music-ammo-balance-value {
+  color: #8ff3ff;
+  font-variant-numeric: tabular-nums;
+}
+
 #play-button {
   width: min(260px, 74vw);
   min-height: 62px;
@@ -376,6 +426,19 @@ body {
 }
 
 @media (max-width: 620px) {
+  #splash-screen {
+    padding-bottom: 20px;
+  }
+
+  #music-ammo-balance-panel {
+    grid-template-columns: auto minmax(100px, 1fr) auto;
+    padding: 10px 12px;
+  }
+
+  #play-button {
+    min-height: 54px;
+  }
+
   #hud {
     top: 82px;
     left: 12px;

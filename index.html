@@ -5,14 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Road to Solareth</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="style.css?v=fuel-tower-model-1">
+    <link rel="stylesheet" href="style.css?v=music-ammo-balance-1">
   </head>
   <body>
     <main id="game">
       <canvas id="game-canvas" aria-label="Road to Solareth game canvas"></canvas>
 
       <section id="splash-screen" aria-label="HOVERTANK QUEST title screen">
-        <button id="play-button" type="button">PLAY</button>
+        <div class="splash-controls">
+          <label id="music-ammo-balance-panel" for="music-ammo-balance">
+            <span class="balance-title">Music/Ammo Balance</span>
+            <span class="balance-endpoint">Music</span>
+            <input id="music-ammo-balance" type="range" min="0" max="100" value="50" step="1">
+            <span class="balance-endpoint">Ammo FX</span>
+            <output id="music-ammo-balance-value" for="music-ammo-balance">50% / 50%</output>
+          </label>
+          <button id="play-button" type="button">PLAY</button>
+        </div>
       </section>
 
       <section id="hud" aria-live="polite">
@@ -71,7 +80,7 @@
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=material-pass-1"></script>
+    <script src="main.js?v=music-ammo-balance-1"></script>
   </body>
 </html>
 

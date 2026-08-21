@@ -111,8 +111,30 @@ const hud = {
 };
 const splashScreen = document.querySelector("#splash-screen");
 const playButton = document.querySelector("#play-button");
+const musicAmmoBalanceControl = document.querySelector("#music-ammo-balance");
+const musicAmmoBalanceValue = document.querySelector("#music-ammo-balance-value");
 const rotorVolumeControl = document.querySelector("#rotor-volume");
 const rotorVolumeValue = document.querySelector("#rotor-volume-value");
+let audio = null;
+
+try {
+  musicAmmoBalanceControl.value = window.localStorage.getItem("hovertank-music-ammo-balance") || "50";
+} catch (_) {
+  musicAmmoBalanceControl.value = "50";
+}
+
+function updateMusicAmmoBalance() {
+  const ammoPercent = Number(musicAmmoBalanceControl.value);
+  musicAmmoBalanceValue.textContent = `${100 - ammoPercent}% / ${ammoPercent}%`;
+  if (audio) audio.setMusicAmmoBalance(ammoPercent / 100);
+  try {
+    window.localStorage.setItem("hovertank-music-ammo-balance", String(ammoPercent));
+  } catch (_) {
+    // The selected balance still applies for this session when storage is unavailable.
+  }
+}
+
+updateMusicAmmoBalance();
 
 const poeticStatuses = [
   "Metallic orbs watch the red waste.",
@@ -207,7 +229,6 @@ let projectiles;
 let enemies;
 let skyDrones;
 let refuelTowers;
-let audio;
 const explosionEffects = [];
 const impactEffects = [];
 const universeTargets = [];
@@ -248,6 +269,7 @@ window.addEventListener("blur", () => {
   for (const key of Object.keys(input)) input[key] = false;
 });
 hud.musicButton.addEventListener("click", () => audio.toggleMute());
+musicAmmoBalanceControl.addEventListener("input", updateMusicAmmoBalance);
 rotorVolumeControl.addEventListener("input", () => {
   const volume = Number(rotorVolumeControl.value) / 100;
   rotorVolumeValue.textContent = `${rotorVolumeControl.value}%`;
@@ -1941,6 +1963,7 @@ class AudioManager {
     this.started = false;
     this.context = null;
     this.master = null;
+    this.ammoOutput = null;
     this.radioTimer = CONFIG.radioChatterEvery;
     this.rotorOutput = null;
     this.rotorPulse = null;
@@ -1957,7 +1980,9 @@ class AudioManager {
     this.music.id = "soundtrack";
     this.music.setAttribute("aria-hidden", "true");
     this.music.preload = "auto";
+    this.musicAmmoBalance = Number(musicAmmoBalanceControl.value) / 100;
     this.music.volume = 0.58;
+    this.setMusicAmmoBalance(this.musicAmmoBalance);
     document.body.appendChild(this.music);
   }
 
@@ -2112,6 +2137,16 @@ class AudioManager {
     if (this.rotorVolume === 0) this.silenceRotor();
   }
 
+  setMusicAmmoBalance(balance) {
+    this.musicAmmoBalance = THREE.MathUtils.clamp(balance, 0, 1);
+    const angle = this.musicAmmoBalance * Math.PI * 0.5;
+    this.music.volume = 0.82 * Math.cos(angle);
+    if (this.ammoOutput && this.context) {
+      const ammoGain = Math.SQRT2 * Math.sin(angle);
+      this.ammoOutput.gain.setTargetAtTime(ammoGain, this.context.currentTime, 0.035);
+    }
+  }
+
   playEnemyFire() {
     const ctx = this.ensureContext();
     if (!ctx) return;
@@ -2129,7 +2164,7 @@ class AudioManager {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(0.24, now + 0.006);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-    blast.connect(filter).connect(gain).connect(this.master);
+    blast.connect(filter).connect(gain).connect(this.ammoOutput);
     blast.start(now);
     blast.stop(now + 0.23);
   }
@@ -2145,7 +2180,7 @@ class AudioManager {
     chirp.frequency.exponentialRampToValueAtTime(420, now + 0.07);
     gain.gain.setValueAtTime(0.055, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-    chirp.connect(gain).connect(this.master);
+    chirp.connect(gain).connect(this.ammoOutput);
     chirp.start(now);
     chirp.stop(now + 0.085);
   }
@@ -2164,7 +2199,7 @@ class AudioManager {
     boomGain.gain.setValueAtTime(0.0001, now);
     boomGain.gain.exponentialRampToValueAtTime(0.55, now + 0.006);
     boomGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-    boom.connect(boomGain).connect(this.master);
+    boom.connect(boomGain).connect(this.ammoOutput);
     boom.start(now);
     boom.stop(now + 0.24);
 
@@ -2178,7 +2213,7 @@ class AudioManager {
     crackGain.gain.setValueAtTime(0.0001, now);
     crackGain.gain.exponentialRampToValueAtTime(0.34, now + 0.004);
     crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.075);
-    crack.connect(crackFilter).connect(crackGain).connect(this.master);
+    crack.connect(crackFilter).connect(crackGain).connect(this.ammoOutput);
     crack.start(now);
   }
 
@@ -2196,7 +2231,7 @@ class AudioManager {
     thumpGain.gain.setValueAtTime(0.0001, now);
     thumpGain.gain.exponentialRampToValueAtTime(0.46, now + 0.01);
     thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
-    thump.connect(thumpGain).connect(this.master);
+    thump.connect(thumpGain).connect(this.ammoOutput);
     thump.start(now);
     thump.stop(now + 0.26);
 
@@ -2209,7 +2244,7 @@ class AudioManager {
     snapGain.gain.setValueAtTime(0.0001, now);
     snapGain.gain.exponentialRampToValueAtTime(0.28, now + 0.006);
     snapGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-    snap.connect(snapFilter).connect(snapGain).connect(this.master);
+    snap.connect(snapFilter).connect(snapGain).connect(this.ammoOutput);
     snap.start(now);
     snap.stop(now + 0.17);
   }
@@ -2225,7 +2260,7 @@ class AudioManager {
     ping.frequency.exponentialRampToValueAtTime(720, now + 0.055);
     gain.gain.setValueAtTime(0.12, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
-    ping.connect(gain).connect(this.master);
+    ping.connect(gain).connect(this.ammoOutput);
     ping.start(now);
     ping.stop(now + 0.075);
   }
@@ -2293,6 +2328,7 @@ class AudioManager {
     if (!AudioContextClass) return null;
     this.context = new AudioContextClass();
     this.master = this.context.createGain();
+    this.ammoOutput = this.context.createGain();
     const limiter = this.context.createDynamicsCompressor();
     limiter.threshold.value = -4;
     limiter.knee.value = 2;
@@ -2300,6 +2336,8 @@ class AudioManager {
     limiter.attack.value = 0.003;
     limiter.release.value = 0.16;
     this.master.gain.value = CONFIG.gameAudioGain;
+    this.ammoOutput.gain.value = Math.SQRT2 * Math.sin(this.musicAmmoBalance * Math.PI * 0.5);
+    this.ammoOutput.connect(this.master);
     this.master.connect(limiter).connect(this.context.destination);
     return this.context;
   }
