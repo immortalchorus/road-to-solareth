@@ -37,7 +37,7 @@ body {
   place-items: end center;
   padding: 0 24px clamp(28px, 7vh, 72px);
   background-color: #140b0c;
-  background-image: url("assets/hovertank-quest-splash.png");
+  background-image: url("assets/hovertank-quest-splash.png?v=embedded-assets-1");
   background-position: center;
   background-repeat: no-repeat;
   background-size: contain;

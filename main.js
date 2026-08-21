@@ -160,10 +160,10 @@ const loadSurfaceTexture = (path, repeatX = 1, repeatY = 1, colorTexture = true)
   return texture;
 };
 
-const tankSurfaceTexture = loadSurfaceTexture("assets/textures/tank-surface.jpg", 3.1, 3.1, false);
-const architectureArmorTexture = loadSurfaceTexture("assets/textures/architecture-armor.jpg", 1.6, 2.4);
-const architectureVentTexture = loadSurfaceTexture("assets/textures/architecture-vents.jpg", 1.2, 2.2);
-const mechanicalRibTexture = loadSurfaceTexture("assets/textures/mechanical-ribs.jpg", 1.4, 3.2);
+const tankSurfaceTexture = loadSurfaceTexture("assets/textures/tank-surface.jpg?v=embedded-assets-1", 3.1, 3.1, false);
+const architectureArmorTexture = loadSurfaceTexture("assets/textures/architecture-armor.jpg?v=embedded-assets-1", 1.6, 2.4);
+const architectureVentTexture = loadSurfaceTexture("assets/textures/architecture-vents.jpg?v=embedded-assets-1", 1.2, 2.2);
+const mechanicalRibTexture = loadSurfaceTexture("assets/textures/mechanical-ribs.jpg?v=embedded-assets-1", 1.4, 3.2);
 
 const tankMaterial = (color, metalness, roughness, bumpScale) => new THREE.MeshStandardMaterial({
   color,
@@ -1582,12 +1582,12 @@ function loadRefuelTowerModel() {
     const path = "assets/models/";
     const materialLoader = new THREE.MTLLoader();
     materialLoader.setPath(path);
-    materialLoader.load("Fuel-Tower_001.mtl", materials => {
+    materialLoader.load("Fuel-Tower_001.mtl?v=embedded-assets-1", materials => {
       materials.preload();
       const objectLoader = new THREE.OBJLoader();
       objectLoader.setMaterials(materials);
       objectLoader.setPath(path);
-      objectLoader.load("Fuel-Tower_001.obj", resolve, undefined, reject);
+      objectLoader.load("Fuel-Tower_001.obj?v=embedded-assets-1", resolve, undefined, reject);
     }, undefined, reject);
   });
 
@@ -1947,10 +1947,10 @@ class AudioManager {
     this.rotorVolume = Number(rotorVolumeControl.value) / 100;
     this.muted = false;
     this.playlist = [
-      { title: "Iron Circuit", src: "assets/iron-circuit.mp3" },
-      { title: "Shardfall Circuit", src: "assets/shardfall-circuit.mp3" },
-      { title: "Shattergrid", src: "assets/shattergrid.mp3" },
-      { title: "Black Voltage Maze", src: "assets/black-voltage-maze.mp3" }
+      { title: "Iron Circuit", src: "assets/iron-circuit.mp3?v=embedded-assets-1" },
+      { title: "Shardfall Circuit", src: "assets/shardfall-circuit.mp3?v=embedded-assets-1" },
+      { title: "Shattergrid", src: "assets/shattergrid.mp3?v=embedded-assets-1" },
+      { title: "Black Voltage Maze", src: "assets/black-voltage-maze.mp3?v=embedded-assets-1" }
     ];
     this.currentTrack = this.selectTrack();
     this.music = new Audio(this.currentTrack.src);
