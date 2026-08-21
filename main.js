@@ -83,7 +83,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyZ", "KeyL", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyZ", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -279,7 +279,6 @@ window.addEventListener("keydown", event => {
   if (event.code === "ControlLeft" || event.code === "ControlRight") input.fireHeld = true;
   if (event.code === "KeyZ") input.heatSeekingHeld = true;
   if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
-  if (event.code === "KeyL" && !event.repeat && (input.ShiftLeft || input.ShiftRight) && tank) tank.toggleTurretBeacon();
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret();
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
@@ -502,8 +501,8 @@ class Tank {
     this.flightPitch = 0;
     this.flightRoll = 0;
     this.bumpTimer = 0;
-    this.turretBeaconEnabled = true;
-    this.turretBeaconTime = 0;
+    this.beaconTime = 0;
+    this.beacons = [];
 
     const addBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
@@ -555,6 +554,11 @@ class Tank {
 
       const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.34, 12), materials.darkMetal);
       pod.add(hub);
+
+      const beaconBase = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.38, 0.22, 12), materials.darkMetal);
+      beaconBase.position.y = 0.28;
+      pod.add(beaconBase);
+      this.addBeacon(pod, new THREE.Vector3(0, 0.52, 0));
 
       for (let i = 0; i < 4; i++) {
         const blade = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.26), materials.tankMechanics);
@@ -709,18 +713,7 @@ class Tank {
     turretAntenna.position.set(-1.75, 2.05, 1.2);
     turretAntenna.rotation.x = 0.08;
     this.turret.add(turretAntenna);
-    this.turretBeacon = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1 })
-    );
-    this.turretBeacon.position.set(0.9, 2.0, 0.15);
-    this.turret.add(this.turretBeacon);
-    this.turretBeaconHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(0.58, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff2424, transparent: true, opacity: 0.32, depthWrite: false })
-    );
-    this.turretBeaconHalo.position.copy(this.turretBeacon.position);
-    this.turret.add(this.turretBeaconHalo);
+    this.addBeacon(this.turret, new THREE.Vector3(0.9, 2.0, 0.15));
     this.group.add(this.turret);
 
     this.paintMaterials = [];
@@ -788,7 +781,7 @@ class Tank {
 
     this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
     this.cannon.rotation.x = this.turretPitch;
-    this.updateTurretBeacon(delta);
+    this.updateBeacons(delta);
     this.updateFuelTint(fuel / CONFIG.maxFuel);
 
     const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
@@ -822,27 +815,30 @@ class Tank {
     return new THREE.Vector3(0, 0, -1).applyQuaternion(this.cannon.getWorldQuaternion(new THREE.Quaternion())).normalize();
   }
 
-  toggleTurretBeacon() {
-    this.turretBeaconEnabled = !this.turretBeaconEnabled;
-    this.updateTurretBeacon(0);
-    hud.status.textContent = this.turretBeaconEnabled ? "Turret beacon blinking." : "Turret beacon dark.";
-    statusTimer = 2.5;
+  addBeacon(parent, position) {
+    const light = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1 })
+    );
+    light.position.copy(position);
+    parent.add(light);
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(0.58, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff2424, transparent: true, opacity: 0.32, depthWrite: false })
+    );
+    halo.position.copy(position);
+    parent.add(halo);
+    this.beacons.push({ light, halo });
   }
 
-  updateTurretBeacon(delta) {
-    if (!this.turretBeacon || !this.turretBeaconHalo) return;
-    if (!this.turretBeaconEnabled) {
-      this.turretBeacon.visible = false;
-      this.turretBeaconHalo.visible = false;
-      return;
+  updateBeacons(delta) {
+    this.beaconTime += delta;
+    const blink = Math.sin(this.beaconTime * 7.5) > 0.05 ? 1 : 0.18;
+    for (const { light, halo } of this.beacons) {
+      light.material.opacity = 0.38 + blink * 0.62;
+      halo.material.opacity = 0.07 + blink * 0.36;
+      halo.scale.setScalar(0.82 + blink * 0.46);
     }
-    this.turretBeacon.visible = true;
-    this.turretBeaconHalo.visible = true;
-    this.turretBeaconTime += delta;
-    const blink = Math.sin(this.turretBeaconTime * 7.5) > 0.05 ? 1 : 0.18;
-    this.turretBeacon.material.opacity = 0.38 + blink * 0.62;
-    this.turretBeaconHalo.material.opacity = 0.07 + blink * 0.36;
-    this.turretBeaconHalo.scale.setScalar(0.82 + blink * 0.46);
   }
 
   updateFuelTint(fuelRatio) {
