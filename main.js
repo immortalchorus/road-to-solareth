@@ -832,6 +832,7 @@ class Tank {
   }
 
   update(delta, keys, terrainManager, hasFuel = true) {
+    const autopilotMode = Boolean(keys.Autopilot);
     const pitchMode = keys.KeyY;
     const forwardInput = hasFuel && keys.ArrowUp && !pitchMode ? 1 : 0;
     const reverseInput = hasFuel && keys.ArrowDown && !pitchMode ? 1 : 0;
@@ -840,11 +841,14 @@ class Tank {
     const automaticBank = !turningTurret && !pitchMode &&
       Boolean(forwardInput || reverseInput) && horizontalInput !== 0;
 
-    if (forwardInput) this.speed += this.acceleration * delta;
+    if (forwardInput) this.speed += this.acceleration * (autopilotMode ? 0.38 : 1) * delta;
     if (reverseInput) this.speed -= this.acceleration * delta;
     if (!forwardInput && !reverseInput) this.speed = moveToward(this.speed, 0, this.friction * delta);
 
     this.speed = THREE.MathUtils.clamp(this.speed, -this.maxReverseSpeed, this.maxForwardSpeed);
+    if (autopilotMode && this.speed > 20) {
+      this.speed = moveToward(this.speed, 20, this.friction * 1.35 * delta);
+    }
     if (this.bumpTimer > 0) {
       this.speed *= 0.985;
       this.bumpTimer -= delta;
@@ -872,8 +876,9 @@ class Tank {
       if (keys.ArrowDown) this.turretPitch -= this.turretPitchSpeed * delta;
     } else {
       const turnScale = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0.25, 1);
-      if (hasFuel && keys.ArrowLeft) this.group.rotation.y += this.turnSpeed * turnScale * delta;
-      if (hasFuel && keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * delta;
+      const steeringScale = autopilotMode ? 0.48 : 1;
+      if (hasFuel && keys.ArrowLeft) this.group.rotation.y += this.turnSpeed * turnScale * steeringScale * delta;
+      if (hasFuel && keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * steeringScale * delta;
     }
 
     this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
@@ -1365,6 +1370,7 @@ class AutopilotManager {
     this.phaseTimer = 0;
     this.headingTimer = 0;
     this.desiredHeading = 0;
+    this.cruiseAltitude = null;
     this.updateHUD();
   }
 
@@ -1379,6 +1385,7 @@ class AutopilotManager {
     this.phaseTimer = 18;
     this.headingTimer = 0;
     this.desiredHeading = tank.group.rotation.y;
+    this.cruiseAltitude = tank.group.position.y;
     this.updateHUD();
     hud.status.textContent = "Autopilot engaged. You have the guns.";
     statusTimer = 4;
@@ -1389,6 +1396,7 @@ class AutopilotManager {
     if (!this.enabled) return;
     this.enabled = false;
     tank.altitudeHoldY = null;
+    this.cruiseAltitude = null;
     this.updateHUD();
     const message = manualOverride ? "Returning flight control to you." : "Autopilot disengaged.";
     hud.status.textContent = message;
@@ -1457,14 +1465,18 @@ class AutopilotManager {
     }
 
     const yawError = wrapAngle(this.desiredHeading - tankRef.group.rotation.y);
+    controls.Autopilot = true;
     controls.ArrowUp = true;
     controls.ArrowDown = false;
     if (!controls.KeyY && !(controls.ShiftLeft || controls.ShiftRight)) {
-      controls.ArrowLeft = yawError > 0.045;
-      controls.ArrowRight = yawError < -0.045;
+      controls.ArrowLeft = yawError > 0.12;
+      controls.ArrowRight = yawError < -0.12;
     }
     const clearance = this.phase === "low" ? 8 : 34;
-    tankRef.altitudeHoldY = terrainManager.getHeightAt(tankRef.group.position.x, tankRef.group.position.z) + clearance;
+    const targetAltitude = terrainManager.getHeightAt(tankRef.group.position.x, tankRef.group.position.z) + clearance;
+    const altitudeBlend = 1 - Math.exp(-delta * 0.7);
+    this.cruiseAltitude = THREE.MathUtils.lerp(this.cruiseAltitude ?? tankRef.group.position.y, targetAltitude, altitudeBlend);
+    tankRef.altitudeHoldY = this.cruiseAltitude;
     return controls;
   }
 }
