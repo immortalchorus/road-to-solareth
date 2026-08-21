@@ -530,7 +530,8 @@ body {
   bottom: 70px;
   z-index: 30;
   display: flex;
-  max-width: min(700px, calc(100vw - 36px));
+  width: min(960px, calc(100vw - 36px));
+  max-width: calc(100vw - 36px);
   transform: translateX(-50%);
   gap: 12px;
   align-items: center;
@@ -545,7 +546,14 @@ body {
 }
 
 #instructions strong {
+  flex: 0 0 auto;
   color: #8ff0ff;
+}
+
+#instructions span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 #instructions[hidden] {
