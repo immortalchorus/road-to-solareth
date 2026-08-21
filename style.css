@@ -49,7 +49,7 @@ body {
 
 .splash-controls {
   display: grid;
-  grid-template-columns: minmax(250px, 300px) minmax(450px, 1fr) minmax(155px, 180px) minmax(165px, 190px) minmax(82px, 100px);
+  grid-template-columns: minmax(250px, 300px) minmax(620px, 1fr) minmax(175px, 210px) minmax(82px, 100px);
   align-items: stretch;
   width: min(100%, 1340px);
   justify-self: center;
@@ -139,14 +139,21 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+#splash-settings-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  grid-column: 3;
+  grid-row: 1;
+  gap: 6px;
+  min-width: 0;
+}
+
 #splash-rotor-volume-panel {
   display: grid;
   grid-template-columns: minmax(80px, 1fr) 42px;
-  grid-column: 4;
-  grid-row: 1;
-  gap: 7px 10px;
+  gap: 3px 8px;
   align-items: center;
-  padding: 15px 16px;
+  padding: 6px 12px;
   border: 1px solid rgba(105, 226, 255, 0.5);
   border-radius: 6px;
   background: rgba(7, 13, 19, 0.86);
@@ -158,11 +165,9 @@ body {
 #missile-range-panel {
   display: grid;
   grid-template-columns: minmax(78px, 1fr) 34px;
-  grid-column: 3;
-  grid-row: 1;
-  gap: 7px 8px;
+  gap: 3px 8px;
   align-items: center;
-  padding: 15px 14px;
+  padding: 6px 12px;
   border: 1px solid rgba(90, 255, 142, 0.5);
   border-radius: 6px;
   background: rgba(7, 18, 14, 0.86);
@@ -212,7 +217,7 @@ body {
 #play-button {
   width: 100%;
   min-height: 76px;
-  grid-column: 5;
+  grid-column: 4;
   grid-row: 1;
   border: 2px solid #8ff3ff;
   border-radius: 6px;
@@ -562,7 +567,7 @@ body {
 
 @media (min-width: 621px) and (max-width: 1000px) {
   .splash-controls {
-    grid-template-columns: 190px minmax(0, 1fr) 135px 145px 75px;
+    grid-template-columns: 180px minmax(0, 1fr) 150px 75px;
   }
 
   .splash-instructions {
@@ -584,7 +589,7 @@ body {
   }
 
   .splash-controls {
-    grid-template-columns: 105px minmax(0, 1fr) 52px 58px 48px;
+    grid-template-columns: 100px minmax(0, 1fr) 64px 48px;
     gap: 6px;
   }
 
