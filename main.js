@@ -332,22 +332,68 @@ function createSky() {
 function createDroneOrb(x, y, z, radius, ringed) {
   const group = new THREE.Group();
   group.position.set(x, y, z);
+  const shellMaterial = new THREE.MeshStandardMaterial({
+    color: 0x25262a,
+    metalness: 0.96,
+    roughness: 0.28,
+    flatShading: true
+  });
   const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 32, 16),
-    new THREE.MeshStandardMaterial({ color: 0x8998a0, metalness: 0.94, roughness: 0.18 })
+    new THREE.SphereGeometry(radius, 24, 14),
+    shellMaterial
   );
   group.add(shell);
 
-  const equator = new THREE.Mesh(
-    new THREE.TorusGeometry(radius * 1.03, 1.8, 8, 96),
-    new THREE.MeshBasicMaterial({ color: 0x5bf7ff, transparent: true, opacity: 0.34 })
+  const armorMaterial = new THREE.MeshStandardMaterial({ color: 0x4b4a49, metalness: 0.92, roughness: 0.34 });
+  const seamMaterial = new THREE.MeshBasicMaterial({ color: 0x8d2117, transparent: true, opacity: 0.72 });
+  for (const [scale, tube, rx, rz] of [
+    [1.015, 1.5, Math.PI * 0.5, 0],
+    [1.01, 1.15, 0, Math.PI * 0.5],
+    [1.008, 0.85, Math.PI * 0.24, Math.PI * 0.16]
+  ]) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(radius * scale, tube, 7, 72), armorMaterial);
+    band.rotation.x = rx;
+    band.rotation.z = rz;
+    group.add(band);
+  }
+  for (const latitude of [-0.48, -0.2, 0.2, 0.48]) {
+    const bandRadius = radius * Math.sqrt(1 - latitude * latitude);
+    const seam = new THREE.Mesh(new THREE.TorusGeometry(bandRadius, radius * 0.009, 5, 64), seamMaterial);
+    seam.position.y = radius * latitude;
+    seam.rotation.x = Math.PI * 0.5;
+    group.add(seam);
+  }
+
+  const eye = new THREE.Group();
+  eye.position.z = radius * 0.88;
+  const eyeBack = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.34, radius * 0.4, radius * 0.16, 24),
+    new THREE.MeshStandardMaterial({ color: 0x111215, metalness: 1, roughness: 0.2 })
   );
-  equator.rotation.x = Math.PI * 0.5;
-  group.add(equator);
+  eyeBack.rotation.x = Math.PI * 0.5;
+  eye.add(eyeBack);
+  const eyeRing = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 0.27, radius * 0.055, 8, 40),
+    new THREE.MeshStandardMaterial({ color: 0x6e2118, emissive: 0xff2b12, emissiveIntensity: 2.5, metalness: 0.8, roughness: 0.22 })
+  );
+  eye.add(eyeRing);
+  const innerRing = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 0.15, radius * 0.025, 7, 32),
+    new THREE.MeshBasicMaterial({ color: 0xff3b1f })
+  );
+  innerRing.position.z = radius * 0.015;
+  eye.add(innerRing);
+  const frontCore = new THREE.Mesh(
+    new THREE.CircleGeometry(radius * 0.095, 24),
+    new THREE.MeshBasicMaterial({ color: 0xff3218, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+  );
+  frontCore.position.z = radius * 0.035;
+  eye.add(frontCore);
+  group.add(eye);
 
   const topPortal = new THREE.Mesh(
     new THREE.TorusGeometry(radius * 0.22, 2.6, 10, 64),
-    new THREE.MeshBasicMaterial({ color: 0x44eaff, transparent: true, opacity: 0.72, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: 0xff3a1c, transparent: true, opacity: 0.72, depthWrite: false })
   );
   topPortal.position.y = radius * 0.96;
   topPortal.rotation.x = Math.PI * 0.5;
@@ -357,18 +403,8 @@ function createDroneOrb(x, y, z, radius, ringed) {
   bottomPortal.position.y = -radius * 0.96;
   group.add(bottomPortal);
 
-  if (ringed) {
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(radius * 1.38, 2.4, 8, 96),
-      new THREE.MeshBasicMaterial({ color: 0xaeeeff, transparent: true, opacity: 0.32 })
-    );
-    ring.rotation.x = Math.PI * 0.58;
-    ring.rotation.z = Math.PI * 0.12;
-    group.add(ring);
-  }
-
   scene.add(group);
-  droneOrbs.push({ group, shell, topPortal, bottomPortal, phase: seededRandom(radius) * Math.PI * 2 });
+  droneOrbs.push({ group, shell, topPortal, bottomPortal, frontCore, eyeRing, phase: seededRandom(radius) * Math.PI * 2 });
   registerUniverseTarget(group, radius * 1.2);
 }
 
@@ -379,6 +415,9 @@ function updateDroneOrbs(delta) {
     const pulse = 0.58 + Math.sin(performance.now() * 0.003 + orb.phase) * 0.24;
     orb.topPortal.material.opacity = 0.45 + pulse * 0.35;
     orb.bottomPortal.material.opacity = 0.45 + pulse * 0.35;
+    orb.frontCore.material.opacity = 0.55 + pulse * 0.4;
+    orb.frontCore.scale.setScalar(0.88 + pulse * 0.2);
+    orb.eyeRing.material.emissiveIntensity = 1.8 + pulse * 1.8;
     orb.topPortal.scale.setScalar(0.92 + pulse * 0.12);
     orb.bottomPortal.scale.setScalar(0.92 + pulse * 0.12);
   }

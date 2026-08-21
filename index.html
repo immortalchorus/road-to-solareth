@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Road to Solareth</title>
+    <title>//PRISON PLANET PROTOCOL//</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="style.css?v=prison-planet-splash-2">
   </head>
   <body>
     <main id="game">
-      <canvas id="game-canvas" aria-label="Road to Solareth game canvas"></canvas>
+      <canvas id="game-canvas" aria-label="Prison Planet Protocol game canvas"></canvas>
 
       <section id="splash-screen" aria-label="HOVERTANK QUEST title screen">
         <div class="splash-controls">
@@ -39,7 +39,7 @@
       </section>
 
       <section id="hud" aria-live="polite">
-        <div class="hud-title">Road to Solareth</div>
+        <div class="hud-title">//PRISON PLANET PROTOCOL//</div>
         <div>Destination: <span>Solareth</span></div>
         <div>Speed: <span id="speed">0</span></div>
         <div>Turret: <span id="turret-angle">0</span></div>
@@ -75,15 +75,15 @@
         </div>
       </section>
 
-      <section id="fuel-panel" aria-live="polite"><div>Fuel <span id="fuel">1000</span></div><div>Ammo <span id="ammo">1000</span></div></section>
-
-      <button id="music-button" type="button">Silent Mode</button>
-
-      <label id="rotor-volume-panel" for="rotor-volume">
-        <span>Rotor Noise</span>
-        <input id="rotor-volume" type="range" min="0" max="100" value="80" step="1">
-        <output id="rotor-volume-value" for="rotor-volume">80%</output>
-      </label>
+      <div id="bottom-right-controls">
+        <button id="music-button" type="button">Silent Mode</button>
+        <label id="rotor-volume-panel" for="rotor-volume">
+          <span>Rotor Noise</span>
+          <input id="rotor-volume" type="range" min="0" max="100" value="80" step="1">
+          <output id="rotor-volume-value" for="rotor-volume">80%</output>
+        </label>
+        <section id="fuel-panel" aria-live="polite"><div>Fuel <span id="fuel">1000</span></div><div>Ammo <span id="ammo">1000</span></div></section>
+      </div>
 
       <aside id="instructions">
         <strong>Tank Driver</strong>
@@ -94,7 +94,7 @@
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=two-track-soundtrack-2"></script>
+    <script src="main.js?v=prison-orbs-hud-1"></script>
   </body>
 </html>
 

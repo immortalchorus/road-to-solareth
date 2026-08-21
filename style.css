@@ -356,10 +356,18 @@ body {
   text-shadow: 0 0 8px currentColor, 3px 3px 0 #132630;
 }
 
-#music-button {
+#bottom-right-controls {
   position: fixed;
   right: 18px;
-  top: 96px;
+  bottom: 18px;
+  z-index: 12;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  max-width: calc(100vw - 36px);
+}
+
+#music-button {
   min-height: 42px;
   padding: 0 18px;
   border: 1px solid rgba(255, 211, 132, 0.44);
@@ -379,9 +387,6 @@ body {
 }
 
 #rotor-volume-panel {
-  position: fixed;
-  left: calc(50% + 360px);
-  bottom: 18px;
   display: grid;
   grid-template-columns: auto 42px;
   width: 210px;
@@ -415,9 +420,6 @@ body {
 }
 
 #fuel-panel {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
   min-width: 138px;
   padding: 12px 14px;
   border: 1px solid rgba(80, 244, 255, 0.36);
@@ -459,14 +461,6 @@ body {
 
 #instructions strong {
   color: #8ff0ff;
-}
-
-@media (min-width: 621px) and (max-width: 1180px) {
-  #rotor-volume-panel {
-    left: auto;
-    right: 18px;
-    bottom: 82px;
-  }
 }
 
 @media (min-width: 621px) and (max-width: 1000px) {
@@ -560,24 +554,34 @@ body {
     font-size: 30px;
   }
 
+  #bottom-right-controls {
+    right: 8px;
+    bottom: 8px;
+    gap: 5px;
+    max-width: calc(100vw - 16px);
+  }
+
   #music-button {
-    top: auto;
-    right: 12px;
-    bottom: 12px;
-    min-height: 38px;
+    min-height: 42px;
+    padding: 0 9px;
+    font-size: 11px;
   }
+
   #rotor-volume-panel {
-    left: 118px;
-    bottom: 12px;
-    width: 130px;
-    grid-template-columns: auto 34px;
-    padding: 8px 10px;
-    font-size: 12px;
+    width: 124px;
+    grid-template-columns: auto 30px;
+    padding: 7px 8px;
+    font-size: 10px;
   }
+
   #fuel-panel {
-    right: 12px;
-    bottom: 62px;
-    font-size: 13px;
+    min-width: 112px;
+    padding: 8px 9px;
+    font-size: 11px;
+  }
+
+  #fuel-panel span {
+    min-width: 34px;
   }
 
   #instructions {
