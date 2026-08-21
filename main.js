@@ -86,7 +86,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyL", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyH", "KeyL", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -251,9 +251,9 @@ window.addEventListener("keydown", event => {
   if (!gameStarted || gamePaused) return;
   input[event.code] = true;
   if (audio && !audio.started) audio.start();
-  if (event.code === "Space") input.fireHeld = true;
+  if (event.code === "ControlLeft" || event.code === "ControlRight") input.fireHeld = true;
   if (event.code === "KeyH") input.heatSeekingHeld = true;
-  if (event.code === "KeyB" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
+  if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
   if (event.code === "KeyL" && !event.repeat && (input.ShiftLeft || input.ShiftRight) && tank) tank.toggleTurretBeacon();
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret();
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
@@ -266,7 +266,9 @@ window.addEventListener("keyup", event => {
     event.stopPropagation();
   }
   input[event.code] = false;
-  if (event.code === "Space") input.fireHeld = false;
+  if (event.code === "ControlLeft" || event.code === "ControlRight") {
+    input.fireHeld = Boolean(input.ControlLeft || input.ControlRight);
+  }
   if (event.code === "KeyH") input.heatSeekingHeld = false;
 }, true);
 window.addEventListener("blur", () => {
