@@ -261,6 +261,7 @@ let enemies;
 let skyDrones;
 let refuelTowers;
 const explosionEffects = [];
+const shockwaveEffects = [];
 const impactEffects = [];
 const universeTargets = [];
 const pyramidBeacons = [];
@@ -1998,7 +1999,8 @@ class ProjectileManager {
   }
 
   detonateBomb(position, enemyManager, skyDroneManager) {
-    createExplosion(position, { radius: 2.8, growth: 34, life: 0.85, color: 0xff2318, opacity: 0.9, coreColor: 0xfff1c6 });
+    createExplosion(position, { radius: 2.8, growth: 34, life: 0.85, color: 0xff2318, opacity: 0.72, coreColor: 0xfff1c6, coreOpacity: 0.72 });
+    createBombShockwaves(position);
     let destroyedByBlast = terrain.destroyNear(position, 24);
     destroyedByBlast += destroyUniverseNear(position, 42);
     for (const enemy of enemyManager.enemies) {
@@ -2487,6 +2489,7 @@ function animate() {
   }
   if (!gamePaused) {
     updateExplosions(delta);
+    updateShockwaves(delta);
     updateImpactEffects(delta);
     updatePyramidBeacons(delta);
     updateDroneOrbs(delta);
@@ -2689,17 +2692,45 @@ function createExplosion(position, options = {}) {
   group.position.copy(position);
   group.add(sphere);
   if (options.coreColor) {
+    const coreOpacity = options.coreOpacity ?? 0.9;
     const core = new THREE.Mesh(
       new THREE.SphereGeometry(radius * 0.38, 12, 8),
-      new THREE.MeshBasicMaterial({ color: options.coreColor, transparent: true, opacity: 0.9 })
+      new THREE.MeshBasicMaterial({ color: options.coreColor, transparent: true, opacity: coreOpacity })
     );
     group.add(core);
-    explosionEffects.push({ group, sphere, core, life, maxLife: life, growth, opacity });
+    explosionEffects.push({ group, sphere, core, life, maxLife: life, growth, opacity, coreOpacity });
     scene.add(group);
     return;
   }
   scene.add(group);
   explosionEffects.push({ group, sphere, life, maxLife: life, growth, opacity });
+}
+
+function createBombShockwaves(position) {
+  while (shockwaveEffects.length > 15) {
+    const oldest = shockwaveEffects.shift();
+    scene.remove(oldest.ring);
+    disposeObject(oldest.ring);
+  }
+  for (let i = 0; i < 3; i++) {
+    const opacity = 0.2 - i * 0.035;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(2.8 + i * 1.15, 0.28 - i * 0.045, 8, 64),
+      new THREE.MeshBasicMaterial({
+        color: i === 2 ? 0xffb36b : 0xff5a2a,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    ring.position.copy(position);
+    ring.position.y += 0.35 + i * 0.04;
+    ring.rotation.x = Math.PI * 0.5;
+    ring.visible = i === 0;
+    scene.add(ring);
+    shockwaveEffects.push({ ring, delay: i * 0.09, life: 0.72, maxLife: 0.72, growth: 8.5 + i * 1.2, opacity });
+  }
 }
 
 function registerPlayerHit(shot, position, damage, targetType) {
@@ -2873,12 +2904,32 @@ function updateExplosions(delta) {
     effect.sphere.material.opacity = effect.opacity * fade;
     if (effect.core) {
       effect.core.scale.addScalar(delta * effect.growth * 0.45);
-      effect.core.material.opacity = 0.9 * fade;
+      effect.core.material.opacity = effect.coreOpacity * fade;
     }
     if (effect.life <= 0) {
       scene.remove(effect.group);
       disposeObject(effect.group);
       explosionEffects.splice(i, 1);
+    }
+  }
+}
+
+function updateShockwaves(delta) {
+  for (let i = shockwaveEffects.length - 1; i >= 0; i--) {
+    const effect = shockwaveEffects[i];
+    if (effect.delay > 0) {
+      effect.delay -= delta;
+      continue;
+    }
+    effect.ring.visible = true;
+    effect.life -= delta;
+    effect.ring.scale.addScalar(delta * effect.growth);
+    const fade = Math.max(0, effect.life / effect.maxLife);
+    effect.ring.material.opacity = effect.opacity * fade * fade;
+    if (effect.life <= 0) {
+      scene.remove(effect.ring);
+      disposeObject(effect.ring);
+      shockwaveEffects.splice(i, 1);
     }
   }
 }
