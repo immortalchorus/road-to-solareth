@@ -1267,7 +1267,7 @@ class TacticalGrid {
     );
     this.impactMarker.renderOrder = 4;
     this.parent.add(this.impactMarker);
-    this.cannonImpactMarker = new THREE.LineLoop(
+    this.cannonImpactMarker = new THREE.LineSegments(
       new THREE.BufferGeometry(),
       new THREE.LineBasicMaterial({ color: 0xff3535, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending })
     );
@@ -1305,7 +1305,7 @@ class TacticalGrid {
       if (impact) this.updateRing(this.impactMarker, impact.x, impact.z, 6.5, 0.82);
       const cannonImpact = this.predictCannonImpact(tankRef);
       this.cannonImpactMarker.visible = Boolean(cannonImpact);
-      if (cannonImpact) this.updateRing(this.cannonImpactMarker, cannonImpact.x, cannonImpact.z, 4.8, 0.94);
+      if (cannonImpact) this.updateCannonMarker(cannonImpact);
     }
   }
 
@@ -1345,6 +1345,59 @@ class TacticalGrid {
     }
     line.geometry.dispose();
     line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  }
+
+  updateCannonMarker(impact) {
+    const points = [];
+    const towardCamera = new THREE.Vector2(camera.position.x - impact.x, camera.position.z - impact.z);
+    if (towardCamera.lengthSq() < 0.001) towardCamera.set(0, 1);
+    towardCamera.normalize();
+    const right = new THREE.Vector2(towardCamera.y, -towardCamera.x);
+    const scale = 7.2;
+    const worldPoint = ([x, y]) => {
+      const worldX = impact.x + (right.x * x + towardCamera.x * y) * scale;
+      const worldZ = impact.z + (right.y * x + towardCamera.y * y) * scale;
+      return new THREE.Vector3(worldX, this.terrain.getHeightAt(worldX, worldZ) + 0.94, worldZ);
+    };
+    const addPath = (path, closed = false) => {
+      const end = closed ? path.length : path.length - 1;
+      for (let i = 0; i < end; i++) {
+        points.push(worldPoint(path[i]), worldPoint(path[(i + 1) % path.length]));
+      }
+    };
+    const addCircle = (x, y, radius, segments = 14) => {
+      const path = [];
+      for (let i = 0; i < segments; i++) {
+        const angle = i / segments * Math.PI * 2;
+        path.push([x + Math.cos(angle) * radius, y + Math.sin(angle) * radius]);
+      }
+      addPath(path, true);
+    };
+
+    const skull = [];
+    for (let i = 0; i <= 18; i++) {
+      const angle = Math.PI - i / 18 * Math.PI;
+      skull.push([Math.cos(angle) * 0.55, 0.14 + Math.sin(angle) * 0.55]);
+    }
+    skull.push([0.5, -0.2], [0.32, -0.32], [0.28, -0.72], [0.14, -0.56], [0, -0.82], [-0.14, -0.56], [-0.28, -0.72], [-0.32, -0.32], [-0.5, -0.2]);
+    addPath(skull, true);
+    addCircle(-0.22, 0.02, 0.12);
+    addCircle(0.22, 0.02, 0.12);
+    addPath([[-0.09, -0.2], [0, -0.38], [0.09, -0.2]], true);
+
+    const boneStubs = [
+      [[-1.02, 0.62], [-0.48, 0.28]], [[0.48, -0.28], [1.02, -0.62]],
+      [[-1.02, -0.62], [-0.48, -0.28]], [[0.48, 0.28], [1.02, 0.62]]
+    ];
+    for (const stub of boneStubs) addPath(stub);
+    const boneEnds = [[-1.02, 0.62, -0.05, 0.09], [1.02, -0.62, 0.05, -0.09], [-1.02, -0.62, -0.05, -0.09], [1.02, 0.62, 0.05, 0.09]];
+    for (const [x, y, dx, dy] of boneEnds) {
+      addCircle(x + dx, y + dy, 0.09, 10);
+      addCircle(x - dx, y - dy, 0.09, 10);
+    }
+
+    this.cannonImpactMarker.geometry.dispose();
+    this.cannonImpactMarker.geometry = new THREE.BufferGeometry().setFromPoints(points);
   }
 
   predictMissileImpact(tankRef) {
