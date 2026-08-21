@@ -1001,16 +1001,13 @@ class TerrainManager {
     return destroyed;
   }
 
-  hitDestructible(position, radius) {
+  hitDestructibleAlongSegment(start, end, radius) {
     let closest = null;
     let closestDistance = Infinity;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
       const hitRadius = radius + item.radius;
-      const dx = item.position.x - position.x;
-      const dy = item.position.y - position.y;
-      const dz = item.position.z - position.z;
-      const distanceSq = dx * dx + dy * dy + dz * dz;
+      const distanceSq = distanceToSegmentSquared(item.position, start, end);
       if (distanceSq <= hitRadius * hitRadius && distanceSq < closestDistance) {
         closest = item;
         closestDistance = distanceSq;
@@ -1830,13 +1827,13 @@ class ProjectileManager {
         }
       }
 
-      if (shot.life > 0 && terrain.hitDestructible(shot.mesh.position, shot.radius)) {
+      if (shot.life > 0 && terrain.hitDestructibleAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
         audio.playExplosion();
       }
 
-      if (shot.life > 0 && hitUniverseTarget(shot.mesh.position, shot.radius)) {
+      if (shot.life > 0 && hitUniverseTargetAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
         audio.playExplosion();
@@ -2732,16 +2729,13 @@ function destroyUniverseTarget(target) {
   return true;
 }
 
-function hitUniverseTarget(position, radius) {
+function hitUniverseTargetAlongSegment(start, end, radius) {
   let closest = null;
   let closestDistance = Infinity;
   for (const target of universeTargets) {
     if (!target.object.parent || !target.playerDestructible) continue;
     const hitRadius = radius + target.radius;
-    const dx = target.position.x - position.x;
-    const dy = target.position.y - position.y;
-    const dz = target.position.z - position.z;
-    const distanceSq = dx * dx + dy * dy + dz * dz;
+    const distanceSq = distanceToSegmentSquared(target.position, start, end);
     if (distanceSq <= hitRadius * hitRadius && distanceSq < closestDistance) {
       closest = target;
       closestDistance = distanceSq;
@@ -2966,6 +2960,23 @@ function moveToward(value, target, amount) {
   if (value < target) return Math.min(value + amount, target);
   if (value > target) return Math.max(value - amount, target);
   return target;
+}
+
+function distanceToSegmentSquared(point, start, end) {
+  const sx = end.x - start.x;
+  const sy = end.y - start.y;
+  const sz = end.z - start.z;
+  const px = point.x - start.x;
+  const py = point.y - start.y;
+  const pz = point.z - start.z;
+  const lengthSquared = sx * sx + sy * sy + sz * sz;
+  const along = lengthSquared > 0.000001
+    ? THREE.MathUtils.clamp((px * sx + py * sy + pz * sz) / lengthSquared, 0, 1)
+    : 0;
+  const dx = px - sx * along;
+  const dy = py - sy * along;
+  const dz = pz - sz * along;
+  return dx * dx + dy * dy + dz * dz;
 }
 
 function wrapAngle(radians) {
