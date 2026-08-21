@@ -683,7 +683,7 @@ class Tank {
     this.group.add(cockpit);
     addBox([1.5, 0.18, 0.5], [-1.25, 3.42, 1.48], materials.tankDark);
     this.turret = new THREE.Group();
-    this.turret.position.set(0, 3.8, -0.55);
+    this.turret.position.set(0, 5.4, -0.55);
     const addTurretBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
       mesh.position.set(position[0], position[1], position[2]);
