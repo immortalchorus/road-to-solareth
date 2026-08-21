@@ -1994,7 +1994,7 @@ class ProjectileManager {
         this.detonateBomb(shot.mesh.position, enemyManager, skyDroneManager);
         shot.life = -1;
       } else if (shot.kind === "missile" && shot.mesh.position.y <= groundHeight + shot.radius) {
-        this.detonateMissile(shot.mesh.position);
+        this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
         shot.life = -1;
       } else if (shot.mesh.position.y <= groundHeight + shot.radius * 0.4 && shot.velocity.y < 0) {
         const normal = terrain.getNormalAt(shot.mesh.position.x, shot.mesh.position.z);
@@ -2008,19 +2008,25 @@ class ProjectileManager {
       }
 
       for (const enemy of enemyManager.enemies) {
-        if (!enemy.dead && shot.mesh.position.distanceTo(enemy.group.position) < enemy.collisionRadius + shot.radius) {
-          registerPlayerHit(shot, enemy.group.position, 100, "object");
-          enemy.destroy();
-          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+        const hitRadius = enemy.collisionRadius + shot.radius;
+        if (!enemy.dead && distanceToSegmentSquared(enemy.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+          else {
+            registerPlayerHit(shot, enemy.group.position, 100, "object");
+            enemy.destroy();
+          }
           shot.life = -1;
           break;
         }
       }
 
-      if (shot.life > 0 && enemyManager.enemyTank && !enemyManager.enemyTank.dead && shot.mesh.position.distanceTo(enemyManager.enemyTank.group.position) < enemyManager.enemyTank.collisionRadius + shot.radius) {
-        enemyManager.enemyTank.receiveHit(shot);
-        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
-        shot.life = -1;
+      if (shot.life > 0 && enemyManager.enemyTank && !enemyManager.enemyTank.dead) {
+        const hitRadius = enemyManager.enemyTank.collisionRadius + shot.radius;
+        if (distanceToSegmentSquared(enemyManager.enemyTank.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+          else enemyManager.enemyTank.receiveHit(shot);
+          shot.life = -1;
+        }
       }
 
       if (shot.life > 0) {
@@ -2031,9 +2037,11 @@ class ProjectileManager {
           const alongPath = pathLengthSq > 0.001 ? THREE.MathUtils.clamp(toEscort.dot(shotPath) / pathLengthSq, 0, 1) : 0;
           const closestPoint = shot.previousPosition.clone().addScaledVector(shotPath, alongPath);
           if (!escort.dead && closestPoint.distanceTo(escort.group.position) < escort.collisionRadius + shot.radius) {
-            registerPlayerHit(shot, escort.group.position, 100, "drone");
-            escort.destroy();
-            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+            else {
+              registerPlayerHit(shot, escort.group.position, 100, "drone");
+              escort.destroy();
+            }
             shot.life = -1;
             break;
           }
@@ -2043,9 +2051,11 @@ class ProjectileManager {
       if (shot.life > 0) {
         const droneHit = skyDroneManager.hitDroneAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius);
         if (droneHit) {
-          registerPlayerHit(shot, droneHit.group.position, 100, "drone");
-          droneHit.destroy();
-          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+          else {
+            registerPlayerHit(shot, droneHit.group.position, 100, "drone");
+            droneHit.destroy();
+          }
           shot.life = -1;
         }
       }
@@ -2053,14 +2063,14 @@ class ProjectileManager {
       if (shot.life > 0 && terrain.hitDestructibleAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
-        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
         else audio.playExplosion();
       }
 
       if (shot.life > 0 && hitUniverseTargetAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
-        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
         else audio.playExplosion();
       }
 
@@ -2222,8 +2232,35 @@ class ProjectileManager {
     audio.playExplosion();
   }
 
-  detonateMissile(position) {
+  detonateMissile(position, enemyManager, skyDroneManager) {
     createExplosion(position, { radius: 2.1, growth: 24, life: 0.72, color: 0xff3a14, opacity: 0.82, coreColor: 0xffe7a0, coreOpacity: 0.88 });
+    const blastRadius = 14;
+    let destroyedByBlast = terrain.destroyNear(position, 13);
+    destroyedByBlast += destroyUniverseNear(position, 18);
+    const blastShot = { kind: "missile", origin: position.clone(), direction: new THREE.Vector3(0, 0, -1), bounces: 0 };
+    for (const enemy of enemyManager.enemies) {
+      if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + blastRadius) {
+        registerPlayerHit(blastShot, enemy.group.position, 100, "object");
+        enemy.destroy();
+        destroyedByBlast++;
+      }
+    }
+    if (enemyManager.enemyTank && !enemyManager.enemyTank.dead && enemyManager.enemyTank.group.position.distanceTo(position) <= enemyManager.enemyTank.collisionRadius + blastRadius) {
+      enemyManager.enemyTank.receiveHit(blastShot);
+    }
+    for (const escort of enemyManager.escortDrones) {
+      if (!escort.dead && escort.group.position.distanceTo(position) <= escort.collisionRadius + blastRadius) {
+        registerPlayerHit(blastShot, escort.group.position, 100, "drone");
+        escort.destroy();
+      }
+    }
+    for (const drone of skyDroneManager.drones) {
+      if (!drone.dead && drone.group.position.distanceTo(position) <= drone.collisionRadius + blastRadius) {
+        registerPlayerHit(blastShot, drone.group.position, 100, "drone");
+        drone.destroy();
+      }
+    }
+    runStats.objectsDestroyed += destroyedByBlast;
     audio.playExplosion();
   }
 
