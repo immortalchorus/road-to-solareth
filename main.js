@@ -713,7 +713,6 @@ class Tank {
     turretAntenna.position.set(-1.75, 2.05, 1.2);
     turretAntenna.rotation.x = 0.08;
     this.turret.add(turretAntenna);
-    this.addBeacon(this.turret, new THREE.Vector3(0.9, 2.0, 0.15));
     this.group.add(this.turret);
 
     this.paintMaterials = [];
