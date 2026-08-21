@@ -34,8 +34,8 @@ body {
   inset: 0;
   z-index: 40;
   display: grid;
-  place-items: end center;
-  padding: 0 24px clamp(28px, 7vh, 72px);
+  place-items: end stretch;
+  padding: 0 14px 14px;
   background-color: #140b0c;
   background-image: url("assets/hovertank-quest-splash.png?v=embedded-assets-1");
   background-position: center;
@@ -49,17 +49,20 @@ body {
 
 .splash-controls {
   display: grid;
-  width: min(780px, 94vw);
-  justify-items: center;
-  gap: 12px;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr) minmax(130px, 180px);
+  align-items: stretch;
+  width: 100%;
+  gap: 10px;
 }
 
 .splash-instructions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
   width: 100%;
-  gap: 7px 18px;
-  padding: 12px 16px 14px;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 14px;
   border: 1px solid rgba(143, 243, 255, 0.42);
   border-radius: 6px;
   background: rgba(7, 13, 19, 0.78);
@@ -67,19 +70,21 @@ body {
   color: #d8f8ff;
   font: 600 12px "Segoe UI", system-ui, sans-serif;
   backdrop-filter: blur(6px);
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .splash-instructions > strong {
-  grid-column: 1 / -1;
+  flex: 0 0 auto;
   color: #ffffff;
   font-size: 14px;
   text-align: center;
 }
 
 .splash-instructions > div {
-  display: grid;
-  grid-template-columns: minmax(68px, auto) 1fr;
-  gap: 8px;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
   align-items: center;
   min-width: 0;
 }
@@ -99,7 +104,9 @@ body {
   display: grid;
   grid-template-columns: auto minmax(150px, 1fr) auto;
   width: 100%;
-  max-width: 560px;
+  max-width: none;
+  grid-column: 1;
+  grid-row: 1;
   gap: 7px 12px;
   align-items: center;
   padding: 12px 16px;
@@ -140,8 +147,10 @@ body {
 }
 
 #play-button {
-  width: min(260px, 74vw);
-  min-height: 62px;
+  width: 100%;
+  min-height: 58px;
+  grid-column: 3;
+  grid-row: 1;
   border: 2px solid #8ff3ff;
   border-radius: 6px;
   background: rgba(10, 17, 23, 0.88);
@@ -469,17 +478,17 @@ body {
 
 @media (max-width: 620px) {
   #splash-screen {
-    padding: 0 12px 14px;
+    padding: 0 8px 8px;
   }
 
   .splash-controls {
-    gap: 8px;
+    grid-template-columns: 155px minmax(0, 1fr) 76px;
+    gap: 6px;
   }
 
   .splash-instructions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px 12px;
-    padding: 9px 10px 10px;
+    gap: 12px;
+    padding: 8px 9px;
     font-size: 10px;
   }
 
@@ -488,8 +497,7 @@ body {
   }
 
   .splash-instructions > div {
-    grid-template-columns: minmax(58px, auto) 1fr;
-    gap: 5px;
+    gap: 4px;
   }
 
   .splash-instructions kbd {
@@ -497,12 +505,26 @@ body {
   }
 
   #music-ammo-balance-panel {
-    grid-template-columns: auto minmax(100px, 1fr) auto;
-    padding: 10px 12px;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 7px 8px;
+  }
+
+  #music-ammo-balance-panel .balance-endpoint {
+    display: none;
+  }
+
+  .balance-title {
+    font-size: 10px;
+  }
+
+  #music-ammo-balance-value {
+    font-size: 10px;
   }
 
   #play-button {
-    min-height: 54px;
+    min-height: 50px;
+    font-size: 15px;
   }
 
   #hud {
