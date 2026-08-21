@@ -290,7 +290,7 @@ body {
 
 #hud {
   position: fixed;
-  top: 18px;
+  bottom: 18px;
   left: 18px;
   min-width: 210px;
   max-width: min(330px, calc(100vw - 36px));
@@ -533,8 +533,9 @@ body {
   }
 
   #hud {
-    top: 82px;
-    left: 12px;
+    bottom: 8px;
+    left: 8px;
+    max-width: min(210px, calc(100vw - 16px));
     padding: 11px 12px;
     font-size: 12px;
   }
@@ -586,7 +587,8 @@ body {
 
   #instructions {
     left: 12px;
-    bottom: 12px;
+    top: 12px;
+    bottom: auto;
     width: auto;
     transform: none;
     padding: 9px 12px;
