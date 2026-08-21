@@ -364,17 +364,20 @@ body {
   display: flex;
   align-items: stretch;
   gap: 8px;
+  height: 40px;
   max-width: calc(100vw - 36px);
 }
 
 #music-button {
-  min-height: 42px;
+  height: 40px;
+  min-height: 40px;
   padding: 0 18px;
   border: 1px solid rgba(255, 211, 132, 0.44);
   border-radius: 8px;
   background: rgba(73, 30, 42, 0.74);
   color: #fff4da;
   font: 700 14px "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
   cursor: pointer;
   backdrop-filter: blur(9px);
 }
@@ -388,11 +391,12 @@ body {
 
 #rotor-volume-panel {
   display: grid;
-  grid-template-columns: auto 42px;
+  grid-template-columns: auto minmax(70px, 1fr) 42px;
   width: 210px;
-  gap: 6px 10px;
+  height: 40px;
+  gap: 8px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 6px 10px;
   border: 1px solid rgba(105, 226, 255, 0.34);
   border-radius: 8px;
   background: rgba(11, 19, 27, 0.72);
@@ -402,7 +406,7 @@ body {
 }
 
 #rotor-volume-panel > span {
-  grid-column: 1 / -1;
+  white-space: nowrap;
 }
 
 #rotor-volume {
@@ -420,8 +424,12 @@ body {
 }
 
 #fuel-panel {
+  display: flex;
+  height: 40px;
   min-width: 138px;
-  padding: 12px 14px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
   border: 1px solid rgba(80, 244, 255, 0.36);
   border-radius: 8px;
   background: rgba(8, 18, 25, 0.72);
@@ -435,7 +443,7 @@ body {
 
 #fuel-panel span {
   display: inline-block;
-  min-width: 44px;
+  min-width: 34px;
   color: #7fffe9;
   font-variant-numeric: tabular-nums;
 }
@@ -559,25 +567,35 @@ body {
     right: 8px;
     bottom: 8px;
     gap: 5px;
+    height: 38px;
     max-width: calc(100vw - 16px);
   }
 
   #music-button {
-    min-height: 42px;
-    padding: 0 9px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0 6px;
     font-size: 11px;
   }
 
   #rotor-volume-panel {
-    width: 124px;
-    grid-template-columns: auto 30px;
-    padding: 7px 8px;
+    width: 110px;
+    height: 38px;
+    grid-template-columns: minmax(50px, 1fr) 28px;
+    gap: 4px;
+    padding: 5px 6px;
     font-size: 10px;
   }
 
+  #rotor-volume-panel > span {
+    display: none;
+  }
+
   #fuel-panel {
-    min-width: 112px;
-    padding: 8px 9px;
+    height: 38px;
+    min-width: 104px;
+    gap: 5px;
+    padding: 5px 6px;
     font-size: 11px;
   }
 
