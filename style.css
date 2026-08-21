@@ -49,15 +49,57 @@ body {
 
 .splash-controls {
   display: grid;
-  width: min(560px, 92vw);
+  width: min(780px, 94vw);
   justify-items: center;
   gap: 12px;
+}
+
+.splash-instructions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  gap: 7px 18px;
+  padding: 12px 16px 14px;
+  border: 1px solid rgba(143, 243, 255, 0.42);
+  border-radius: 6px;
+  background: rgba(7, 13, 19, 0.78);
+  box-shadow: 0 0 20px rgba(41, 179, 216, 0.16);
+  color: #d8f8ff;
+  font: 600 12px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(6px);
+}
+
+.splash-instructions > strong {
+  grid-column: 1 / -1;
+  color: #ffffff;
+  font-size: 14px;
+  text-align: center;
+}
+
+.splash-instructions > div {
+  display: grid;
+  grid-template-columns: minmax(68px, auto) 1fr;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.splash-instructions kbd {
+  color: #8ff3ff;
+  font: 800 11px "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.splash-instructions span {
+  color: #f5e9d1;
+  line-height: 1.2;
 }
 
 #music-ammo-balance-panel {
   display: grid;
   grid-template-columns: auto minmax(150px, 1fr) auto;
   width: 100%;
+  max-width: 560px;
   gap: 7px 12px;
   align-items: center;
   padding: 12px 16px;
@@ -427,7 +469,31 @@ body {
 
 @media (max-width: 620px) {
   #splash-screen {
-    padding-bottom: 20px;
+    padding: 0 12px 14px;
+  }
+
+  .splash-controls {
+    gap: 8px;
+  }
+
+  .splash-instructions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 12px;
+    padding: 9px 10px 10px;
+    font-size: 10px;
+  }
+
+  .splash-instructions > strong {
+    font-size: 12px;
+  }
+
+  .splash-instructions > div {
+    grid-template-columns: minmax(58px, auto) 1fr;
+    gap: 5px;
+  }
+
+  .splash-instructions kbd {
+    font-size: 9px;
   }
 
   #music-ammo-balance-panel {
