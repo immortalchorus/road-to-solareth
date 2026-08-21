@@ -149,16 +149,43 @@ const runStats = {
   flightTime: 0
 };
 
+const textureLoader = new THREE.TextureLoader();
+const loadSurfaceTexture = (path, repeatX = 1, repeatY = 1, colorTexture = true) => {
+  const texture = textureLoader.load(path);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeatX, repeatY);
+  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  if (colorTexture) texture.encoding = THREE.sRGBEncoding;
+  return texture;
+};
+
+const tankSurfaceTexture = loadSurfaceTexture("assets/textures/tank-surface.jpg", 3.1, 3.1, false);
+const architectureArmorTexture = loadSurfaceTexture("assets/textures/architecture-armor.jpg", 1.6, 2.4);
+const architectureVentTexture = loadSurfaceTexture("assets/textures/architecture-vents.jpg", 1.2, 2.2);
+const mechanicalRibTexture = loadSurfaceTexture("assets/textures/mechanical-ribs.jpg", 1.4, 3.2);
+
+const tankMaterial = (color, metalness, roughness, bumpScale) => new THREE.MeshStandardMaterial({
+  color,
+  metalness,
+  roughness,
+  bumpMap: tankSurfaceTexture,
+  bumpScale,
+  roughnessMap: tankSurfaceTexture
+});
+
 const materials = {
-  tankDark: new THREE.MeshStandardMaterial({ color: 0x17212a, metalness: 0.84, roughness: 0.3 }),
-  tankTrim: new THREE.MeshStandardMaterial({ color: 0x2a3541, metalness: 0.78, roughness: 0.32 }),
-  tankLight: new THREE.MeshStandardMaterial({ color: 0x43515e, metalness: 0.74, roughness: 0.36 }),
+  tankDark: tankMaterial(0x17212a, 0.84, 0.42, 0.055),
+  tankTrim: tankMaterial(0x2a3541, 0.78, 0.46, 0.045),
+  tankLight: tankMaterial(0x43515e, 0.74, 0.5, 0.04),
+  tankMechanics: new THREE.MeshStandardMaterial({ color: 0x151b21, metalness: 0.82, roughness: 0.48, map: mechanicalRibTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.035 }),
   warmMechanics: new THREE.MeshStandardMaterial({ color: 0x5b3f2c, metalness: 0.5, roughness: 0.62 }),
   blueGlow: new THREE.MeshStandardMaterial({ color: 0x58e9ff, emissive: 0x32cfff, emissiveIntensity: 1.6 }),
   orangeGlow: new THREE.MeshStandardMaterial({ color: 0xff9b32, emissive: 0xff5f12, emissiveIntensity: 2.2 }),
   enemy: new THREE.MeshStandardMaterial({ color: 0x3b3d42, metalness: 0.7, roughness: 0.35 }),
   redEye: new THREE.MeshStandardMaterial({ color: 0xff2e2e, emissive: 0xff1010, emissiveIntensity: 2.4 }),
-  ruin: new THREE.MeshStandardMaterial({ color: 0x57555f, metalness: 0.32, roughness: 0.76 }),
+  ruin: new THREE.MeshStandardMaterial({ color: 0x57555f, metalness: 0.45, roughness: 0.72, map: architectureArmorTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.09 }),
+  architectureVent: new THREE.MeshStandardMaterial({ color: 0x353a40, metalness: 0.62, roughness: 0.58, map: architectureVentTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.06 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
   pyramidGlass: new THREE.MeshStandardMaterial({ color: 0x071018, metalness: 0.86, roughness: 0.18 }),
   pyramidBronze: new THREE.MeshStandardMaterial({ color: 0x2d2117, metalness: 0.72, roughness: 0.24 }),
@@ -173,58 +200,6 @@ const materials = {
   terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true }),
   smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false })
 };
-
-function createTankArmorTexture() {
-  const surface = document.createElement("canvas");
-  surface.width = 256;
-  surface.height = 256;
-  const context = surface.getContext("2d");
-  context.fillStyle = "#e1e4e7";
-  context.fillRect(0, 0, 256, 256);
-  context.strokeStyle = "rgba(20, 26, 31, 0.48)";
-  context.lineWidth = 4;
-  context.strokeRect(3, 3, 250, 250);
-  context.beginPath();
-  context.moveTo(0, 78);
-  context.lineTo(102, 78);
-  context.lineTo(126, 101);
-  context.lineTo(256, 101);
-  context.moveTo(0, 190);
-  context.lineTo(72, 190);
-  context.lineTo(94, 168);
-  context.lineTo(256, 168);
-  context.stroke();
-
-  let seed = 7419;
-  const random = () => {
-    seed = seed * 16807 % 2147483647;
-    return (seed - 1) / 2147483646;
-  };
-  for (let i = 0; i < 46; i++) {
-    const x = random() * 246 + 5;
-    const y = random() * 246 + 5;
-    const length = 3 + random() * 18;
-    context.strokeStyle = `rgba(20, 24, 28, ${0.06 + random() * 0.14})`;
-    context.lineWidth = 0.6 + random() * 1.1;
-    context.beginPath();
-    context.moveTo(x, y);
-    context.lineTo(x + length, y + (random() - 0.5) * 3);
-    context.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(surface);
-  texture.encoding = THREE.sRGBEncoding;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-  return texture;
-}
-
-const tankArmorTexture = createTankArmorTexture();
-for (const material of [materials.tankDark, materials.tankTrim, materials.tankLight]) {
-  material.map = tankArmorTexture;
-  material.needsUpdate = true;
-}
 
 let terrain;
 let tank;
@@ -474,7 +449,7 @@ class Tank {
       const pod = new THREE.Group();
       pod.position.set(x, 1.58, z);
 
-      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.48, 10, 28), materials.tankTrim);
+      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.48, 10, 28), materials.tankMechanics);
       outerRing.rotation.x = Math.PI / 2;
       outerRing.castShadow = true;
       pod.add(outerRing);
@@ -487,7 +462,7 @@ class Tank {
       pod.add(hub);
 
       for (let i = 0; i < 4; i++) {
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.26), materials.tankDark);
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.26), materials.tankMechanics);
         blade.rotation.y = i * Math.PI / 2 + 0.22;
         blade.castShadow = true;
         pod.add(blade);
@@ -516,7 +491,7 @@ class Tank {
     addBox([2.15, 0.16, 3.0], [0, 2.82, -2.0], materials.tankDark);
 
     for (const x of [-4.2, 4.2]) {
-      addBox([1.55, 1.12, 10.6], [x, 0.96, 0], materials.darkMetal);
+      addBox([1.55, 1.12, 10.6], [x, 0.96, 0], materials.tankMechanics);
       addBox([1.8, 0.36, 8.8], [x, 1.56, -0.25], materials.tankDark, [0, 0, x < 0 ? -0.12 : 0.12]);
       addBox([0.18, 0.72, 1.35], [x, 1.72, -3.9], materials.blueGlow);
       for (let z = -4.2; z <= 4.2; z += 1.68) {
@@ -2869,7 +2844,7 @@ function createHighTechPyramid(seed) {
     group.add(verticalSeam);
   }
 
-  const podium = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.84, radius * 1.08, 1.15, 4), materials.darkMetal);
+  const podium = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.84, radius * 1.08, 1.15, 4), materials.architectureVent);
   podium.position.y = 0.58;
   podium.rotation.y = Math.PI / 4;
   group.add(podium);
