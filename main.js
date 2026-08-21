@@ -118,6 +118,8 @@ const musicAmmoBalanceControl = document.querySelector("#music-ammo-balance");
 const musicAmmoBalanceValue = document.querySelector("#music-ammo-balance-value");
 const rotorVolumeControl = document.querySelector("#rotor-volume");
 const rotorVolumeValue = document.querySelector("#rotor-volume-value");
+const splashRotorVolumeControl = document.querySelector("#splash-rotor-volume");
+const splashRotorVolumeValue = document.querySelector("#splash-rotor-volume-value");
 let audio = null;
 
 try {
@@ -138,6 +140,31 @@ function updateMusicAmmoBalance() {
 }
 
 updateMusicAmmoBalance();
+
+let savedRotorVolume = "80";
+try {
+  savedRotorVolume = window.localStorage.getItem("hovertank-rotor-volume") || "80";
+} catch (_) {
+  savedRotorVolume = "80";
+}
+rotorVolumeControl.value = savedRotorVolume;
+splashRotorVolumeControl.value = savedRotorVolume;
+
+function updateRotorVolume(sourceControl) {
+  const value = sourceControl.value;
+  rotorVolumeControl.value = value;
+  splashRotorVolumeControl.value = value;
+  rotorVolumeValue.textContent = `${value}%`;
+  splashRotorVolumeValue.textContent = `${value}%`;
+  if (audio) audio.setRotorVolume(Number(value) / 100);
+  try {
+    window.localStorage.setItem("hovertank-rotor-volume", value);
+  } catch (_) {
+    // The selected rotor volume still applies for this session.
+  }
+}
+
+updateRotorVolume(rotorVolumeControl);
 
 const poeticStatuses = [
   "Metallic orbs watch the red waste.",
@@ -282,11 +309,8 @@ hud.instructionsButton.addEventListener("click", () => {
 });
 hud.pauseButton.addEventListener("click", () => toggleGamePause());
 musicAmmoBalanceControl.addEventListener("input", updateMusicAmmoBalance);
-rotorVolumeControl.addEventListener("input", () => {
-  const volume = Number(rotorVolumeControl.value) / 100;
-  rotorVolumeValue.textContent = `${rotorVolumeControl.value}%`;
-  audio.setRotorVolume(volume);
-});
+rotorVolumeControl.addEventListener("input", () => updateRotorVolume(rotorVolumeControl));
+splashRotorVolumeControl.addEventListener("input", () => updateRotorVolume(splashRotorVolumeControl));
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 playButton.addEventListener("click", async () => {
   playButton.disabled = true;

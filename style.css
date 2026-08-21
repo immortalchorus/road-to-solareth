@@ -49,7 +49,7 @@ body {
 
 .splash-controls {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(650px, 780px) minmax(140px, 180px);
+  grid-template-columns: minmax(280px, 340px) minmax(540px, 1fr) minmax(180px, 220px) minmax(90px, 110px);
   align-items: stretch;
   width: min(100%, 1340px);
   justify-self: center;
@@ -139,10 +139,45 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+#splash-rotor-volume-panel {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 42px;
+  grid-column: 3;
+  grid-row: 1;
+  gap: 7px 10px;
+  align-items: center;
+  padding: 15px 16px;
+  border: 1px solid rgba(105, 226, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(7, 13, 19, 0.86);
+  color: #d8f8ff;
+  font: 700 15px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(7px);
+}
+
+#splash-rotor-volume-panel > span {
+  grid-column: 1 / -1;
+  color: #ffffff;
+  text-align: center;
+}
+
+#splash-rotor-volume {
+  width: 100%;
+  margin: 0;
+  accent-color: #69e2ff;
+  cursor: pointer;
+}
+
+#splash-rotor-volume-value {
+  color: #8ff0ff;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 #play-button {
   width: 100%;
   min-height: 76px;
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 1;
   border: 2px solid #8ff3ff;
   border-radius: 6px;
@@ -484,7 +519,7 @@ body {
 
 @media (min-width: 621px) and (max-width: 1000px) {
   .splash-controls {
-    grid-template-columns: 240px minmax(0, 1fr) 120px;
+    grid-template-columns: 210px minmax(0, 1fr) 150px 82px;
   }
 
   .splash-instructions {
@@ -506,7 +541,7 @@ body {
   }
 
   .splash-controls {
-    grid-template-columns: 150px minmax(0, 1fr) 76px;
+    grid-template-columns: 112px minmax(0, 1fr) 64px 54px;
     gap: 6px;
   }
 
@@ -544,6 +579,22 @@ body {
 
   #music-ammo-balance-value {
     font-size: 10px;
+  }
+
+  #splash-rotor-volume-panel {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 7px 5px;
+    font-size: 8px;
+  }
+
+  #splash-rotor-volume-panel > span {
+    font-size: 8px;
+  }
+
+  #splash-rotor-volume-value {
+    font-size: 8px;
+    text-align: center;
   }
 
   #play-button {
