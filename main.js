@@ -16,10 +16,7 @@ const CONFIG = {
   landingCushionHeight: 8,
   landingDamping: 0.68,
   landingSpring: 18,
-  flightYawSpeed: 1.35,
-  flightPitchSpeed: 1.2,
   flightLevelSpeed: 2.4,
-  maxFlightPitch: 0.38,
   maxFlightRoll: 0.52,
   maxFuel: 1000,
   fuelDrainPerMinute: 50,
@@ -86,7 +83,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyB", "KeyZ", "KeyL", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyZ", "KeyL", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -740,14 +737,11 @@ class Tank {
 
   update(delta, keys, terrainManager, hasFuel = true) {
     const pitchMode = keys.KeyY;
-    const targetHoverYBeforeMove = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
-    const airborne = this.group.position.y > targetHoverYBeforeMove + 0.35 || this.verticalVelocity > 0.1;
-    const bankMode = hasFuel && keys.KeyB && airborne;
     const forwardInput = hasFuel && keys.ArrowUp && !pitchMode ? 1 : 0;
     const reverseInput = hasFuel && keys.ArrowDown && !pitchMode ? 1 : 0;
     const turningTurret = keys.ShiftLeft || keys.ShiftRight;
     const horizontalInput = Number(Boolean(keys.ArrowLeft)) - Number(Boolean(keys.ArrowRight));
-    const automaticBank = !bankMode && !turningTurret && !pitchMode &&
+    const automaticBank = !turningTurret && !pitchMode &&
       Boolean(forwardInput || reverseInput) && horizontalInput !== 0;
 
     if (forwardInput) this.speed += this.acceleration * delta;
@@ -774,24 +768,7 @@ class Tank {
     }
     this.wasAltitudeClimbing = altitudeClimb;
 
-    if (bankMode) {
-      if (keys.ArrowLeft) {
-        this.group.rotation.y += CONFIG.flightYawSpeed * delta;
-        this.flightRoll = moveToward(this.flightRoll, CONFIG.maxFlightRoll, CONFIG.flightLevelSpeed * delta);
-      } else if (keys.ArrowRight) {
-        this.group.rotation.y -= CONFIG.flightYawSpeed * delta;
-        this.flightRoll = moveToward(this.flightRoll, -CONFIG.maxFlightRoll, CONFIG.flightLevelSpeed * delta);
-      } else {
-        this.flightRoll = moveToward(this.flightRoll, 0, CONFIG.flightLevelSpeed * delta);
-      }
-
-      if (keys.ArrowUp) this.flightPitch = moveToward(this.flightPitch, -CONFIG.maxFlightPitch, CONFIG.flightPitchSpeed * delta);
-      else if (keys.ArrowDown) this.flightPitch = moveToward(this.flightPitch, CONFIG.maxFlightPitch, CONFIG.flightPitchSpeed * delta);
-      else this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
-
-      hud.status.textContent = "The hover-tank banks like a heavy aircraft.";
-      statusTimer = 3;
-    } else if (turningTurret) {
+    if (turningTurret) {
       if (keys.ArrowLeft) this.turret.rotation.y += this.turretTurnSpeed * delta;
       if (keys.ArrowRight) this.turret.rotation.y -= this.turretTurnSpeed * delta;
     } else if (pitchMode) {
@@ -803,11 +780,9 @@ class Tank {
       if (hasFuel && keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * delta;
     }
 
-    if (!bankMode) {
-      this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
-      const targetRoll = automaticBank ? horizontalInput * CONFIG.maxFlightRoll : 0;
-      this.flightRoll = moveToward(this.flightRoll, targetRoll, CONFIG.flightLevelSpeed * delta);
-    }
+    this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
+    const targetRoll = automaticBank ? horizontalInput * CONFIG.maxFlightRoll : 0;
+    this.flightRoll = moveToward(this.flightRoll, targetRoll, CONFIG.flightLevelSpeed * delta);
     this.group.rotation.x = this.flightPitch;
     this.group.rotation.z = this.flightRoll;
 
