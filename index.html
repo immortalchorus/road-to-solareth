@@ -20,9 +20,11 @@
             <div><kbd>Ctrl</kbd><span>Fire cannon</span></div>
             <div><kbd>Z + Ctrl</kbd><span>Seeking ammo</span></div>
             <div><kbd>Space</kbd><span>Drop bombs</span></div>
+            <div><kbd>M</kbd><span>Launch missile</span></div>
             <div><kbd>Shift+←→</kbd><span>Turn turret</span></div>
             <div><kbd>Y+↑↓</kbd><span>Aim cannon</span></div>
             <div><kbd>V</kbd><span>Center turret</span></div>
+            <div><kbd>Shift + V</kbd><span>Center yaw only</span></div>
             <div><kbd>Tab</kbd><span>Camera height</span></div>
             <div><kbd>Esc</kbd><span>Clear nearby obstacles</span></div>
           </section>
@@ -88,19 +90,19 @@
           <input id="rotor-volume" type="range" min="0" max="100" value="80" step="1">
           <output id="rotor-volume-value" for="rotor-volume">80%</output>
         </label>
-        <section id="fuel-panel" aria-live="polite"><div>Fuel <span id="fuel">1000</span></div><div>Ammo <span id="ammo">1000</span></div></section>
+        <section id="fuel-panel" aria-live="polite"><div>Fuel <span id="fuel">1000</span></div><div>Ammo <span id="ammo">1000</span></div><div>Missiles <span id="missiles">4</span></div></section>
       </div>
 
       <aside id="instructions" hidden>
         <strong>Tank Driver</strong>
-        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Space drops bombs. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers the turret. Ctrl fires. Hold Z while firing for drone-seeking ammo. Tab toggles camera height. Escape clears nearby obstacles.</span>
+        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Space drops bombs; M launches rack missiles. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers yaw and pitch; Shift + V centers yaw while preserving pitch. Ctrl fires. Hold Z while firing for drone-seeking ammo. Red towers reload missiles. Tab toggles camera height. Escape clears nearby obstacles.</span>
       </aside>
     </main>
 
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=turbine-beacons-only-1"></script>
+    <script src="main.js?v=missile-racks-towers-1"></script>
   </body>
 </html>
 

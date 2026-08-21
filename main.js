@@ -22,6 +22,8 @@ const CONFIG = {
   fuelDrainPerMinute: 50,
   refuelTowerCount: 12,
   refuelTowerRadius: 8.5,
+  missileTowerCount: 4,
+  missileTowerRadius: 8.5,
   maxAmmo: 1000,
   radioChatterEvery: 30,
   tankCollisionRadius: 5.2,
@@ -83,7 +85,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyZ", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyM", "KeyZ", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -96,6 +98,7 @@ const hud = {
   destroyed: document.querySelector("#destroyed"),
   fuel: document.querySelector("#fuel"),
   ammo: document.querySelector("#ammo"),
+  missiles: document.querySelector("#missiles"),
   hitPoints: document.querySelector("#hit-points"),
   sessionTime: document.querySelector("#session-time"),
   status: document.querySelector("#status"),
@@ -257,6 +260,7 @@ let projectiles;
 let enemies;
 let skyDrones;
 let refuelTowers;
+let missileTowers;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -279,7 +283,8 @@ window.addEventListener("keydown", event => {
   if (event.code === "ControlLeft" || event.code === "ControlRight") input.fireHeld = true;
   if (event.code === "KeyZ") input.heatSeekingHeld = true;
   if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
-  if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret();
+  if (event.code === "KeyM" && !event.repeat && projectiles && tank) projectiles.launchMissile(tank);
+  if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret(Boolean(input.ShiftLeft || input.ShiftRight));
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
   if (event.code === "Escape") emergencyClearAroundTank();
@@ -483,6 +488,27 @@ function createMountains() {
   }
 }
 
+function createMissileModel() {
+  const missile = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.31, 2.5, 12), materials.tankTrim);
+  body.rotation.x = Math.PI / 2;
+  body.position.z = -0.15;
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.31, 0.82, 12), materials.redEye);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -1.8;
+  const exhaustRing = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.07, 6, 12), materials.warmMechanics);
+  exhaustRing.position.z = 1.13;
+  const fins = [];
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.58, 0.68), materials.darkMetal);
+    fin.position.z = 0.82;
+    fin.rotation.z = i * Math.PI / 2;
+    fins.push(fin);
+  }
+  missile.add(body, nose, exhaustRing, ...fins);
+  return missile;
+}
+
 class Tank {
   constructor(parent) {
     this.group = new THREE.Group();
@@ -503,6 +529,8 @@ class Tank {
     this.bumpTimer = 0;
     this.beaconTime = 0;
     this.beacons = [];
+    this.missileLaunchIndex = 0;
+    this.missileSlots = [];
 
     const addBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
@@ -654,12 +682,8 @@ class Tank {
     cockpit.castShadow = true;
     this.group.add(cockpit);
     addBox([1.5, 0.18, 0.5], [-1.25, 3.42, 1.48], materials.tankDark);
-    addBox([0.18, 2.8, 0.18], [-3.55, 3.75, 3.85], materials.darkMetal, [0.12, 0, 0]);
-    addBox([0.1, 1.65, 0.1], [3.65, 3.35, 4.1], materials.darkMetal, [-0.08, 0, 0]);
-    addBox([0.1, 2.85, 0.1], [3.25, 4.0, 3.7], materials.darkMetal, [-0.04, 0, 0]);
-
     this.turret = new THREE.Group();
-    this.turret.position.set(0, 3.0, -0.55);
+    this.turret.position.set(0, 3.8, -0.55);
     const addTurretBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
       mesh.position.set(position[0], position[1], position[2]);
@@ -709,10 +733,23 @@ class Tank {
     muzzleGlow.position.set(0, 0, -16.72);
     this.cannon.add(muzzleGlow);
     this.turret.add(this.cannon);
-    const turretAntenna = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.5, 8), materials.darkMetal);
-    turretAntenna.position.set(-1.75, 2.05, 1.2);
-    turretAntenna.rotation.x = 0.08;
-    this.turret.add(turretAntenna);
+
+    this.missileRack = new THREE.Group();
+    this.missileRack.position.set(0, 0.72, -0.35);
+    const slotPositions = [
+      new THREE.Vector3(-3.75, 0, -0.15),
+      new THREE.Vector3(3.75, 0, -0.15),
+      new THREE.Vector3(-2.95, 0, 0.2),
+      new THREE.Vector3(2.95, 0, 0.2)
+    ];
+    for (const position of slotPositions) {
+      const missile = createMissileModel();
+      missile.position.copy(position);
+      missile.scale.setScalar(1.08);
+      this.missileRack.add(missile);
+      this.missileSlots.push(missile);
+    }
+    this.turret.add(this.missileRack);
     this.group.add(this.turret);
 
     this.paintMaterials = [];
@@ -780,6 +817,7 @@ class Tank {
 
     this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
     this.cannon.rotation.x = this.turretPitch;
+    this.missileRack.rotation.x = this.turretPitch;
     this.updateBeacons(delta);
     this.updateFuelTint(fuel / CONFIG.maxFuel);
 
@@ -849,12 +887,34 @@ class Tank {
     }
   }
 
-  centerTurret() {
+  centerTurret(preservePitch = false) {
     this.turret.rotation.y = 0;
-    this.turretPitch = 0;
-    this.cannon.rotation.x = 0;
-    hud.status.textContent = "Turret centered for a straight shot.";
+    if (!preservePitch) {
+      this.turretPitch = 0;
+      this.cannon.rotation.x = 0;
+      this.missileRack.rotation.x = 0;
+    }
+    hud.status.textContent = preservePitch ? "Turret yaw centered; cannon pitch held." : "Turret centered for a straight shot.";
     statusTimer = 2.5;
+  }
+
+  takeNextMissile() {
+    if (this.missileLaunchIndex >= this.missileSlots.length) return null;
+    this.group.updateMatrixWorld(true);
+    const missile = this.missileSlots[this.missileLaunchIndex++];
+    const position = missile.getWorldPosition(new THREE.Vector3());
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(missile.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    missile.visible = false;
+    return { position, direction };
+  }
+
+  reloadMissiles() {
+    this.missileLaunchIndex = 0;
+    for (const missile of this.missileSlots) missile.visible = true;
+  }
+
+  getMissileCount() {
+    return this.missileSlots.length - this.missileLaunchIndex;
   }
 
   holdCurrentAltitude() {
@@ -1314,7 +1374,7 @@ class GroundEnemyTank {
 
   receiveHit(shot) {
     if (this.dead) return;
-    this.health--;
+    this.health -= shot.kind === "missile" ? 2 : 1;
     registerPlayerHit(shot, this.group.position, 20, this.health <= 0 ? "object" : "hit");
     if (this.health <= 0) {
       this.dead = true;
@@ -1774,6 +1834,111 @@ class RefuelTower {
     this.beacon.scale.setScalar(1 + this.pulse * 0.55);
   }
 }
+
+class MissileTowerManager {
+  constructor(parent, terrainManager) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.towers = [];
+    for (let i = 0; i < CONFIG.missileTowerCount; i++) {
+      const angle = i * Math.PI * 0.5 + Math.PI * 0.25;
+      const radius = 185 + (i % 2) * 120;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const tower = new MissileTower(i, this.terrain, x, z);
+      this.parent.add(tower.group);
+      registerUniverseTarget(tower.group, CONFIG.missileTowerRadius + 2.5, { playerDestructible: false });
+      this.towers.push(tower);
+    }
+  }
+
+  update(delta, tankRef) {
+    for (const tower of this.towers) {
+      if (!tower.group.parent) continue;
+      tower.update(delta);
+      if (tankRef.getMissileCount() >= 4) continue;
+      const dx = tankRef.group.position.x - tower.group.position.x;
+      const dz = tankRef.group.position.z - tower.group.position.z;
+      const horizontalDistance = Math.hypot(dx, dz);
+      const insideHeight = tankRef.group.position.y >= tower.group.position.y - 2 &&
+        tankRef.group.position.y <= tower.group.position.y + tower.height + 6;
+      if (horizontalDistance <= CONFIG.missileTowerRadius && insideHeight) {
+        tankRef.reloadMissiles();
+        hud.status.textContent = "Missile battery reloaded: four rockets armed.";
+        statusTimer = 4;
+        audio.playResupplyClick();
+        this.consumeTower(tower);
+      }
+    }
+  }
+
+  consumeTower(tower) {
+    const targetIndex = universeTargets.findIndex(target => target.object === tower.group);
+    if (targetIndex >= 0) universeTargets.splice(targetIndex, 1);
+    if (tower.group.parent) tower.group.parent.remove(tower.group);
+    disposeObject(tower.group);
+    tower.consumed = true;
+  }
+}
+
+class MissileTower {
+  constructor(index, terrainManager, x, z) {
+    this.index = index;
+    this.group = new THREE.Group();
+    this.height = 25 + (index % 2) * 4;
+    this.pulse = 0;
+    this.consumed = false;
+    this.group.position.set(x, terrainManager.getHeightAt(x, z), z);
+    this.build();
+  }
+
+  build() {
+    this.glowMat = new THREE.MeshBasicMaterial({ color: 0xff142f, transparent: true, opacity: 0.92, depthWrite: false });
+    this.coreMat = new THREE.MeshBasicMaterial({ color: 0xff5668, transparent: true, opacity: 1, depthWrite: false });
+    loadRefuelTowerModel().then(source => {
+      if (this.consumed || !this.group.parent) return;
+      const model = source.clone(true);
+      model.traverse(child => {
+        if (!child.isMesh) return;
+        child.geometry = child.geometry.clone();
+        child.material = child.material.clone();
+        child.material.color.setHex(0xf01832);
+        if (child.material.emissive) {
+          child.material.emissive.setHex(0x8f0018);
+          child.material.emissiveIntensity = 1.8;
+        }
+        child.material.metalness = 0.62;
+        child.material.roughness = 0.28;
+      });
+      const bounds = new THREE.Box3().setFromObject(model);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      const scale = this.height / Math.max(size.y, 0.001);
+      model.scale.setScalar(scale);
+      model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+      this.group.add(model);
+    }).catch(error => console.error("Missile tower model failed to load", error));
+
+    this.gate = new THREE.Mesh(new THREE.TorusGeometry(CONFIG.missileTowerRadius, 0.22, 8, 48), this.glowMat);
+    this.gate.position.y = 6.2;
+    this.gate.rotation.x = Math.PI * 0.5;
+    this.group.add(this.gate);
+    this.beacon = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), this.coreMat);
+    this.beacon.position.y = this.height + 1.7;
+    this.group.add(this.beacon);
+  }
+
+  update(delta) {
+    this.pulse += delta;
+    const wave = 0.5 + Math.sin(this.pulse * 5.5 + this.index) * 0.5;
+    this.glowMat.opacity = 0.5 + wave * 0.35;
+    this.coreMat.opacity = 0.65 + wave * 0.35;
+    this.gate.scale.setScalar(1 + wave * 0.045);
+    this.beacon.rotation.y += delta * 1.8;
+    this.beacon.scale.setScalar(0.9 + wave * 0.32);
+  }
+}
+
 class ProjectileManager {
   constructor(parent) {
     this.parent = parent;
@@ -1816,12 +1981,20 @@ class ProjectileManager {
       if (shot.trail) {
         shot.trail.position.copy(shot.mesh.position).addScaledVector(shot.direction, -1.6);
         shot.trail.quaternion.copy(shot.quaternion);
-        shot.trail.scale.multiplyScalar(0.965);
+        if (shot.kind === "missile") {
+          const flicker = 0.82 + Math.random() * 0.34;
+          shot.trail.scale.set(flicker, 0.9 + Math.random() * 0.42, flicker);
+        } else {
+          shot.trail.scale.multiplyScalar(0.965);
+        }
       }
 
       const groundHeight = terrain.getHeightAt(shot.mesh.position.x, shot.mesh.position.z);
       if (shot.kind === "bomb" && shot.mesh.position.y <= groundHeight + shot.radius && shot.velocity.y < 0) {
         this.detonateBomb(shot.mesh.position, enemyManager, skyDroneManager);
+        shot.life = -1;
+      } else if (shot.kind === "missile" && shot.mesh.position.y <= groundHeight + shot.radius) {
+        this.detonateMissile(shot.mesh.position);
         shot.life = -1;
       } else if (shot.mesh.position.y <= groundHeight + shot.radius * 0.4 && shot.velocity.y < 0) {
         const normal = terrain.getNormalAt(shot.mesh.position.x, shot.mesh.position.z);
@@ -1838,6 +2011,7 @@ class ProjectileManager {
         if (!enemy.dead && shot.mesh.position.distanceTo(enemy.group.position) < enemy.collisionRadius + shot.radius) {
           registerPlayerHit(shot, enemy.group.position, 100, "object");
           enemy.destroy();
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
           shot.life = -1;
           break;
         }
@@ -1845,6 +2019,7 @@ class ProjectileManager {
 
       if (shot.life > 0 && enemyManager.enemyTank && !enemyManager.enemyTank.dead && shot.mesh.position.distanceTo(enemyManager.enemyTank.group.position) < enemyManager.enemyTank.collisionRadius + shot.radius) {
         enemyManager.enemyTank.receiveHit(shot);
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
         shot.life = -1;
       }
 
@@ -1858,6 +2033,7 @@ class ProjectileManager {
           if (!escort.dead && closestPoint.distanceTo(escort.group.position) < escort.collisionRadius + shot.radius) {
             registerPlayerHit(shot, escort.group.position, 100, "drone");
             escort.destroy();
+            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
             shot.life = -1;
             break;
           }
@@ -1869,6 +2045,7 @@ class ProjectileManager {
         if (droneHit) {
           registerPlayerHit(shot, droneHit.group.position, 100, "drone");
           droneHit.destroy();
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
           shot.life = -1;
         }
       }
@@ -1876,13 +2053,15 @@ class ProjectileManager {
       if (shot.life > 0 && terrain.hitDestructibleAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
-        audio.playExplosion();
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+        else audio.playExplosion();
       }
 
       if (shot.life > 0 && hitUniverseTargetAlongSegment(shot.previousPosition, shot.mesh.position, shot.radius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
-        audio.playExplosion();
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position);
+        else audio.playExplosion();
       }
 
       if (shot.life <= 0) {
@@ -1921,6 +2100,56 @@ class ProjectileManager {
     });
     runStats.shotsFired++;
     ammo = Math.max(0, ammo - 1);
+    audio.playFire();
+  }
+
+  launchMissile(tankRef) {
+    const launch = tankRef.takeNextMissile();
+    if (!launch) {
+      hud.status.textContent = "Missile rack empty. Find a red reload tower.";
+      statusTimer = 3;
+      return;
+    }
+    if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
+    const group = new THREE.Group();
+    const mesh = createMissileModel();
+    mesh.scale.setScalar(1.18);
+    mesh.position.copy(launch.position);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), launch.direction);
+    const trail = new THREE.Group();
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.42, 3.3, 10, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xff5a16, transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    const core = new THREE.Mesh(
+      new THREE.ConeGeometry(0.2, 2.1, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffef9b, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    flame.position.y = -0.5;
+    core.position.y = -0.2;
+    trail.add(flame, core);
+    trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), launch.direction);
+    trail.position.copy(launch.position).addScaledVector(launch.direction, -1.75);
+    group.add(mesh, trail);
+    this.parent.add(group);
+    this.projectiles.push({
+      kind: "missile",
+      group,
+      mesh,
+      trail,
+      direction: launch.direction.clone(),
+      quaternion: trail.quaternion.clone(),
+      velocity: launch.direction.clone().multiplyScalar(104),
+      homingTarget: null,
+      bounces: 0,
+      life: 6,
+      previousPosition: launch.position.clone(),
+      origin: launch.position.clone(),
+      radius: 0.68
+    });
+    runStats.shotsFired++;
+    hud.status.textContent = `Missile launched. ${tankRef.getMissileCount()} remaining.`;
+    statusTimer = 2.5;
     audio.playFire();
   }
 
@@ -1990,6 +2219,11 @@ class ProjectileManager {
       if (!drone.dead && drone.group.position.distanceTo(position) <= drone.collisionRadius + 28) drone.destroy();
     }
     runStats.objectsDestroyed += destroyedByBlast;
+    audio.playExplosion();
+  }
+
+  detonateMissile(position) {
+    createExplosion(position, { radius: 2.1, growth: 24, life: 0.72, color: 0xff3a14, opacity: 0.82, coreColor: 0xffe7a0, coreOpacity: 0.88 });
     audio.playExplosion();
   }
 
@@ -2431,6 +2665,7 @@ projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 skyDrones = new SkyDroneManager(scene);
 refuelTowers = new RefuelTowerManager(scene, terrain);
+missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
 
 terrain.update(tank.group.position);
@@ -2452,6 +2687,7 @@ function animate() {
     enemies.update(delta, tank);
     skyDrones.update(delta, tank);
     refuelTowers.update(delta, tank);
+    missileTowers.update(delta, tank);
     projectiles.update(delta, input, tank, enemies, skyDrones);
     updateCamera(delta);
     updateHUD(delta);
@@ -2519,6 +2755,7 @@ function updateHUD(delta) {
   hud.destroyed.textContent = destroyedEnemies;
   hud.fuel.textContent = Math.max(0, Math.ceil(fuel));
   hud.ammo.textContent = ammo;
+  hud.missiles.textContent = tank.getMissileCount();
   hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
   statusTimer -= delta;
