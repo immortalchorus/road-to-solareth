@@ -49,7 +49,7 @@ body {
 
 .splash-controls {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(540px, 1fr) minmax(180px, 220px) minmax(90px, 110px);
+  grid-template-columns: minmax(250px, 300px) minmax(450px, 1fr) minmax(155px, 180px) minmax(165px, 190px) minmax(82px, 100px);
   align-items: stretch;
   width: min(100%, 1340px);
   justify-self: center;
@@ -58,7 +58,7 @@ body {
 
 .splash-instructions {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   grid-column: 2;
   grid-row: 1;
   width: 100%;
@@ -142,7 +142,7 @@ body {
 #splash-rotor-volume-panel {
   display: grid;
   grid-template-columns: minmax(80px, 1fr) 42px;
-  grid-column: 3;
+  grid-column: 4;
   grid-row: 1;
   gap: 7px 10px;
   align-items: center;
@@ -153,6 +153,41 @@ body {
   color: #d8f8ff;
   font: 700 15px "Segoe UI", system-ui, sans-serif;
   backdrop-filter: blur(7px);
+}
+
+#missile-range-panel {
+  display: grid;
+  grid-template-columns: minmax(78px, 1fr) 34px;
+  grid-column: 3;
+  grid-row: 1;
+  gap: 7px 8px;
+  align-items: center;
+  padding: 15px 14px;
+  border: 1px solid rgba(90, 255, 142, 0.5);
+  border-radius: 6px;
+  background: rgba(7, 18, 14, 0.86);
+  color: #d8ffe4;
+  font: 700 15px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(7px);
+}
+
+#missile-range-panel > span {
+  grid-column: 1 / -1;
+  color: #ffffff;
+  text-align: center;
+}
+
+#missile-range {
+  width: 100%;
+  margin: 0;
+  accent-color: #55ff91;
+  cursor: pointer;
+}
+
+#missile-range-value {
+  color: #7dffa8;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 #splash-rotor-volume-panel > span {
@@ -177,7 +212,7 @@ body {
 #play-button {
   width: 100%;
   min-height: 76px;
-  grid-column: 4;
+  grid-column: 5;
   grid-row: 1;
   border: 2px solid #8ff3ff;
   border-radius: 6px;
@@ -519,7 +554,7 @@ body {
 
 @media (min-width: 621px) and (max-width: 1000px) {
   .splash-controls {
-    grid-template-columns: 210px minmax(0, 1fr) 150px 82px;
+    grid-template-columns: 190px minmax(0, 1fr) 135px 145px 75px;
   }
 
   .splash-instructions {
@@ -541,12 +576,12 @@ body {
   }
 
   .splash-controls {
-    grid-template-columns: 112px minmax(0, 1fr) 64px 54px;
+    grid-template-columns: 105px minmax(0, 1fr) 52px 58px 48px;
     gap: 6px;
   }
 
   .splash-instructions {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 5px 2px;
     padding: 7px 4px;
   }
@@ -586,6 +621,19 @@ body {
     gap: 2px;
     padding: 7px 5px;
     font-size: 8px;
+  }
+
+  #missile-range-panel {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 7px 5px;
+    font-size: 8px;
+  }
+
+  #missile-range-panel > span,
+  #missile-range-value {
+    font-size: 8px;
+    text-align: center;
   }
 
   #splash-rotor-volume-panel > span {

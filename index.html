@@ -21,6 +21,8 @@
             <div><kbd>Z + Ctrl</kbd><span>Seeking ammo</span></div>
             <div><kbd>Space</kbd><span>Drop bombs</span></div>
             <div><kbd>M</kbd><span>Launch missile</span></div>
+            <div><kbd>F1 / F2 / F3</kbd><span>Missile range</span></div>
+            <div><kbd>G</kbd><span>Toggle scan grid</span></div>
             <div><kbd>Shift+←→</kbd><span>Turn turret</span></div>
             <div><kbd>Y+↑↓</kbd><span>Aim cannon</span></div>
             <div><kbd>V</kbd><span>Center turret</span></div>
@@ -34,6 +36,11 @@
             <input id="music-ammo-balance" type="range" min="0" max="100" value="50" step="1">
             <span class="balance-endpoint">Ammo FX</span>
             <output id="music-ammo-balance-value" for="music-ammo-balance">50% / 50%</output>
+          </label>
+          <label id="missile-range-panel" for="missile-range">
+            <span>Missile Range</span>
+            <input id="missile-range" type="range" min="1" max="100" value="55" step="1">
+            <output id="missile-range-value" for="missile-range">55</output>
           </label>
           <label id="splash-rotor-volume-panel" for="splash-rotor-volume">
             <span>Rotor Noise</span>
@@ -95,14 +102,14 @@
 
       <aside id="instructions" hidden>
         <strong>Tank Driver</strong>
-        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Space drops bombs; M launches rack missiles. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers yaw and pitch; Shift + V centers yaw while preserving pitch. Ctrl fires. Hold Z while firing for drone-seeking ammo. Red towers reload missiles. Tab toggles camera height. Escape clears nearby obstacles.</span>
+        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Shift + F releases altitude hold. Space drops bombs; M launches rack missiles. F1/F2/F3 select short, medium, or long missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers yaw and pitch; Shift + V centers yaw while preserving pitch. Ctrl fires. Hold Z while firing for drone-seeking ammo. Red towers reload missiles. Tab toggles camera height. Escape clears nearby obstacles.</span>
       </aside>
     </main>
 
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=missile-proximity-fuse-1"></script>
+    <script src="main.js?v=missile-range-grid-1"></script>
   </body>
 </html>
 

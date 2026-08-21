@@ -85,7 +85,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyM", "KeyZ", "KeyY", "KeyV", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyG", "KeyM", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -120,7 +120,10 @@ const rotorVolumeControl = document.querySelector("#rotor-volume");
 const rotorVolumeValue = document.querySelector("#rotor-volume-value");
 const splashRotorVolumeControl = document.querySelector("#splash-rotor-volume");
 const splashRotorVolumeValue = document.querySelector("#splash-rotor-volume-value");
+const missileRangeControl = document.querySelector("#missile-range");
+const missileRangeValue = document.querySelector("#missile-range-value");
 let audio = null;
+let missileRange = 55;
 
 try {
   musicAmmoBalanceControl.value = window.localStorage.getItem("hovertank-music-ammo-balance") || "50";
@@ -165,6 +168,30 @@ function updateRotorVolume(sourceControl) {
 }
 
 updateRotorVolume(rotorVolumeControl);
+
+try {
+  missileRange = THREE.MathUtils.clamp(Number(window.localStorage.getItem("hovertank-missile-range")) || 55, 1, 100);
+} catch (_) {
+  missileRange = 55;
+}
+missileRangeControl.value = String(missileRange);
+missileRangeValue.textContent = String(missileRange);
+
+function setMissileRange(value, announce = false) {
+  missileRange = THREE.MathUtils.clamp(Math.round(value), 1, 100);
+  missileRangeControl.value = String(missileRange);
+  missileRangeValue.textContent = String(missileRange);
+  try {
+    window.localStorage.setItem("hovertank-missile-range", String(missileRange));
+  } catch (_) {
+    // The selected range still applies for this session.
+  }
+  if (announce && hud.status) {
+    const label = missileRange <= 30 ? "short" : missileRange >= 75 ? "long" : "medium";
+    hud.status.textContent = `Missile range: ${label} (${missileRange}).`;
+    statusTimer = 2.8;
+  }
+}
 
 const poeticStatuses = [
   "Metallic orbs watch the red waste.",
@@ -261,6 +288,7 @@ let enemies;
 let skyDrones;
 let refuelTowers;
 let missileTowers;
+let tacticalGrid;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -284,6 +312,10 @@ window.addEventListener("keydown", event => {
   if (event.code === "KeyZ") input.heatSeekingHeld = true;
   if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
   if (event.code === "KeyM" && !event.repeat && projectiles && tank) projectiles.launchMissile(tank);
+  if (event.code === "F1" && !event.repeat) setMissileRange(20, true);
+  if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
+  if (event.code === "F3" && !event.repeat) setMissileRange(90, true);
+  if (event.code === "KeyG" && !event.repeat && tacticalGrid) tacticalGrid.toggle();
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret(Boolean(input.ShiftLeft || input.ShiftRight));
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
@@ -313,6 +345,7 @@ hud.pauseButton.addEventListener("click", () => toggleGamePause());
 musicAmmoBalanceControl.addEventListener("input", updateMusicAmmoBalance);
 rotorVolumeControl.addEventListener("input", () => updateRotorVolume(rotorVolumeControl));
 splashRotorVolumeControl.addEventListener("input", () => updateRotorVolume(splashRotorVolumeControl));
+missileRangeControl.addEventListener("input", () => setMissileRange(Number(missileRangeControl.value)));
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 playButton.addEventListener("click", async () => {
   playButton.disabled = true;
@@ -1168,6 +1201,129 @@ class TerrainManager {
   }
 }
 
+class TacticalGrid {
+  constructor(parent, terrainManager) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.spacing = 25;
+    this.radius = 350;
+    this.enabled = true;
+    this.cellX = Infinity;
+    this.cellZ = Infinity;
+    this.sweepRadius = 0;
+    this.predictionTimer = 0;
+    this.material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.34, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.lines = new THREE.LineSegments(new THREE.BufferGeometry(), this.material);
+    this.lines.renderOrder = 2;
+    this.parent.add(this.lines);
+    this.sweep = new THREE.LineLoop(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0x72ff9d, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    this.sweep.renderOrder = 3;
+    this.parent.add(this.sweep);
+    this.impactMarker = new THREE.LineLoop(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xb5ff4b, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    this.impactMarker.renderOrder = 4;
+    this.parent.add(this.impactMarker);
+  }
+
+  toggle() {
+    this.enabled = !this.enabled;
+    this.lines.visible = this.enabled;
+    this.sweep.visible = this.enabled;
+    this.impactMarker.visible = this.enabled;
+    hud.status.textContent = this.enabled ? "Tactical terrain grid online." : "Tactical terrain grid hidden.";
+    statusTimer = 2.8;
+  }
+
+  update(delta, tankRef) {
+    if (!this.enabled) return;
+    const cellX = Math.round(tankRef.group.position.x / this.spacing);
+    const cellZ = Math.round(tankRef.group.position.z / this.spacing);
+    if (cellX !== this.cellX || cellZ !== this.cellZ) {
+      this.cellX = cellX;
+      this.cellZ = cellZ;
+      this.rebuildGrid(cellX * this.spacing, cellZ * this.spacing);
+    }
+    this.sweepRadius = (this.sweepRadius + delta * 95) % this.radius;
+    this.updateRing(this.sweep, tankRef.group.position.x, tankRef.group.position.z, this.sweepRadius, 0.68);
+    this.sweep.material.opacity = 0.3 + 0.4 * (1 - this.sweepRadius / this.radius);
+    this.predictionTimer -= delta;
+    if (this.predictionTimer <= 0) {
+      this.predictionTimer = 0.12;
+      const impact = this.predictMissileImpact(tankRef);
+      this.impactMarker.visible = Boolean(impact && tankRef.getMissileCount() > 0);
+      if (impact) this.updateRing(this.impactMarker, impact.x, impact.z, 6.5, 0.82);
+    }
+  }
+
+  rebuildGrid(centerX, centerZ) {
+    const positions = [];
+    const colors = [];
+    const green = new THREE.Color(0x42ff83);
+    const steps = Math.floor(this.radius / this.spacing);
+    const addSegment = (x1, z1, x2, z2) => {
+      const distance = Math.max(Math.hypot(x1 - centerX, z1 - centerZ), Math.hypot(x2 - centerX, z2 - centerZ));
+      const fade = Math.max(0.06, 1 - distance / (this.radius * 1.08));
+      positions.push(x1, this.terrain.getHeightAt(x1, z1) + 0.48, z1, x2, this.terrain.getHeightAt(x2, z2) + 0.48, z2);
+      colors.push(green.r * fade, green.g * fade, green.b * fade, green.r * fade, green.g * fade, green.b * fade);
+    };
+    for (let line = -steps; line <= steps; line++) {
+      const fixed = line * this.spacing;
+      for (let segment = -steps; segment < steps; segment++) {
+        const start = segment * this.spacing;
+        const end = start + this.spacing;
+        addSegment(centerX + fixed, centerZ + start, centerX + fixed, centerZ + end);
+        addSegment(centerX + start, centerZ + fixed, centerX + end, centerZ + fixed);
+      }
+    }
+    this.lines.geometry.dispose();
+    this.lines.geometry = new THREE.BufferGeometry();
+    this.lines.geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    this.lines.geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  }
+
+  updateRing(line, centerX, centerZ, radius, lift) {
+    const points = [];
+    for (let i = 0; i < 72; i++) {
+      const angle = i / 72 * Math.PI * 2;
+      const x = centerX + Math.cos(angle) * radius;
+      const z = centerZ + Math.sin(angle) * radius;
+      points.push(new THREE.Vector3(x, this.terrain.getHeightAt(x, z) + lift, z));
+    }
+    line.geometry.dispose();
+    line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  }
+
+  predictMissileImpact(tankRef) {
+    tankRef.group.updateMatrixWorld(true);
+    const position = tankRef.missileRack.localToWorld(new THREE.Vector3(0, 0, -1.4));
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(tankRef.missileRack.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    const ratio = (missileRange - 1) / 99;
+    let burn = THREE.MathUtils.lerp(0.28, 2.7, ratio);
+    const thrust = THREE.MathUtils.lerp(28, 44, ratio);
+    const velocity = direction.clone().multiplyScalar(THREE.MathUtils.lerp(46, 64, ratio));
+    const point = position.clone();
+    const dt = 0.06;
+    for (let elapsed = 0; elapsed < 9; elapsed += dt) {
+      const powered = burn > 0;
+      if (powered) {
+        velocity.addScaledVector(direction, thrust * dt);
+        burn = Math.max(0, burn - dt);
+      }
+      velocity.y -= (powered ? 6.5 : 23) * dt;
+      velocity.multiplyScalar(Math.exp(-(powered ? 0.025 : 0.13) * dt));
+      direction.copy(velocity).normalize();
+      point.addScaledVector(velocity, dt);
+      if (point.y <= this.terrain.getHeightAt(point.x, point.z) + 0.7) return point;
+    }
+    return point;
+  }
+}
+
 class EnemyManager {
   constructor(parent) {
     this.parent = parent;
@@ -1967,6 +2123,18 @@ class ProjectileManager {
       shot.previousPosition.copy(shot.mesh.position);
       if (shot.kind === "bomb") {
         shot.velocity.y -= CONFIG.bombGravity * delta;
+      } else if (shot.kind === "missile") {
+        const powered = shot.burnRemaining > 0;
+        if (powered) {
+          shot.velocity.addScaledVector(shot.direction, shot.thrust * delta);
+          shot.burnRemaining = Math.max(0, shot.burnRemaining - delta);
+        }
+        shot.velocity.y -= (powered ? shot.poweredGravity : shot.ballisticGravity) * delta;
+        shot.velocity.multiplyScalar(Math.exp(-(powered ? shot.poweredDrag : shot.ballisticDrag) * delta));
+        shot.direction.copy(shot.velocity).normalize();
+        shot.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), shot.direction);
+        shot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), shot.direction);
+        shot.trail.visible = powered;
       } else if (shot.homingTarget && !shot.homingTarget.dead) {
         const toTarget = shot.homingTarget.group.position.clone().sub(shot.mesh.position);
         if (toTarget.lengthSq() > 0.001) {
@@ -2123,6 +2291,10 @@ class ProjectileManager {
     }
     if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
     const group = new THREE.Group();
+    const rangeRatio = (missileRange - 1) / 99;
+    const burnTime = THREE.MathUtils.lerp(0.28, 2.7, rangeRatio);
+    const initialSpeed = THREE.MathUtils.lerp(46, 64, rangeRatio);
+    const thrust = THREE.MathUtils.lerp(28, 44, rangeRatio);
     const mesh = createMissileModel();
     mesh.scale.setScalar(1.18);
     mesh.position.copy(launch.position);
@@ -2150,10 +2322,16 @@ class ProjectileManager {
       trail,
       direction: launch.direction.clone(),
       quaternion: trail.quaternion.clone(),
-      velocity: launch.direction.clone().multiplyScalar(104),
+      velocity: launch.direction.clone().multiplyScalar(initialSpeed),
+      burnRemaining: burnTime,
+      thrust,
+      poweredGravity: 6.5,
+      ballisticGravity: 23,
+      poweredDrag: 0.025,
+      ballisticDrag: 0.13,
       homingTarget: null,
       bounces: 0,
-      life: 6,
+      life: 9,
       previousPosition: launch.position.clone(),
       origin: launch.position.clone(),
       radius: 0.68
@@ -2699,6 +2877,7 @@ createSky();
 
 terrain = new TerrainManager(scene);
 tank = new Tank(scene);
+tacticalGrid = new TacticalGrid(scene, terrain);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 skyDrones = new SkyDroneManager(scene);
@@ -2722,6 +2901,7 @@ function animate() {
     const normalHoverY = terrain.getHeightAt(tank.group.position.x, tank.group.position.z) + CONFIG.tankHoverHeight;
     if (tank.group.position.y > normalHoverY + 1) runStats.flightTime += delta;
     terrain.update(tank.group.position);
+    tacticalGrid.update(delta, tank);
     enemies.update(delta, tank);
     skyDrones.update(delta, tank);
     refuelTowers.update(delta, tank);
