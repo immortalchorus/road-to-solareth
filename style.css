@@ -457,7 +457,8 @@ body {
 #instructions {
   position: fixed;
   left: 50%;
-  bottom: 18px;
+  bottom: 70px;
+  z-index: 30;
   display: flex;
   max-width: min(700px, calc(100vw - 36px));
   transform: translateX(-50%);
