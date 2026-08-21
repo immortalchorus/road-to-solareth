@@ -1267,6 +1267,12 @@ class TacticalGrid {
     );
     this.impactMarker.renderOrder = 4;
     this.parent.add(this.impactMarker);
+    this.cannonImpactMarker = new THREE.LineLoop(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xff3535, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    this.cannonImpactMarker.renderOrder = 5;
+    this.parent.add(this.cannonImpactMarker);
   }
 
   toggle() {
@@ -1274,6 +1280,7 @@ class TacticalGrid {
     this.lines.visible = this.enabled;
     this.sweep.visible = this.enabled;
     this.impactMarker.visible = this.enabled;
+    this.cannonImpactMarker.visible = this.enabled;
     hud.status.textContent = this.enabled ? "Tactical terrain grid online." : "Tactical terrain grid hidden.";
     statusTimer = 2.8;
   }
@@ -1296,6 +1303,9 @@ class TacticalGrid {
       const impact = this.predictMissileImpact(tankRef);
       this.impactMarker.visible = Boolean(impact && tankRef.getMissileCount() > 0);
       if (impact) this.updateRing(this.impactMarker, impact.x, impact.z, 6.5, 0.82);
+      const cannonImpact = this.predictCannonImpact(tankRef);
+      this.cannonImpactMarker.visible = Boolean(cannonImpact);
+      if (cannonImpact) this.updateRing(this.cannonImpactMarker, cannonImpact.x, cannonImpact.z, 4.8, 0.94);
     }
   }
 
@@ -1360,6 +1370,18 @@ class TacticalGrid {
       if (point.y <= this.terrain.getHeightAt(point.x, point.z) + 0.7) return point;
     }
     return point;
+  }
+
+  predictCannonImpact(tankRef) {
+    tankRef.group.updateMatrixWorld(true);
+    const point = tankRef.getMuzzleWorldPosition();
+    const velocity = tankRef.getTurretWorldDirection().multiplyScalar(118);
+    const dt = 0.04;
+    for (let elapsed = 0; elapsed < 2.8; elapsed += dt) {
+      point.addScaledVector(velocity, dt);
+      if (point.y <= this.terrain.getHeightAt(point.x, point.z) + CONFIG.projectileRadius * 0.4) return point;
+    }
+    return null;
   }
 }
 
