@@ -2007,7 +2007,8 @@ class AudioManager {
     this.muted = false;
     this.playlist = [
       { title: "Iron Circuit", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/iron-circuit.mp3" },
-      { title: "NeuroDark Guitar Solos", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-16.mp3" }
+      { title: "NeuroDark Guitar Solos", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-16.mp3" },
+      { title: "NeuroDark Guitar Solos (7)", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-7.mp3" }
     ];
     this.currentTrack = this.selectTrack();
     this.music = new Audio(this.currentTrack.src);
