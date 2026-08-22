@@ -243,6 +243,7 @@ let currentStatus = 0;
 let fuel = CONFIG.maxFuel;
 let ammo = CONFIG.maxAmmo;
 let hitPoints = CONFIG.maxHitPoints;
+let criticalDamageWarningArmed = true;
 let gameEnded = false;
 let gameStarted = false;
 let gamePaused = false;
@@ -2987,6 +2988,38 @@ class AudioManager {
     window.speechSynthesis.speak(utterance);
   }
 
+  speakDamageWarning() {
+    if (this.muted || this.commsVolume <= 0 || !("speechSynthesis" in window)) return;
+    const ctx = this.ensureContext();
+    if (ctx) {
+      const now = ctx.currentTime;
+      for (const [delay, frequency] of [[0, 760], [0.13, 540]]) {
+        const tone = ctx.createOscillator();
+        const gain = ctx.createGain();
+        tone.type = "square";
+        tone.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.11 * this.commsVolume, now + delay + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.1);
+        tone.connect(gain).connect(this.master);
+        tone.start(now + delay);
+        tone.stop(now + delay + 0.11);
+      }
+    }
+    const voices = window.speechSynthesis.getVoices();
+    const englishVoices = voices.filter(voice => /^en/i.test(voice.lang));
+    const systemNames = /mark|david|guy|george|daniel|microsoft|google uk english male/i;
+    const voice = englishVoices.find(candidate => systemNames.test(candidate.name)) || englishVoices[0];
+    const utterance = new SpeechSynthesisUtterance("Damage is high. Refuel hovertank.");
+    if (voice) utterance.voice = voice;
+    utterance.lang = "en-US";
+    utterance.volume = this.commsVolume;
+    utterance.rate = 0.78;
+    utterance.pitch = 0.52;
+    window.speechSynthesis.cancel();
+    window.setTimeout(() => window.speechSynthesis.speak(utterance), 260);
+  }
+
   update(delta, tankRef) {
     if (!this.started) return;
     this.updateMusicPulse(delta);
@@ -3496,6 +3529,7 @@ function resupplyTank() {
   ammo = CONFIG.maxAmmo;
   const previousHitPoints = hitPoints;
   hitPoints = Math.min(CONFIG.maxHitPoints, hitPoints + 25);
+  if (hitPoints >= 50) criticalDamageWarningArmed = true;
   const repairedHitPoints = hitPoints - previousHitPoints;
   hud.status.textContent = `Resupply complete. Fuel and ammo restored; armor repaired +${repairedHitPoints}.`;
   statusTimer = 4;
@@ -3728,6 +3762,10 @@ function updateImpactEffects(delta) {
 function damagePlayer(amount) {
   if (gameEnded) return;
   hitPoints = Math.max(0, hitPoints - amount);
+  if (hitPoints < 50 && criticalDamageWarningArmed) {
+    criticalDamageWarningArmed = false;
+    audio.speakDamageWarning();
+  }
   hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
   hud.damageFlash.classList.remove("active");
