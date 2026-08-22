@@ -271,7 +271,10 @@ const loadSurfaceTexture = (path, repeatX = 1, repeatY = 1, colorTexture = true)
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(repeatX, repeatY);
-  texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
   if (colorTexture) texture.encoding = THREE.sRGBEncoding;
   return texture;
 };
@@ -313,6 +316,12 @@ const materials = {
   redEye: new THREE.MeshStandardMaterial({ color: 0xff2e2e, emissive: 0xff1010, emissiveIntensity: 2.4 }),
   ruin: new THREE.MeshStandardMaterial({ color: 0x57555f, metalness: 0.45, roughness: 0.72, map: architectureArmorTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.09 }),
   detentionConcrete: new THREE.MeshStandardMaterial({ color: 0x8a7568, metalness: 0.22, roughness: 0.82, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.055 }),
+  prisonConcrete: new THREE.MeshStandardMaterial({ color: 0x665b55, metalness: 0.3, roughness: 0.76, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.045 }),
+  prisonPanel: new THREE.MeshStandardMaterial({ color: 0x3f4142, metalness: 0.62, roughness: 0.54, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.035 }),
+  prisonPipe: new THREE.MeshStandardMaterial({ color: 0x667075, metalness: 0.92, roughness: 0.23, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.025 }),
+  prisonPipeDirty: new THREE.MeshStandardMaterial({ color: 0x3e4140, metalness: 0.78, roughness: 0.48, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.035 }),
+  toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
+  collisionInvisible: new THREE.MeshBasicMaterial({ visible: false }),
   architectureVent: new THREE.MeshStandardMaterial({ color: 0x353a40, metalness: 0.62, roughness: 0.58, map: architectureVentTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.06 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
   pyramidGlass: new THREE.MeshStandardMaterial({ color: 0x071018, metalness: 0.86, roughness: 0.18 }),
@@ -348,7 +357,9 @@ const universeTargets = [];
 const pyramidBeacons = [];
 const droneOrbs = [];
 const prisonBreachEffects = [];
+const toxicSmokeEffects = [];
 let beaconTime = 0;
+let toxicSmokeTime = 0;
 
 window.addEventListener("resize", onResize);
 window.addEventListener("keydown", event => {
@@ -1135,6 +1146,145 @@ const detentionBuildingSites = new Set([
   "3,2", "3,-2", "-3,2", "-3,-2"
 ]);
 const prisonCitySite = { chunkX: 0, chunkZ: -1, localX: 0, localZ: 40, worldX: 0, worldZ: -180 };
+const prisonSprawlRadiusChunks = 14;
+const sharedGeometries = new Set();
+const prisonGeometry = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  cylinder: new THREE.CylinderGeometry(1, 1, 1, 10),
+  smoke: new THREE.SphereGeometry(1, 8, 6)
+};
+Object.values(prisonGeometry).forEach(geometry => sharedGeometries.add(geometry));
+
+function isPrisonSprawlChunk(cx, cz) {
+  return Math.abs(cx) <= prisonSprawlRadiusChunks && Math.abs(cz) <= prisonSprawlRadiusChunks;
+}
+
+function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
+  const group = new THREE.Group();
+  const colliders = [];
+  const seedBase = cx * 92821 + cz * 68917;
+  const matrices = {
+    concrete: [], panel: [], pipe: [], dirtyPipe: []
+  };
+  const dummy = new THREE.Object3D();
+  const addInstance = (list, x, y, z, sx, sy, sz, rotationY = 0) => {
+    dummy.position.set(x, y, z);
+    dummy.rotation.set(0, rotationY, 0);
+    dummy.scale.set(sx, sy, sz);
+    dummy.updateMatrix();
+    list.push(dummy.matrix.clone());
+  };
+  const addCylinder = (list, x, y, z, radius, length, axis = "y") => {
+    dummy.position.set(x, y, z);
+    dummy.rotation.set(axis === "x" ? 0 : axis === "z" ? Math.PI / 2 : 0, 0, axis === "x" ? Math.PI / 2 : 0);
+    dummy.scale.set(radius, length, radius);
+    dummy.updateMatrix();
+    list.push(dummy.matrix.clone());
+  };
+  const addCollider = (x, y, z, width, height, depth) => {
+    const collider = new THREE.Mesh(prisonGeometry.box, materials.collisionInvisible);
+    collider.position.set(x, y, z);
+    collider.scale.set(width, height, depth);
+    collider.userData.radius = Math.hypot(width, depth) * 0.5;
+    colliders.push(collider);
+  };
+
+  const buildingCount = 5 + Math.floor(seededRandom(seedBase + 3) * 4);
+  for (let i = 0; i < buildingCount; i++) {
+    const lane = i % 3;
+    const row = Math.floor(i / 3);
+    const jitterX = (seededRandom(seedBase + i * 17) - 0.5) * 13;
+    const jitterZ = (seededRandom(seedBase + i * 29) - 0.5) * 13;
+    const x = -67 + lane * 67 + jitterX;
+    const z = -63 + row * 70 + jitterZ;
+    if (reserveCenter && Math.hypot(x, z) < 92) continue;
+    const width = 34 + seededRandom(seedBase + i * 43) * 24;
+    const depth = 30 + seededRandom(seedBase + i * 53) * 22;
+    const height = 25 + seededRandom(seedBase + i * 61) * 48;
+    addInstance(matrices.concrete, x, height * 0.5, z, width, height, depth);
+    addInstance(matrices.panel, x, height + 1.4, z, width + 2.2, 2.8, depth + 2.2);
+    for (const side of [-1, 1]) {
+      addInstance(matrices.panel, x + side * (width * 0.5 + 0.35), height * 0.54, z, 0.7, height * 0.76, depth * 0.76);
+    }
+    const ribCount = 3 + Math.floor(width / 16);
+    for (let rib = 0; rib < ribCount; rib++) {
+      const rx = x + THREE.MathUtils.lerp(-width * 0.38, width * 0.38, rib / Math.max(1, ribCount - 1));
+      addInstance(matrices.panel, rx, height * 0.54, z - depth * 0.5 - 0.32, 1.1, height * 0.72, 0.65);
+    }
+    addCollider(x, height * 0.5, z, width, height, depth);
+
+    const pipeY = height * 0.72;
+    for (let pipe = 0; pipe < 3; pipe++) {
+      addCylinder(pipe % 2 ? matrices.pipe : matrices.dirtyPipe, x - width * 0.5 - 1.1 - pipe * 1.25, pipeY + pipe * 1.15, z, 0.48, depth * 0.92, "z");
+    }
+  }
+
+  const hasXBridge = Math.abs(cz) % 2 === 0;
+  const hasZBridge = Math.abs(cx) % 3 === 0;
+  const bridgeY = 31 + ((Math.abs(cx * 3 + cz * 5)) % 3) * 4;
+  const addBridge = axis => {
+    const alongX = axis === "x";
+    addInstance(matrices.concrete, 0, bridgeY, 0, alongX ? 224 : 15, 4, alongX ? 15 : 224);
+    addInstance(matrices.panel, 0, bridgeY + 3.25, alongX ? -7.25 : 0, alongX ? 224 : 0.7, 2.5, alongX ? 0.7 : 224);
+    addInstance(matrices.panel, 0, bridgeY + 3.25, alongX ? 7.25 : 0, alongX ? 224 : 0.7, 2.5, alongX ? 0.7 : 224);
+    for (const offset of [-82, -41, 0, 41, 82]) {
+      if (reserveCenter && Math.abs(offset) < 58) continue;
+      addCylinder(matrices.concrete, alongX ? offset : -5.2, bridgeY * 0.5, alongX ? -5.2 : offset, 3.1, bridgeY, "y");
+      addCylinder(matrices.concrete, alongX ? offset : 5.2, bridgeY * 0.5, alongX ? 5.2 : offset, 3.1, bridgeY, "y");
+    }
+    addCollider(0, bridgeY, 0, alongX ? 224 : 15, 4, alongX ? 15 : 224);
+  };
+  if (hasXBridge) addBridge("x");
+  if (hasZBridge) addBridge("z");
+
+  const towerCount = reserveCenter ? 0 : 1 + (Math.abs(cx + cz) % 2);
+  for (let i = 0; i < towerCount; i++) {
+    const x = (i ? 1 : -1) * (76 - seededRandom(seedBase + 211 + i) * 16);
+    const z = (seededRandom(seedBase + 227 + i) - 0.5) * 92;
+    const height = 68 + seededRandom(seedBase + 239 + i) * 52;
+    addInstance(matrices.concrete, x, height * 0.5, z, 13, height, 13);
+    addInstance(matrices.panel, x, height - 5, z, 25, 12, 25);
+    addInstance(matrices.concrete, x, height + 2, z, 29, 2.2, 29);
+    addCollider(x, height * 0.5, z, 13, height, 13);
+  }
+
+  if (!reserveCenter && seededRandom(seedBase + 307) > 0.56) {
+    const stackX = 48 + (seededRandom(seedBase + 311) - 0.5) * 70;
+    const stackZ = -52 + (seededRandom(seedBase + 313) - 0.5) * 65;
+    const stackHeight = 76 + seededRandom(seedBase + 317) * 45;
+    addCylinder(matrices.dirtyPipe, stackX, stackHeight * 0.5, stackZ, 7.5, stackHeight, "y");
+    addCylinder(matrices.pipe, stackX, stackHeight + 1.5, stackZ, 9.2, 3, "y");
+    addCollider(stackX, stackHeight * 0.5, stackZ, 15, stackHeight, 15);
+    const plume = new THREE.Group();
+    plume.position.set(stackX, stackHeight + 4, stackZ);
+    group.add(plume);
+    const puffs = [];
+    for (let i = 0; i < 5; i++) {
+      const puff = new THREE.Mesh(prisonGeometry.smoke, materials.toxicSmoke);
+      puff.position.set((i % 2 ? 1 : -1) * i * 0.65, i * 5.5, (i - 2) * 0.45);
+      puff.scale.setScalar(4.5 + i * 1.5);
+      plume.add(puff);
+      puffs.push(puff);
+    }
+    toxicSmokeEffects.push({ root: plume, puffs, phase: seededRandom(seedBase + 331) * Math.PI * 2 });
+  }
+
+  const buildInstances = (geometry, material, transforms, castShadow) => {
+    if (!transforms.length) return;
+    const mesh = new THREE.InstancedMesh(geometry, material, transforms.length);
+    transforms.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = castShadow;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+  buildInstances(prisonGeometry.box, materials.prisonConcrete, matrices.concrete, true);
+  buildInstances(prisonGeometry.box, materials.prisonPanel, matrices.panel, false);
+  buildInstances(prisonGeometry.cylinder, materials.prisonPipe, matrices.pipe, true);
+  buildInstances(prisonGeometry.cylinder, materials.prisonPipeDirty, matrices.dirtyPipe, false);
+  group.userData.landmark = "prison-sprawl-district";
+  return { group, colliders };
+}
 
 class TerrainManager {
   constructor(parent) {
@@ -1215,8 +1365,9 @@ class TerrainManager {
   addScenery(group, cx, cz) {
     const hasDetentionBuilding = detentionBuildingSites.has(`${cx},${cz}`);
     const hasPrisonCity = cx === prisonCitySite.chunkX && cz === prisonCitySite.chunkZ;
+    const hasPrisonSprawl = isPrisonSprawlChunk(cx, cz);
     const count = 8 + Math.floor(seededRandom(cx * 11 - cz * 29) * 8);
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < (hasPrisonSprawl ? 0 : count); i++) {
       const seed = cx * 10000 + cz * 101 + i * 37;
       const x = (seededRandom(seed) - 0.5) * this.size * 0.9;
       const z = (seededRandom(seed + 9) - 0.5) * this.size * 0.9;
@@ -1251,7 +1402,20 @@ class TerrainManager {
       const worldZ = group.position.z + localZ;
       building.position.set(localX, this.getHeightAt(worldX, worldZ), localZ);
       building.rotation.y = Math.atan2(worldX, worldZ);
-      if (this.registerDestructible(building, group, 22, { preciseHit: true })) group.add(building);
+      if (this.registerDestructible(building, group, 22, { indestructible: true, preciseHit: true })) group.add(building);
+    }
+
+    if (hasPrisonSprawl && !hasPrisonCity) {
+      const district = createPrisonDistrict(cx, cz, this, hasDetentionBuilding || (cx === 0 && cz === 0));
+      const districtGroundY = this.getHeightAt(group.position.x, group.position.z);
+      district.group.position.y = districtGroundY;
+      group.add(district.group);
+      for (const collider of district.colliders) {
+        collider.position.y += districtGroundY;
+        if (this.registerDestructible(collider, group, collider.userData.radius, { indestructible: true, ignoreClearZone: true, preciseHit: true })) {
+          group.add(collider);
+        }
+      }
     }
 
     if (hasPrisonCity) {
@@ -1269,14 +1433,14 @@ class TerrainManager {
       }
     }
 
-    if (!hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
+    if (!hasPrisonSprawl && !hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
       const city = createDistantCity(CONFIG.worldColors.gold);
       city.position.set(0, 2, 0);
       city.scale.setScalar(0.65 + seededRandom(cx + cz) * 0.8);
       if (this.registerDestructible(city, group, 26 * city.scale.x)) group.add(city);
     }
 
-    if (!hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 53 - cz * 61) > 0.9) {
+    if (!hasPrisonSprawl && !hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 53 - cz * 61) > 0.9) {
       const burningCity = createBurningDystopianCity(cx * 41 + cz * 97);
       burningCity.position.set(
         (seededRandom(cx * 23 + cz) - 0.5) * this.size * 0.45,
@@ -1426,20 +1590,40 @@ class TerrainManager {
       if (!box || tankBottom > box.max.y + 0.5 || tankTop < box.min.y - 0.5) continue;
       if (segmentHitsExpandedBox(box)) {
         if (tankRef.bumpTimer <= 0) runStats.collisions++;
-        tankRef.bumpTimer = Math.max(tankRef.bumpTimer, 0.6);
+        tankRef.bumpTimer = Math.max(tankRef.bumpTimer, 0.28);
         const previousBottom = previousPosition.y - 0.8;
         const landingFromAbove = previousBottom >= box.max.y - 0.25 && tankBottom < box.max.y + 0.5;
         if (landingFromAbove) {
           tankPosition.y = box.max.y + 0.8;
           tankRef.verticalVelocity = Math.max(0, tankRef.verticalVelocity * -0.12);
         } else {
-          tankPosition.x = previousPosition.x;
-          tankPosition.z = previousPosition.z;
+          const minX = box.min.x - CONFIG.tankCollisionRadius - 0.12;
+          const maxX = box.max.x + CONFIG.tankCollisionRadius + 0.12;
+          const minZ = box.min.z - CONFIG.tankCollisionRadius - 0.12;
+          const maxZ = box.max.z + CONFIG.tankCollisionRadius + 0.12;
+          const inside = (x, z) => x > minX && x < maxX && z > minZ && z < maxZ;
+          const canSlideX = !inside(tankPosition.x, previousPosition.z);
+          const canSlideZ = !inside(previousPosition.x, tankPosition.z);
+          const moveX = Math.abs(tankPosition.x - previousPosition.x);
+          const moveZ = Math.abs(tankPosition.z - previousPosition.z);
+          if (canSlideX && (!canSlideZ || moveX >= moveZ)) {
+            tankPosition.z = previousPosition.z;
+          } else if (canSlideZ) {
+            tankPosition.x = previousPosition.x;
+          } else {
+            const exits = [
+              { distance: Math.abs(tankPosition.x - minX), axis: "x", value: minX },
+              { distance: Math.abs(maxX - tankPosition.x), axis: "x", value: maxX },
+              { distance: Math.abs(tankPosition.z - minZ), axis: "z", value: minZ },
+              { distance: Math.abs(maxZ - tankPosition.z), axis: "z", value: maxZ }
+            ].sort((a, b) => a.distance - b.distance);
+            tankPosition[exits[0].axis] = exits[0].value;
+          }
           tankPosition.y = Math.max(previousPosition.y, tankHoverY);
         }
-        tankRef.speed = 0;
-        hud.status.textContent = "The hull meets solid ruin. Back up and steer around.";
-        statusTimer = 5;
+        tankRef.speed *= 0.62;
+        hud.status.textContent = "Hull proximity assist: sliding clear.";
+        statusTimer = 2;
         return true;
       }
     }
@@ -3693,6 +3877,7 @@ function animate() {
     updatePyramidBeacons(delta);
     updateDroneOrbs(delta);
     updatePrisonBreachEffects(delta);
+    updateToxicSmoke(delta);
   }
 
   renderer.render(scene, camera);
@@ -4274,6 +4459,25 @@ function updatePrisonBreachEffects(delta) {
   }
 }
 
+function updateToxicSmoke(delta) {
+  toxicSmokeTime += delta;
+  for (let i = toxicSmokeEffects.length - 1; i >= 0; i--) {
+    const effect = toxicSmokeEffects[i];
+    if (!effect.root.parent || !effect.root.parent.parent) {
+      toxicSmokeEffects.splice(i, 1);
+      continue;
+    }
+    effect.puffs.forEach((puff, index) => {
+      const cycle = THREE.MathUtils.euclideanModulo(toxicSmokeTime * 0.34 + effect.phase + index * 0.19, 1);
+      puff.position.y = cycle * 32;
+      puff.position.x = Math.sin(toxicSmokeTime * 1.1 + effect.phase + index) * (2 + cycle * 7);
+      puff.position.z = Math.cos(toxicSmokeTime * 0.83 + effect.phase * 0.7 + index) * (1.5 + cycle * 5);
+      const scale = 4.2 + cycle * 10;
+      puff.scale.set(scale, scale * 0.82, scale);
+    });
+  }
+}
+
 function createRock(seed) {
   const group = new THREE.Group();
   const count = 1 + Math.floor(seededRandom(seed) * 4);
@@ -4819,7 +5023,7 @@ function valueNoise(x, z) {
 
 function disposeObject(object) {
   object.traverse(child => {
-    if (child.geometry) child.geometry.dispose();
+    if (child.geometry && !sharedGeometries.has(child.geometry)) child.geometry.dispose();
     if (child.material && !Object.values(materials).includes(child.material)) {
       if (Array.isArray(child.material)) child.material.forEach(mat => mat.dispose());
       else child.material.dispose();
