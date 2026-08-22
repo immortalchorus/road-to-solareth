@@ -247,11 +247,66 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+#play-launch {
+  position: relative;
+  display: flex;
+  grid-column: 4;
+  grid-row: 1;
+  min-width: 0;
+}
+
+#play-coin {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 14px);
+  z-index: 2;
+  width: 76px;
+  height: 76px;
+  filter: drop-shadow(0 8px 6px rgba(0, 0, 0, 0.58)) drop-shadow(0 0 9px rgba(255, 190, 83, 0.42));
+  transform: translateX(-50%);
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+
+#coin-slot {
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  z-index: 3;
+  width: 48px;
+  height: 5px;
+  border: 1px solid rgba(193, 239, 255, 0.8);
+  border-radius: 2px;
+  background: #030608;
+  box-shadow: 0 0 9px rgba(101, 226, 255, 0.72), inset 0 1px 2px #000;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+#play-launch.depositing #play-coin {
+  animation: coin-deposit 680ms cubic-bezier(0.45, 0, 0.9, 0.42) forwards;
+}
+
+#play-launch.depositing #coin-slot {
+  animation: slot-flash 680ms ease-out;
+}
+
+@keyframes coin-deposit {
+  0% { opacity: 1; transform: translateX(-50%) translateY(0) rotateY(0deg) scale(1); }
+  62% { opacity: 1; transform: translateX(-50%) translateY(72px) rotateY(540deg) scale(0.72); }
+  84% { opacity: 1; transform: translateX(-50%) translateY(91px) rotateY(720deg) scale(0.42); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(96px) rotateY(810deg) scale(0.18); }
+}
+
+@keyframes slot-flash {
+  0%, 62% { box-shadow: 0 0 9px rgba(101, 226, 255, 0.72), inset 0 1px 2px #000; }
+  78% { border-color: #fff4b0; box-shadow: 0 0 22px #ffcf58, inset 0 0 7px #ff982f; }
+  100% { box-shadow: 0 0 9px rgba(101, 226, 255, 0.72), inset 0 1px 2px #000; }
+}
+
 #play-button {
   width: 100%;
   min-height: 76px;
-  grid-column: 4;
-  grid-row: 1;
   border: 2px solid #8ff3ff;
   border-radius: 6px;
   background: rgba(10, 17, 23, 0.88);
@@ -270,6 +325,10 @@ body {
   box-shadow: 0 0 32px rgba(255, 85, 47, 0.72);
   outline: 3px solid rgba(143, 243, 255, 0.72);
   outline-offset: 4px;
+}
+
+#play-button:disabled {
+  cursor: wait;
 }
 
 #crosshair,
@@ -624,6 +683,12 @@ body {
   .splash-controls {
     grid-template-columns: 100px minmax(0, 1fr) 64px 48px;
     gap: 6px;
+  }
+
+  #play-coin {
+    bottom: calc(100% + 8px);
+    width: 52px;
+    height: 52px;
   }
 
   .splash-instructions {

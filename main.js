@@ -117,6 +117,8 @@ const hud = {
 };
 const splashScreen = document.querySelector("#splash-screen");
 const playButton = document.querySelector("#play-button");
+const playLaunch = document.querySelector("#play-launch");
+const playCoin = document.querySelector("#play-coin");
 const musicAmmoBalanceControl = document.querySelector("#music-ammo-balance");
 const musicAmmoBalanceValue = document.querySelector("#music-ammo-balance-value");
 const rotorVolumeControl = document.querySelector("#rotor-volume");
@@ -386,7 +388,12 @@ commsVolumeControl.addEventListener("input", () => setCommsVolume(commsVolumeCon
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
 playButton.addEventListener("click", async () => {
   playButton.disabled = true;
+  audio.armAudio();
+  playLaunch.classList.add("depositing");
+  await new Promise(resolve => window.setTimeout(resolve, 680));
+  audio.playCoinRing();
   playButton.textContent = "LOADING";
+  await new Promise(resolve => window.setTimeout(resolve, 360));
   const sessionDuration = await audio.prepareSessionDuration();
   await audio.start();
   gameStarted = true;
@@ -399,6 +406,76 @@ playButton.addEventListener("click", async () => {
   hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
 });
+
+function drawPlayCoin() {
+  const context = playCoin.getContext("2d");
+  if (!context) return;
+  const center = playCoin.width / 2;
+  const gradient = context.createRadialGradient(55, 42, 8, center, center, 76);
+  gradient.addColorStop(0, "#fff0a0");
+  gradient.addColorStop(0.35, "#d9a93e");
+  gradient.addColorStop(0.72, "#8a5417");
+  gradient.addColorStop(1, "#3d2109");
+  context.fillStyle = gradient;
+  context.beginPath();
+  context.arc(center, center, 74, 0, Math.PI * 2);
+  context.fill();
+  context.lineWidth = 5;
+  context.strokeStyle = "#ffdc72";
+  context.stroke();
+  context.beginPath();
+  context.arc(center, center, 62, 0, Math.PI * 2);
+  context.lineWidth = 3;
+  context.strokeStyle = "rgba(66, 30, 5, 0.72)";
+  context.stroke();
+
+  context.save();
+  context.translate(center, center + 2);
+  context.scale(43, 43);
+  context.strokeStyle = "#291507";
+  context.lineWidth = 0.095;
+  context.lineCap = "round";
+  const line = points => {
+    context.beginPath();
+    context.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i++) context.lineTo(points[i][0], points[i][1]);
+    context.stroke();
+  };
+  line([[-0.92, 0.58], [-0.44, 0.27]]);
+  line([[0.44, -0.27], [0.92, -0.58]]);
+  line([[-0.92, -0.58], [-0.44, -0.27]]);
+  line([[0.44, 0.27], [0.92, 0.58]]);
+  for (const [x, y, dx, dy] of [[-0.98, 0.62, -0.05, 0.08], [0.98, -0.62, 0.05, -0.08], [-0.98, -0.62, -0.05, -0.08], [0.98, 0.62, 0.05, 0.08]]) {
+    for (const direction of [-1, 1]) {
+      context.beginPath();
+      context.arc(x + dx * direction, y + dy * direction, 0.085, 0, Math.PI * 2);
+      context.stroke();
+    }
+  }
+  context.fillStyle = "#291507";
+  context.beginPath();
+  context.moveTo(-0.54, -0.08);
+  context.arc(0, -0.08, 0.54, Math.PI, 0);
+  context.lineTo(0.49, 0.25);
+  context.lineTo(0.29, 0.34);
+  context.lineTo(0.25, 0.7);
+  context.lineTo(0.12, 0.55);
+  context.lineTo(0, 0.76);
+  context.lineTo(-0.12, 0.55);
+  context.lineTo(-0.25, 0.7);
+  context.lineTo(-0.29, 0.34);
+  context.lineTo(-0.49, 0.25);
+  context.closePath();
+  context.fill();
+  context.fillStyle = "#d7a63a";
+  context.beginPath();
+  context.arc(-0.21, 0.06, 0.12, 0, Math.PI * 2);
+  context.arc(0.21, 0.06, 0.12, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
+}
+
+drawPlayCoin();
 
 function initLights() {
   const hemi = new THREE.HemisphereLight(0xffd1a6, 0x2f2038, 1.8);
@@ -641,7 +718,13 @@ class Tank {
       const pod = new THREE.Group();
       pod.position.set(x, 1.58, z);
 
-      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.48, 10, 28), materials.tankMechanics);
+      const turbineRingMaterial = materials.tankMechanics.clone();
+      turbineRingMaterial.color.setHex(0x3d4b56);
+      turbineRingMaterial.metalness = 0.76;
+      turbineRingMaterial.roughness = 0.38;
+      turbineRingMaterial.emissive.setHex(0x102834);
+      turbineRingMaterial.emissiveIntensity = 0.34;
+      const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.48, 10, 28), turbineRingMaterial);
       outerRing.rotation.x = Math.PI / 2;
       outerRing.castShadow = true;
       pod.add(outerRing);
@@ -2795,6 +2878,39 @@ class AudioManager {
       statusTimer = 3;
     });
     hud.musicButton.textContent = "Sound Off";
+  }
+
+  armAudio() {
+    const ctx = this.ensureContext();
+    if (ctx && ctx.state === "suspended") ctx.resume();
+  }
+
+  playCoinRing() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.master) return;
+    const now = ctx.currentTime;
+    const output = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1850;
+    filter.Q.value = 1.4;
+    output.gain.setValueAtTime(0.0001, now);
+    output.gain.exponentialRampToValueAtTime(0.32, now + 0.006);
+    output.gain.exponentialRampToValueAtTime(0.11, now + 0.12);
+    output.gain.exponentialRampToValueAtTime(0.0001, now + 0.82);
+    output.connect(filter).connect(this.master);
+    for (const [frequency, level] of [[1180, 0.52], [1770, 0.28], [2460, 0.16]]) {
+      const tone = ctx.createOscillator();
+      const gain = ctx.createGain();
+      tone.type = "sine";
+      tone.frequency.setValueAtTime(frequency, now);
+      tone.frequency.exponentialRampToValueAtTime(frequency * 0.93, now + 0.75);
+      gain.gain.setValueAtTime(level, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.78);
+      tone.connect(gain).connect(output);
+      tone.start(now);
+      tone.stop(now + 0.82);
+    }
   }
 
   toggleMute() {
