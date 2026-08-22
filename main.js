@@ -4,19 +4,19 @@ const CONFIG = {
   maxPixelRatio: 1.35,
   enableShadows: false,
   gameAudioGain: 1.35,
-  tankMaxForwardSpeed: 101.25,
-  tankMaxReverseSpeed: 43.2,
-  tankAcceleration: 86.4,
-  tankTurnSpeed: 2.7,
+  tankMaxForwardSpeed: 108.3375,
+  tankMaxReverseSpeed: 46.224,
+  tankAcceleration: 92.448,
+  tankTurnSpeed: 2.889,
   turretTurnSpeed: 3.645,
   turretPitchSpeed: 0.7425,
   tankHoverHeight: 4.8,
-  verticalThrust: 45.9,
-  hoverGravity: 35.1,
+  verticalThrust: 57.375,
+  hoverGravity: 43.875,
   landingCushionHeight: 8,
   landingDamping: 0.68,
   landingSpring: 24.3,
-  flightLevelSpeed: 3.24,
+  flightLevelSpeed: 3.4668,
   maxFlightRoll: 0.52,
   maxFuel: 1000,
   fuelDrainPerMinute: 50,
@@ -724,7 +724,7 @@ class Tank {
     this.maxForwardSpeed = CONFIG.tankMaxForwardSpeed;
     this.maxReverseSpeed = CONFIG.tankMaxReverseSpeed;
     this.acceleration = CONFIG.tankAcceleration;
-    this.friction = 17.55;
+    this.friction = 18.7785;
     this.turnSpeed = CONFIG.tankTurnSpeed;
     this.turretTurnSpeed = CONFIG.turretTurnSpeed;
     this.turretPitchSpeed = CONFIG.turretPitchSpeed;
@@ -1001,8 +1001,8 @@ class Tank {
     if (!forwardInput && !reverseInput) this.speed = moveToward(this.speed, 0, this.friction * delta);
 
     this.speed = THREE.MathUtils.clamp(this.speed, -this.maxReverseSpeed, this.maxForwardSpeed);
-    if (autopilotMode && this.speed > 27) {
-      this.speed = moveToward(this.speed, 27, this.friction * 1.35 * delta);
+    if (autopilotMode && this.speed > 28.89) {
+      this.speed = moveToward(this.speed, 28.89, this.friction * 1.35 * delta);
     }
     if (this.bumpTimer > 0) {
       this.speed *= 0.985;
