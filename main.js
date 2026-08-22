@@ -437,6 +437,7 @@ playButton.addEventListener("click", async () => {
   const missionSeconds = Math.ceil(sessionDuration);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   splashScreen.hidden = true;
+  splashScreen.remove();
   clock.getDelta();
   hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
