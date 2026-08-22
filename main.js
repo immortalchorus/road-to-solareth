@@ -1025,8 +1025,17 @@ class TerrainManager {
     this.parent = parent;
     this.chunks = new Map();
     this.destructibles = [];
+    this.clearZones = [];
     this.size = CONFIG.chunkSize;
     this.radius = CONFIG.visibleChunkRadius;
+  }
+
+  reserveClearZone(x, z, radius) {
+    this.clearZones.push({ x, z, radius });
+  }
+
+  overlapsClearZone(x, z, radius) {
+    return this.clearZones.some(zone => Math.hypot(x - zone.x, z - zone.z) < radius + zone.radius);
   }
 
   update(position) {
@@ -1123,16 +1132,15 @@ class TerrainManager {
 
       object.position.set(x, y, z);
       object.rotation.y = seededRandom(seed + 5) * Math.PI * 2;
-      this.registerDestructible(object, group, 6 + seededRandom(seed + 41) * 12);
-      group.add(object);
+      const objectRadius = 6 + seededRandom(seed + 41) * 12;
+      if (this.registerDestructible(object, group, objectRadius)) group.add(object);
     }
 
     if (Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
       const city = createDistantCity(CONFIG.worldColors.gold);
       city.position.set(0, 2, 0);
       city.scale.setScalar(0.65 + seededRandom(cx + cz) * 0.8);
-      this.registerDestructible(city, group, 26 * city.scale.x);
-      group.add(city);
+      if (this.registerDestructible(city, group, 26 * city.scale.x)) group.add(city);
     }
 
     if (Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 53 - cz * 61) > 0.9) {
@@ -1143,20 +1151,24 @@ class TerrainManager {
         (seededRandom(cx - cz * 17) - 0.5) * this.size * 0.45
       );
       burningCity.scale.setScalar(0.75 + seededRandom(cx * 5 + cz * 3) * 0.8);
-      this.registerDestructible(burningCity, group, 30 * burningCity.scale.x);
-      group.add(burningCity);
+      if (this.registerDestructible(burningCity, group, 30 * burningCity.scale.x)) group.add(burningCity);
     }
   }
 
   registerDestructible(object, chunk, radius, options = {}) {
-    object.userData.destructible = true;
-    object.userData.collisionRadius = radius;
     const position = new THREE.Vector3(
       chunk.position.x + object.position.x,
       chunk.position.y + object.position.y,
       chunk.position.z + object.position.z
     );
+    if (options.solid !== false && this.overlapsClearZone(position.x, position.z, radius)) {
+      disposeObject(object);
+      return false;
+    }
+    object.userData.destructible = true;
+    object.userData.collisionRadius = radius;
     this.destructibles.push({ object, chunk, radius, position, solid: options.solid !== false });
+    return true;
   }
 
   destroyDestructible(item) {
@@ -2243,6 +2255,7 @@ class MissileTowerManager {
       const radius = 185 + (i % 2) * 120;
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
+      this.terrain.reserveClearZone(x, z, CONFIG.missileTowerRadius + CONFIG.tankCollisionRadius + 8);
       const tower = new MissileTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
       registerUniverseTarget(tower.group, CONFIG.missileTowerRadius + 2.5, { playerDestructible: false });
