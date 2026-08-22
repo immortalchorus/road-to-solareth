@@ -3776,18 +3776,60 @@ function damagePlayer(amount) {
   statusTimer = 3;
   tank.bumpTimer = 0.5;
   if (hitPoints <= 0) {
-    hud.status.textContent = "Hull integrity depleted. Emergency systems are keeping the tank operational.";
-    statusTimer = 4;
+    hud.status.textContent = "HULL FAILURE. HOVERTANK destruction imminent.";
+    createHovertankDestruction();
+    endRun(2600);
   }
 }
 
-function endRun() {
+function createHovertankDestruction() {
+  const center = tank.group.position.clone().add(new THREE.Vector3(0, 3.2, 0));
+  const bursts = [
+    { delay: 0, offset: [0, 0, 0], radius: 3.8, growth: 38, life: 1.05 },
+    { delay: 150, offset: [-4.5, 0.4, -3], radius: 2.4, growth: 31, life: 0.8 },
+    { delay: 260, offset: [4.8, 0.2, 2.8], radius: 2.7, growth: 34, life: 0.86 },
+    { delay: 390, offset: [-5, -0.8, 4], radius: 2.2, growth: 29, life: 0.76 },
+    { delay: 520, offset: [3.8, 1.2, -4.6], radius: 2.8, growth: 36, life: 0.9 },
+    { delay: 700, offset: [0, 1.8, 0], radius: 5.2, growth: 46, life: 1.25 }
+  ];
+  for (const burst of bursts) {
+    window.setTimeout(() => {
+      const position = center.clone().add(new THREE.Vector3(...burst.offset));
+      createExplosion(position, {
+        radius: burst.radius,
+        growth: burst.growth,
+        life: burst.life,
+        color: 0xff2812,
+        opacity: 0.88,
+        coreColor: 0xfff3bd,
+        coreOpacity: 1
+      });
+      audio.playExplosion();
+    }, burst.delay);
+  }
+  createBombShockwaves(tank.group.position.clone());
+  window.setTimeout(() => createBombShockwaves(tank.group.position.clone()), 620);
+  window.setTimeout(() => {
+    tank.group.visible = false;
+    document.querySelector("#hit-points-panel").hidden = true;
+  }, 1050);
+}
+
+function endRun(summaryDelay = 0) {
   if (gameEnded) return;
   gameEnded = true;
   input.fireHeld = false;
   tank.speed = 0;
   audio.silenceRotor();
   audio.stopMusic();
+  if (summaryDelay > 0) {
+    window.setTimeout(showRunSummary, summaryDelay);
+  } else {
+    showRunSummary();
+  }
+}
+
+function showRunSummary() {
   const accuracy = runStats.shotsFired > 0 ? Math.round(runStats.shotsHit / runStats.shotsFired * 100) : 0;
   const minutes = Math.floor(runStats.flightTime / 60);
   const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
