@@ -1225,7 +1225,7 @@ class TerrainManager {
       else if (pick < 0.5) object = createRuinedTower(seed);
       else if (pick < 0.61) object = createBrokenArch(seed);
       else if (pick < 0.72) object = createHighTechPyramid(seed);
-      else if (pick < 0.83) object = createCarnivorousPlant(seed);
+      else if (pick < 0.83) object = seededRandom(seed + 73) < 0.5 ? createRock(seed) : createMetalWreckage(seed);
       else if (pick < 0.92) object = createMetalWreckage(seed);
       else object = createWaterfallCliff(seed);
 
@@ -4157,26 +4157,6 @@ function createHighTechPyramid(seed) {
   group.add(halo);
   pyramidBeacons.push({ root: group, beacon, halo, phase: seededRandom(seed + 97) * Math.PI * 2 });
 
-  return group;
-}
-
-function createCarnivorousPlant(seed) {
-  const group = new THREE.Group();
-  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.9, 7, 8), materials.plant);
-  stalk.position.y = 3.5;
-  stalk.rotation.z = (seededRandom(seed) - 0.5) * 0.35;
-  group.add(stalk);
-  const mouth = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.68), materials.plantMouth);
-  mouth.position.y = 7.6;
-  mouth.scale.set(1.1, 0.75, 0.72);
-  mouth.rotation.x = -0.9;
-  group.add(mouth);
-  for (let i = 0; i < 8; i++) {
-    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.75, 5), materials.orangeGlow);
-    tooth.position.set((i - 3.5) * 0.45, 7.72, -1.05);
-    tooth.rotation.x = Math.PI;
-    group.add(tooth);
-  }
   return group;
 }
 
