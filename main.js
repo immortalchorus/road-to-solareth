@@ -438,9 +438,8 @@ playButton.addEventListener("click", async () => {
   audio.playCoinRing();
   playButton.textContent = "LOADING";
   await new Promise(resolve => window.setTimeout(resolve, 360));
-  const durationPromise = audio.prepareSessionDuration();
-  await audio.start();
-  const sessionDuration = await durationPromise;
+  const sessionDuration = CONFIG.sessionDuration;
+  void audio.start().catch(error => console.warn("Soundtrack startup will retry during play", error));
   gameStarted = true;
   sessionTimeRemaining = sessionDuration;
   missionEndsAt = performance.now() + sessionDuration * 1000;
