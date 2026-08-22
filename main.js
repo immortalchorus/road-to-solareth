@@ -2640,10 +2640,17 @@ class SkyDroneManager {
   constructor(parent) {
     this.parent = parent;
     this.drones = [];
+    this.spawnTimer = 0.6;
   }
 
   update(delta, tankRef) {
-    while (this.drones.length < CONFIG.skyDroneCount) this.spawn(tankRef);
+    if (this.drones.length < CONFIG.skyDroneCount) {
+      this.spawnTimer -= delta;
+      if (this.spawnTimer <= 0) {
+        this.spawn(tankRef);
+        this.spawnTimer = 0.6;
+      }
+    }
 
     for (let i = this.drones.length - 1; i >= 0; i--) {
       const drone = this.drones[i];
@@ -2658,7 +2665,7 @@ class SkyDroneManager {
 
   spawn(tankRef) {
     const activeOrbs = droneOrbs.filter(orb => orb.group.parent);
-    if (!activeOrbs.length) return;
+    if (!activeOrbs.length) return false;
     const index = this.drones.length;
     const angle = seededRandom(performance.now() * 0.001 + index * 47) * Math.PI * 2;
     const distance = 180 + seededRandom(index * 97 + Math.floor(tankRef.group.position.x)) * 260;
@@ -2685,6 +2692,7 @@ class SkyDroneManager {
     drone.orbitAngle = angle;
     this.parent.add(drone.group);
     this.drones.push(drone);
+    return true;
   }
 
   hitDrone(position, radius) {
