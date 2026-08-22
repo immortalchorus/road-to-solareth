@@ -2875,8 +2875,10 @@ class AudioManager {
   async start() {
     if (this.started) return;
     this.started = true;
-    this.ensureContext();
+    const ctx = this.ensureContext();
+    if (ctx && ctx.state === "suspended") await ctx.resume();
     this.music.currentTime = 0;
+    this.setMusicAmmoBalance(this.musicAmmoBalance);
     await this.music.play().catch(() => {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
@@ -2887,6 +2889,10 @@ class AudioManager {
   armAudio() {
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") ctx.resume();
+    this.music.volume = 0;
+    this.music.play().catch(() => {
+      // start() makes the normal audible playback attempt after the coin sequence.
+    });
   }
 
   playCoinRing() {
@@ -3286,7 +3292,8 @@ class AudioManager {
     this.musicAnalyser.smoothingTimeConstant = 0.66;
     this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
     this.musicSource = this.context.createMediaElementSource(this.music);
-    this.musicSource.connect(this.musicAnalyser).connect(this.context.destination);
+    this.musicSource.connect(this.context.destination);
+    this.musicSource.connect(this.musicAnalyser);
     return this.context;
   }
 
