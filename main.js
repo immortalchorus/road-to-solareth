@@ -1269,7 +1269,7 @@ class TacticalGrid {
     this.parent.add(this.impactMarker);
     this.cannonImpactMarker = new THREE.LineSegments(
       new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xff3535, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending })
+      new THREE.LineBasicMaterial({ color: 0xff3535, transparent: true, opacity: 1, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending })
     );
     this.cannonImpactMarker.renderOrder = 5;
     this.parent.add(this.cannonImpactMarker);
@@ -1357,7 +1357,7 @@ class TacticalGrid {
     const worldPoint = ([x, y]) => {
       const worldX = impact.x + (right.x * x + towardCamera.x * y) * scale;
       const worldZ = impact.z + (right.y * x + towardCamera.y * y) * scale;
-      return new THREE.Vector3(worldX, this.terrain.getHeightAt(worldX, worldZ) + 0.94, worldZ);
+      return new THREE.Vector3(worldX, this.terrain.getHeightAt(worldX, worldZ) + 1.35, worldZ);
     };
     const addPath = (path, closed = false) => {
       const end = closed ? path.length : path.length - 1;
@@ -1428,13 +1428,15 @@ class TacticalGrid {
   predictCannonImpact(tankRef) {
     tankRef.group.updateMatrixWorld(true);
     const point = tankRef.getMuzzleWorldPosition();
-    const velocity = tankRef.getTurretWorldDirection().multiplyScalar(118);
-    const dt = 0.04;
-    for (let elapsed = 0; elapsed < 2.8; elapsed += dt) {
-      point.addScaledVector(velocity, dt);
+    const direction = tankRef.getTurretWorldDirection();
+    const step = 4.72;
+    const maxSightDistance = 180;
+    for (let distance = 0; distance < maxSightDistance; distance += step) {
+      point.addScaledVector(direction, step);
       if (point.y <= this.terrain.getHeightAt(point.x, point.z) + CONFIG.projectileRadius * 0.4) return point;
     }
-    return null;
+    point.y = this.terrain.getHeightAt(point.x, point.z) + CONFIG.projectileRadius * 0.4;
+    return point;
   }
 }
 
