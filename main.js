@@ -53,6 +53,7 @@ const CONFIG = {
   enemyTankDamage: 10,
   enemyTankFireInterval: 2.1,
   enemyTankProjectileSpeed: 58,
+  prisonPatrolTankCount: 8,
   escortDroneCount: 4,
   escortDroneAmmo: 10,
   escortDroneDamage: 2,
@@ -321,6 +322,8 @@ const materials = {
   prisonPipe: new THREE.MeshStandardMaterial({ color: 0x667075, metalness: 0.92, roughness: 0.23, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.025 }),
   prisonPipeDirty: new THREE.MeshStandardMaterial({ color: 0x3e4140, metalness: 0.78, roughness: 0.48, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.035 }),
   toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
+  radioTower: new THREE.MeshStandardMaterial({ color: 0x3f484d, metalness: 0.9, roughness: 0.25 }),
+  radioSphere: new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 1, depthWrite: false }),
   collisionInvisible: new THREE.MeshBasicMaterial({ visible: false }),
   architectureVent: new THREE.MeshStandardMaterial({ color: 0x353a40, metalness: 0.62, roughness: 0.58, map: architectureVentTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.06 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
@@ -358,6 +361,7 @@ const pyramidBeacons = [];
 const droneOrbs = [];
 const prisonBreachEffects = [];
 const toxicSmokeEffects = [];
+const radioTowerEffects = [];
 let beaconTime = 0;
 let toxicSmokeTime = 0;
 
@@ -1159,10 +1163,62 @@ function isPrisonSprawlChunk(cx, cz) {
   return Math.abs(cx) <= prisonSprawlRadiusChunks && Math.abs(cz) <= prisonSprawlRadiusChunks;
 }
 
+let radioTowerModelPromise = null;
+function loadRadioTowerModel() {
+  if (radioTowerModelPromise) return radioTowerModelPromise;
+  radioTowerModelPromise = new Promise((resolve, reject) => {
+    const loader = new THREE.OBJLoader();
+    loader.load("assets/models/Radio-Tower.obj?v=radio-tower-1", source => {
+      source.traverse(child => {
+        if (!child.isMesh) return;
+        sharedGeometries.add(child.geometry);
+        child.material = child.name.toLowerCase().includes("sphere") ? materials.radioSphere : materials.radioTower;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      });
+      resolve(source);
+    }, undefined, reject);
+  });
+  return radioTowerModelPromise;
+}
+
+function addRadioTowerToRoof(parent, x, roofY, z, seed) {
+  loadRadioTowerModel().then(source => {
+    if (!parent.parent) return;
+    const tower = source.clone(true);
+    const bounds = new THREE.Box3().setFromObject(tower);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    const scale = (15 + seededRandom(seed) * 7) / Math.max(size.y, 0.001);
+    tower.scale.setScalar(scale);
+    tower.position.set(x - center.x * scale, roofY - bounds.min.y * scale, z - center.z * scale);
+    tower.rotation.y = seededRandom(seed + 1) * Math.PI * 2;
+    parent.add(tower);
+    parent.updateMatrixWorld(true);
+    tower.updateMatrixWorld(true);
+    const sphereMesh = tower.getObjectByName("sphere2");
+    if (!sphereMesh) return;
+    const spherePosition = sphereMesh.getWorldPosition(new THREE.Vector3());
+    parent.worldToLocal(spherePosition);
+    const coreMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, depthWrite: false });
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.35, 12, 8), coreMaterial);
+    core.position.copy(spherePosition);
+    parent.add(core);
+    const haloMaterial = new THREE.MeshBasicMaterial({ color: 0xffe861, transparent: true, opacity: 0.5, depthWrite: false });
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(3.8, 12, 8), haloMaterial);
+    halo.position.copy(spherePosition);
+    parent.add(halo);
+    radioTowerEffects.push({ root: parent, sphere: sphereMesh, core, halo, phase: seededRandom(seed + 2) * Math.PI * 2 });
+  }).catch(error => console.error("Radio tower model failed to load", error));
+}
+
 function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
   const group = new THREE.Group();
   const colliders = [];
   const seedBase = cx * 92821 + cz * 68917;
+  const worldOriginX = cx * CONFIG.chunkSize;
+  const worldOriginZ = cz * CONFIG.chunkSize;
+  const isReserved = (x, z, radius) => terrainManager.overlapsClearZone(worldOriginX + x, worldOriginZ + z, radius);
   const matrices = {
     concrete: [], panel: [], pipe: [], dirtyPipe: []
   };
@@ -1189,18 +1245,18 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     colliders.push(collider);
   };
 
-  const buildingCount = 5 + Math.floor(seededRandom(seedBase + 3) * 4);
+  const buildingCount = 4 + Math.floor(seededRandom(seedBase + 3) * 3);
+  const buildingSites = [[-66, -62], [66, -62], [-66, 62], [66, 62], [-68, 0], [68, 0]];
   for (let i = 0; i < buildingCount; i++) {
-    const lane = i % 3;
-    const row = Math.floor(i / 3);
     const jitterX = (seededRandom(seedBase + i * 17) - 0.5) * 13;
     const jitterZ = (seededRandom(seedBase + i * 29) - 0.5) * 13;
-    const x = -67 + lane * 67 + jitterX;
-    const z = -63 + row * 70 + jitterZ;
+    const x = buildingSites[i][0] + jitterX;
+    const z = buildingSites[i][1] + jitterZ;
     if (reserveCenter && Math.hypot(x, z) < 92) continue;
-    const width = 34 + seededRandom(seedBase + i * 43) * 24;
-    const depth = 30 + seededRandom(seedBase + i * 53) * 22;
+    const width = 30 + seededRandom(seedBase + i * 43) * 16;
+    const depth = 28 + seededRandom(seedBase + i * 53) * 16;
     const height = 25 + seededRandom(seedBase + i * 61) * 48;
+    if (isReserved(x, z, Math.hypot(width, depth) * 0.55)) continue;
     addInstance(matrices.concrete, x, height * 0.5, z, width, height, depth);
     addInstance(matrices.panel, x, height + 1.4, z, width + 2.2, 2.8, depth + 2.2);
     for (const side of [-1, 1]) {
@@ -1212,6 +1268,7 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
       addInstance(matrices.panel, rx, height * 0.54, z - depth * 0.5 - 0.32, 1.1, height * 0.72, 0.65);
     }
     addCollider(x, height * 0.5, z, width, height, depth);
+    if ((i + Math.abs(cx * 3 + cz)) % 3 === 0) addRadioTowerToRoof(group, x, height + 2.8, z, seedBase + i * 101);
 
     const pipeY = height * 0.72;
     for (let pipe = 0; pipe < 3; pipe++) {
@@ -1219,8 +1276,8 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     }
   }
 
-  const hasXBridge = Math.abs(cz) % 2 === 0;
-  const hasZBridge = Math.abs(cx) % 3 === 0;
+  const hasXBridge = !reserveCenter && Math.abs(cz) % 2 === 0;
+  const hasZBridge = !reserveCenter && Math.abs(cx) % 3 === 0;
   const bridgeY = 31 + ((Math.abs(cx * 3 + cz * 5)) % 3) * 4;
   const addBridge = axis => {
     const alongX = axis === "x";
@@ -1228,7 +1285,10 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     addInstance(matrices.panel, 0, bridgeY + 3.25, alongX ? -7.25 : 0, alongX ? 224 : 0.7, 2.5, alongX ? 0.7 : 224);
     addInstance(matrices.panel, 0, bridgeY + 3.25, alongX ? 7.25 : 0, alongX ? 224 : 0.7, 2.5, alongX ? 0.7 : 224);
     for (const offset of [-82, -41, 0, 41, 82]) {
-      if (reserveCenter && Math.abs(offset) < 58) continue;
+      if (offset === 0 || (reserveCenter && Math.abs(offset) < 58)) continue;
+      const pierX = alongX ? offset : 0;
+      const pierZ = alongX ? 0 : offset;
+      if (isReserved(pierX, pierZ, 9)) continue;
       addCylinder(matrices.concrete, alongX ? offset : -5.2, bridgeY * 0.5, alongX ? -5.2 : offset, 3.1, bridgeY, "y");
       addCylinder(matrices.concrete, alongX ? offset : 5.2, bridgeY * 0.5, alongX ? 5.2 : offset, 3.1, bridgeY, "y");
     }
@@ -1242,6 +1302,7 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     const x = (i ? 1 : -1) * (76 - seededRandom(seedBase + 211 + i) * 16);
     const z = (seededRandom(seedBase + 227 + i) - 0.5) * 92;
     const height = 68 + seededRandom(seedBase + 239 + i) * 52;
+    if (isReserved(x, z, 18)) continue;
     addInstance(matrices.concrete, x, height * 0.5, z, 13, height, 13);
     addInstance(matrices.panel, x, height - 5, z, 25, 12, 25);
     addInstance(matrices.concrete, x, height + 2, z, 29, 2.2, 29);
@@ -1249,9 +1310,13 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
   }
 
   if (!reserveCenter && seededRandom(seedBase + 307) > 0.56) {
-    const stackX = 48 + (seededRandom(seedBase + 311) - 0.5) * 70;
-    const stackZ = -52 + (seededRandom(seedBase + 313) - 0.5) * 65;
+    let stackX = 48 + (seededRandom(seedBase + 311) - 0.5) * 70;
+    let stackZ = -52 + (seededRandom(seedBase + 313) - 0.5) * 65;
     const stackHeight = 76 + seededRandom(seedBase + 317) * 45;
+    if (isReserved(stackX, stackZ, 17)) {
+      stackX *= -1;
+      stackZ *= -1;
+    }
     addCylinder(matrices.dirtyPipe, stackX, stackHeight * 0.5, stackZ, 7.5, stackHeight, "y");
     addCylinder(matrices.pipe, stackX, stackHeight + 1.5, stackZ, 9.2, 3, "y");
     addCollider(stackX, stackHeight * 0.5, stackZ, 15, stackHeight, 15);
@@ -1284,6 +1349,27 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
   buildInstances(prisonGeometry.cylinder, materials.prisonPipeDirty, matrices.dirtyPipe, false);
   group.userData.landmark = "prison-sprawl-district";
   return { group, colliders };
+}
+
+function createSupplyArena() {
+  const group = new THREE.Group();
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(88, 88, 0.7, 48), materials.prisonPanel);
+  pad.position.y = 0.2;
+  pad.receiveShadow = true;
+  group.add(pad);
+  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(48, 0.32, 8, 64), materials.blueGlow);
+  innerRing.rotation.x = Math.PI * 0.5;
+  innerRing.position.y = 0.68;
+  group.add(innerRing);
+  for (let i = 0; i < 16; i++) {
+    const angle = i / 16 * Math.PI * 2;
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.28, 8), i % 2 ? materials.prisonPipe : materials.pyramidTrim);
+    marker.position.set(Math.cos(angle) * 79, 0.7, Math.sin(angle) * 79);
+    marker.rotation.y = -angle;
+    group.add(marker);
+  }
+  group.userData.landmark = "central-supply-arena";
+  return group;
 }
 
 class TerrainManager {
@@ -1416,6 +1502,12 @@ class TerrainManager {
           group.add(collider);
         }
       }
+    }
+
+    if (cx === 0 && cz === 0) {
+      const arena = createSupplyArena();
+      arena.position.y = this.getHeightAt(0, 0) + 0.1;
+      group.add(arena);
     }
 
     if (hasPrisonCity) {
@@ -1634,7 +1726,9 @@ class TerrainManager {
     const waves = Math.sin(x * 0.018) * 2.8 + Math.cos(z * 0.021) * 2.3 + Math.sin((x + z) * 0.009) * 4.4;
     const rough = (valueNoise(x * 0.035, z * 0.035) - 0.5) * 8.5;
     const crater = Math.sin(Math.hypot(x + 130, z - 90) * 0.021) * 1.3;
-    return waves + rough + crater;
+    const naturalHeight = waves + rough + crater;
+    const arenaBlend = THREE.MathUtils.smoothstep(Math.hypot(x, z), 82, 108);
+    return THREE.MathUtils.lerp(0, naturalHeight, arenaBlend);
   }
 
   getNormalAt(x, z) {
@@ -1973,12 +2067,15 @@ class EnemyManager {
     this.timer = 3;
     this.enemyTank = null;
     this.enemyTankRespawn = 0;
+    this.patrolTanks = [];
+    this.patrolsSpawned = false;
     this.hostileShots = [];
     this.escortDrones = [];
   }
 
   update(delta, tankRef) {
     if (gameEnded) return;
+    if (!this.patrolsSpawned) this.spawnPatrolTanks();
     if (!this.enemyTank) {
       this.enemyTankRespawn -= delta;
       if (this.enemyTankRespawn <= 0) this.spawnEnemyTank(tankRef);
@@ -1994,6 +2091,15 @@ class EnemyManager {
         disposeObject(this.enemyTank.group);
         this.enemyTank = null;
         this.enemyTankRespawn = 10;
+      }
+    }
+    for (let i = this.patrolTanks.length - 1; i >= 0; i--) {
+      const patrol = this.patrolTanks[i];
+      patrol.update(delta, tankRef, this);
+      if (patrol.dead) {
+        this.parent.remove(patrol.group);
+        disposeObject(patrol.group);
+        this.patrolTanks.splice(i, 1);
       }
     }
     for (let i = this.escortDrones.length - 1; i >= 0; i--) {
@@ -2060,6 +2166,26 @@ class EnemyManager {
     }
     hud.status.textContent = "Enemy armor detected on the ground.";
     statusTimer = 4;
+  }
+
+  spawnPatrolTanks() {
+    this.patrolsSpawned = true;
+    for (let i = 0; i < CONFIG.prisonPatrolTankCount; i++) {
+      const vertical = i < CONFIG.prisonPatrolTankCount * 0.5;
+      const lane = (i % 4 - 1.5) * CONFIG.chunkSize;
+      const path = vertical
+        ? [new THREE.Vector3(lane, 0, -440), new THREE.Vector3(lane, 0, 440)]
+        : [new THREE.Vector3(-440, 0, lane), new THREE.Vector3(440, 0, lane)];
+      const patrol = new GroundEnemyTank(path, i);
+      patrol.group.position.copy(path[i % 2]);
+      patrol.group.position.y = terrain.getHeightAt(patrol.group.position.x, patrol.group.position.z) + 1.2;
+      this.parent.add(patrol.group);
+      this.patrolTanks.push(patrol);
+    }
+  }
+
+  getGroundTanks() {
+    return [this.enemyTank, ...this.patrolTanks].filter(enemyTank => enemyTank && !enemyTank.dead);
   }
 
   fireEnemyShell(position, direction) {
@@ -2231,7 +2357,7 @@ class PrisonEscapeManager {
 }
 
 class GroundEnemyTank {
-  constructor() {
+  constructor(patrolPath = null, patrolIndex = 0) {
     this.group = new THREE.Group();
     this.turret = new THREE.Group();
     this.cannonPivot = new THREE.Group();
@@ -2240,6 +2366,9 @@ class GroundEnemyTank {
     this.collisionRadius = 6.5;
     this.speed = 7;
     this.fireTimer = 1.2;
+    this.patrolPath = patrolPath;
+    this.patrolIndex = patrolIndex;
+    this.pathIndex = patrolIndex % 2;
     this.build();
   }
 
@@ -2272,9 +2401,21 @@ class GroundEnemyTank {
     const toPlayer = tankRef.group.position.clone().sub(this.group.position);
     const distance = toPlayer.length();
     const flatDirection = toPlayer.clone().setY(0).normalize();
-    if (distance > 78 && distance < 260) this.group.position.addScaledVector(flatDirection, this.speed * delta);
+    let hullDirection = flatDirection;
+    if (this.patrolPath) {
+      const waypoint = this.patrolPath[this.pathIndex];
+      const toWaypoint = waypoint.clone().sub(this.group.position).setY(0);
+      if (toWaypoint.length() < 16) {
+        this.pathIndex = (this.pathIndex + 1) % this.patrolPath.length;
+        toWaypoint.copy(this.patrolPath[this.pathIndex]).sub(this.group.position).setY(0);
+      }
+      hullDirection = toWaypoint.normalize();
+      this.group.position.addScaledVector(hullDirection, this.speed * 0.72 * delta);
+    } else if (distance > 78 && distance < 260) {
+      this.group.position.addScaledVector(flatDirection, this.speed * delta);
+    }
     this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + 1.2;
-    const hullTargetYaw = Math.atan2(-flatDirection.x, -flatDirection.z);
+    const hullTargetYaw = Math.atan2(-hullDirection.x, -hullDirection.z);
     this.group.rotation.y += wrapAngle(hullTargetYaw - this.group.rotation.y) * Math.min(1, delta * 1.7);
     const turretTargetYaw = wrapAngle(hullTargetYaw - this.group.rotation.y);
     this.turret.rotation.y += wrapAngle(turretTargetYaw - this.turret.rotation.y) * Math.min(1, delta * 3.4);
@@ -2652,12 +2793,13 @@ class RefuelTowerManager {
   }
 
   spawnTowers() {
+    const arenaSites = [[-68, 0], [68, 0], [0, 68], [0, -68]];
     for (let i = 0; i < CONFIG.refuelTowerCount; i++) {
       const angle = (i / CONFIG.refuelTowerCount) * Math.PI * 2 + seededRandom(i * 41) * 0.35;
       const ring = i % 3;
-      const radius = 120 + ring * 105 + seededRandom(i * 53) * 52;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+      const radius = 150 + ring * 125 + seededRandom(i * 53) * 62;
+      const [x, z] = i < arenaSites.length ? arenaSites[i] : [Math.cos(angle) * radius, Math.sin(angle) * radius];
+      this.terrain.reserveClearZone(x, z, CONFIG.refuelTowerRadius + CONFIG.tankCollisionRadius + 11);
       const tower = new RefuelTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
       registerUniverseTarget(tower.group, CONFIG.refuelTowerRadius + 2.5, { playerDestructible: false });
@@ -2764,11 +2906,9 @@ class MissileTowerManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.towers = [];
+    const arenaSites = [[-34, -34], [34, -34], [-34, 34], [34, 34]];
     for (let i = 0; i < CONFIG.missileTowerCount; i++) {
-      const angle = i * Math.PI * 0.5 + Math.PI * 0.25;
-      const radius = 185 + (i % 2) * 120;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+      const [x, z] = arenaSites[i];
       this.terrain.reserveClearZone(x, z, CONFIG.missileTowerRadius + CONFIG.tankCollisionRadius + 8);
       const tower = new MissileTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
@@ -2970,12 +3110,15 @@ class ProjectileManager {
         }
       }
 
-      if (shot.life > 0 && enemyManager.enemyTank && !enemyManager.enemyTank.dead) {
-        const hitRadius = enemyManager.enemyTank.collisionRadius + collisionRadius;
-        if (distanceToSegmentSquared(enemyManager.enemyTank.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
-          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
-          else enemyManager.enemyTank.receiveHit(shot);
-          shot.life = -1;
+      if (shot.life > 0) {
+        for (const enemyTank of enemyManager.getGroundTanks()) {
+          const hitRadius = enemyTank.collisionRadius + collisionRadius;
+          if (distanceToSegmentSquared(enemyTank.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
+            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
+            else enemyTank.receiveHit(shot);
+            shot.life = -1;
+            break;
+          }
         }
       }
 
@@ -3185,9 +3328,11 @@ class ProjectileManager {
         destroyedByBlast++;
       }
     }
-    if (enemyManager.enemyTank && !enemyManager.enemyTank.dead && enemyManager.enemyTank.group.position.distanceTo(position) <= enemyManager.enemyTank.collisionRadius + 24) {
-      enemyManager.enemyTank.health = 1;
-      enemyManager.enemyTank.receiveHit({ kind: "bomb", origin: position, direction: new THREE.Vector3(0, -1, 0), bounces: 0 });
+    for (const enemyTank of enemyManager.getGroundTanks()) {
+      if (enemyTank.group.position.distanceTo(position) <= enemyTank.collisionRadius + 24) {
+        enemyTank.health = 1;
+        enemyTank.receiveHit({ kind: "bomb", origin: position, direction: new THREE.Vector3(0, -1, 0), bounces: 0 });
+      }
     }
     for (const escort of enemyManager.escortDrones) {
       if (!escort.dead && escort.group.position.distanceTo(position) <= escort.collisionRadius + 24) escort.destroy();
@@ -3213,8 +3358,8 @@ class ProjectileManager {
         destroyedByBlast++;
       }
     }
-    if (enemyManager.enemyTank && !enemyManager.enemyTank.dead && enemyManager.enemyTank.group.position.distanceTo(position) <= enemyManager.enemyTank.collisionRadius + blastRadius) {
-      enemyManager.enemyTank.receiveHit(blastShot);
+    for (const enemyTank of enemyManager.getGroundTanks()) {
+      if (enemyTank.group.position.distanceTo(position) <= enemyTank.collisionRadius + blastRadius) enemyTank.receiveHit(blastShot);
     }
     for (const escort of enemyManager.escortDrones) {
       if (!escort.dead && escort.group.position.distanceTo(position) <= escort.collisionRadius + blastRadius) {
@@ -3878,6 +4023,7 @@ function animate() {
     updateDroneOrbs(delta);
     updatePrisonBreachEffects(delta);
     updateToxicSmoke(delta);
+    updateRadioTowers(delta);
   }
 
   renderer.render(scene, camera);
@@ -4475,6 +4621,21 @@ function updateToxicSmoke(delta) {
       const scale = 4.2 + cycle * 10;
       puff.scale.set(scale, scale * 0.82, scale);
     });
+  }
+}
+
+function updateRadioTowers(delta) {
+  for (let i = radioTowerEffects.length - 1; i >= 0; i--) {
+    const effect = radioTowerEffects[i];
+    if (!effect.root.parent || !effect.halo.parent) {
+      radioTowerEffects.splice(i, 1);
+      continue;
+    }
+    const pulse = 0.5 + Math.sin(toxicSmokeTime * 4.8 + effect.phase) * 0.5;
+    effect.sphere.scale.setScalar(1.05 + pulse * 0.42);
+    effect.core.scale.setScalar(0.82 + pulse * 0.72);
+    effect.halo.scale.setScalar(0.8 + pulse * 1.15);
+    effect.halo.material.opacity = 0.24 + pulse * 0.66;
   }
 }
 
