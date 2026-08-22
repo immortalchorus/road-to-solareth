@@ -47,6 +47,11 @@ body {
   display: none;
 }
 
+body.game-running #splash-screen {
+  display: none !important;
+  pointer-events: none;
+}
+
 .splash-controls {
   display: grid;
   grid-template-columns: minmax(250px, 300px) minmax(620px, 1fr) minmax(175px, 210px) minmax(82px, 100px);

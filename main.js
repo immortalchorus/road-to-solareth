@@ -430,25 +430,30 @@ splashRotorVolumeControl.addEventListener("input", () => updateRotorVolume(splas
 missileRangeControl.addEventListener("input", () => setMissileRange(Number(missileRangeControl.value)));
 commsVolumeControl.addEventListener("input", () => setCommsVolume(commsVolumeControl.value));
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
-playButton.addEventListener("click", async () => {
+playButton.addEventListener("click", () => {
+  if (gameStarted) return;
   playButton.disabled = true;
-  audio.armAudio();
   playLaunch.classList.add("depositing");
-  await new Promise(resolve => window.setTimeout(resolve, 680));
-  audio.playCoinRing();
-  playButton.textContent = "LOADING";
-  await new Promise(resolve => window.setTimeout(resolve, 360));
+  playButton.textContent = "ENTERING";
   const sessionDuration = CONFIG.sessionDuration;
-  void audio.start().catch(error => console.warn("Soundtrack startup will retry during play", error));
   gameStarted = true;
   sessionTimeRemaining = sessionDuration;
   missionEndsAt = performance.now() + sessionDuration * 1000;
   const missionSeconds = Math.ceil(sessionDuration);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   splashScreen.hidden = true;
+  splashScreen.style.display = "none";
+  document.body.classList.add("game-running");
   clock.getDelta();
   hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
+  try {
+    audio.armAudio();
+    audio.playCoinRing();
+    void audio.start().catch(error => console.warn("Soundtrack startup will retry during play", error));
+  } catch (error) {
+    console.warn("Audio startup skipped; gameplay remains active", error);
+  }
 });
 
 function drawPlayCoin() {
