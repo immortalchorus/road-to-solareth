@@ -20,7 +20,7 @@ const CONFIG = {
   maxFlightRoll: 0.52,
   maxFuel: 1000,
   fuelDrainPerMinute: 50,
-  refuelTowerCount: 8,
+  refuelTowerCount: 12,
   refuelTowerRadius: 8.5,
   missileTowerCount: 4,
   missileTowerRadius: 8.5,
@@ -104,7 +104,6 @@ const hud = {
   ammo: document.querySelector("#ammo"),
   missiles: document.querySelector("#missiles"),
   hitPoints: document.querySelector("#hit-points"),
-  missionCountdown: document.querySelector("#mission-countdown"),
   sessionTime: document.querySelector("#session-time"),
   autopilotStatus: document.querySelector("#autopilot-status"),
   status: document.querySelector("#status"),
@@ -247,7 +246,6 @@ let fuel = CONFIG.maxFuel;
 let ammo = CONFIG.maxAmmo;
 let hitPoints = CONFIG.maxHitPoints;
 let criticalDamageWarningArmed = true;
-let returnToBaseWarningArmed = true;
 let gameEnded = false;
 let gameStarted = false;
 let gamePaused = false;
@@ -327,7 +325,6 @@ const materials = {
   toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
   radioTower: new THREE.MeshStandardMaterial({ color: 0x3f484d, metalness: 0.9, roughness: 0.25 }),
   radioSphere: new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 1, depthWrite: false }),
-  surveillanceChrome: new THREE.MeshStandardMaterial({ color: 0xbac7cd, metalness: 1, roughness: 0.14, envMapIntensity: 1.8 }),
   facilityLightWarm: new THREE.MeshStandardMaterial({ color: 0xffad56, emissive: 0xff6b1f, emissiveIntensity: 2.2, metalness: 0.55, roughness: 0.3 }),
   facilityLightCool: new THREE.MeshStandardMaterial({ color: 0x71d9ff, emissive: 0x208dff, emissiveIntensity: 2.4, metalness: 0.62, roughness: 0.24 }),
   collisionInvisible: new THREE.MeshBasicMaterial({ visible: false }),
@@ -359,7 +356,6 @@ let missileTowers;
 let tacticalGrid;
 let autopilot;
 let prisonEscapees;
-let surveillanceFleet;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -430,36 +426,27 @@ splashRotorVolumeControl.addEventListener("input", () => updateRotorVolume(splas
 missileRangeControl.addEventListener("input", () => setMissileRange(Number(missileRangeControl.value)));
 commsVolumeControl.addEventListener("input", () => setCommsVolume(commsVolumeControl.value));
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
-playButton.addEventListener("click", () => {
-  if (gameStarted) return;
+playButton.addEventListener("click", async () => {
   playButton.disabled = true;
   playLaunch.classList.add("depositing");
-  playButton.textContent = "INSERTING";
+  await new Promise(resolve => window.setTimeout(resolve, 680));
+  const sessionDuration = CONFIG.sessionDuration;
+  gameStarted = true;
+  sessionTimeRemaining = sessionDuration;
+  missionEndsAt = performance.now() + sessionDuration * 1000;
+  const missionSeconds = Math.ceil(sessionDuration);
+  hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
+  splashScreen.hidden = true;
+  clock.getDelta();
+  hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
+  statusTimer = 4;
   try {
     audio.armAudio();
+    audio.playCoinRing();
+    void audio.start().catch(error => console.warn("Soundtrack startup deferred", error));
   } catch (error) {
-    console.warn("Audio arming skipped; gameplay will still start", error);
+    console.warn("Audio unavailable; gameplay remains active", error);
   }
-  window.setTimeout(() => {
-    const sessionDuration = CONFIG.sessionDuration;
-    gameStarted = true;
-    sessionTimeRemaining = sessionDuration;
-    missionEndsAt = performance.now() + sessionDuration * 1000;
-    const missionSeconds = Math.ceil(sessionDuration);
-    hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
-    splashScreen.hidden = true;
-    splashScreen.style.display = "none";
-    document.body.classList.add("game-running");
-    clock.getDelta();
-    hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
-    statusTimer = 4;
-    try {
-      audio.playCoinRing();
-      void audio.start().catch(error => console.warn("Soundtrack startup will retry during play", error));
-    } catch (error) {
-      console.warn("Audio startup skipped; gameplay remains active", error);
-    }
-  }, 700);
 });
 
 function drawPlayCoin() {
@@ -1211,106 +1198,6 @@ function loadRadioTowerModel() {
   return radioTowerModelPromise;
 }
 
-let surveillanceModelPromise = null;
-function loadSurveillanceModel() {
-  if (surveillanceModelPromise) return surveillanceModelPromise;
-  surveillanceModelPromise = new Promise((resolve, reject) => {
-    const loader = new THREE.OBJLoader();
-    loader.load("assets/models/Sky-Surveillance.obj?v=sky-surveillance-1", source => {
-      source.traverse(child => {
-        if (!child.isMesh) return;
-        sharedGeometries.add(child.geometry);
-        child.material = materials.surveillanceChrome;
-        child.castShadow = true;
-        child.receiveShadow = true;
-      });
-      resolve(source);
-    }, undefined, reject);
-  });
-  return surveillanceModelPromise;
-}
-
-class SurveillanceFleet {
-  constructor(parent, terrainManager) {
-    this.parent = parent;
-    this.terrain = terrainManager;
-    this.droids = [];
-    this.elapsed = 0;
-    loadSurveillanceModel().then(source => this.populate(source)).catch(error => {
-      console.error("Surveillance droid model failed to load", error);
-    });
-  }
-
-  populate(source) {
-    const sourceBounds = new THREE.Box3().setFromObject(source);
-    const sourceSize = sourceBounds.getSize(new THREE.Vector3());
-    const sourceCenter = sourceBounds.getCenter(new THREE.Vector3());
-    const modelScale = 13 / Math.max(sourceSize.y, 0.001);
-    for (let i = 0; i < 32; i++) {
-      const root = new THREE.Group();
-      const model = source.clone(true);
-      model.scale.setScalar(modelScale);
-      model.position.set(-sourceCenter.x * modelScale, -sourceCenter.y * modelScale, -sourceCenter.z * modelScale);
-      root.add(model);
-
-      const coreMaterial = new THREE.MeshBasicMaterial({ color: 0xb8fbff, transparent: true, opacity: 1, depthWrite: false });
-      const haloMaterial = new THREE.MeshBasicMaterial({ color: 0x39dfff, transparent: true, opacity: 0.5, depthWrite: false });
-      const core = new THREE.Mesh(new THREE.SphereGeometry(0.8, 14, 10), coreMaterial);
-      const halo = new THREE.Mesh(new THREE.SphereGeometry(2.25, 14, 10), haloMaterial);
-      const bulbY = -sourceSize.y * modelScale * 0.42;
-      core.position.y = bulbY;
-      halo.position.y = bulbY;
-      root.add(core, halo);
-
-      const horizontal = i % 2 === 0;
-      const laneIndex = Math.floor(i / 2) % 8;
-      const lane = -770 + laneIndex * 220 + (i >= 16 ? 72 : 0);
-      const progress = -1150 + seededRandom(i * 97 + 11) * 2300;
-      root.position.set(horizontal ? progress : lane, 70, horizontal ? lane : progress);
-      root.rotation.y = horizontal ? Math.PI * 0.5 : 0;
-      this.parent.add(root);
-      this.droids.push({
-        root,
-        panel: model.getObjectByName("Cube2"),
-        core,
-        halo,
-        horizontal,
-        direction: i % 4 < 2 ? 1 : -1,
-        speed: 10 + seededRandom(i * 53 + 5) * 7,
-        phase: seededRandom(i * 71 + 13) * Math.PI * 2,
-        altitudePhase: seededRandom(i * 83 + 17) * Math.PI * 2
-      });
-    }
-  }
-
-  update(delta) {
-    this.elapsed += delta;
-    for (const droid of this.droids) {
-      const travel = droid.speed * droid.direction * delta;
-      if (droid.horizontal) droid.root.position.x += travel;
-      else droid.root.position.z += travel;
-      const routePosition = droid.horizontal ? droid.root.position.x : droid.root.position.z;
-      if (Math.abs(routePosition) > 1250) {
-        droid.direction *= -1;
-        droid.root.rotation.y += Math.PI;
-      }
-
-      const altitudeWave = 0.5 + Math.sin(this.elapsed * 0.16 + droid.altitudePhase) * 0.5;
-      const clearance = 32 + altitudeWave * 58;
-      const ground = this.terrain.getHeightAt(droid.root.position.x, droid.root.position.z);
-      droid.root.position.y = ground + clearance + Math.sin(this.elapsed * 1.15 + droid.phase) * 1.4;
-      if (droid.panel) droid.panel.rotation.y += delta * 0.48;
-
-      const pulse = 0.5 + Math.sin(this.elapsed * 4.6 + droid.phase) * 0.5;
-      const beaconFlash = Math.sin(this.elapsed * 1.35 + droid.phase) > 0.82 ? 1 : 0.42;
-      droid.core.scale.setScalar(0.85 + pulse * 0.5);
-      droid.halo.scale.setScalar(0.8 + pulse * 0.95);
-      droid.core.material.opacity = 0.66 + pulse * 0.34;
-      droid.halo.material.opacity = (0.2 + pulse * 0.52) * beaconFlash;
-    }
-  }
-}
-
 function addRadioTowerToRoof(parent, x, roofY, z, seed) {
   loadRadioTowerModel().then(source => {
     if (!parent.parent) return;
@@ -1381,7 +1268,6 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     const jitterZ = (seededRandom(seedBase + i * 29) - 0.5) * 13;
     const x = buildingSites[i][0] + jitterX;
     const z = buildingSites[i][1] + jitterZ;
-    if (cx === 0 && cz === 0) continue;
     if (reserveCenter && Math.hypot(x, z) < 92) continue;
     const width = 30 + seededRandom(seedBase + i * 43) * 16;
     const depth = 28 + seededRandom(seedBase + i * 53) * 16;
@@ -1507,61 +1393,6 @@ function createSupplyArena() {
   innerRing.rotation.x = Math.PI * 0.5;
   innerRing.position.y = 0.68;
   group.add(innerRing);
-
-  const logoCanvas = document.createElement("canvas");
-  logoCanvas.width = 768;
-  logoCanvas.height = 768;
-  const context = logoCanvas.getContext("2d");
-  context.translate(384, 384);
-  context.strokeStyle = "rgba(204, 216, 202, 0.62)";
-  context.fillStyle = "rgba(204, 216, 202, 0.34)";
-  context.lineWidth = 30;
-  context.lineCap = "round";
-  for (const rotation of [-0.7, 0.7]) {
-    context.save();
-    context.rotate(rotation);
-    context.beginPath();
-    context.moveTo(-220, 0);
-    context.lineTo(220, 0);
-    context.stroke();
-    for (const x of [-235, 235]) {
-      context.beginPath();
-      context.arc(x, -18, 28, 0, Math.PI * 2);
-      context.arc(x, 18, 28, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.restore();
-  }
-  context.beginPath();
-  context.arc(0, -55, 185, Math.PI, Math.PI * 2);
-  context.lineTo(170, 75);
-  context.lineTo(92, 190);
-  context.lineTo(45, 145);
-  context.lineTo(0, 210);
-  context.lineTo(-45, 145);
-  context.lineTo(-92, 190);
-  context.lineTo(-170, 75);
-  context.closePath();
-  context.fill();
-  context.globalCompositeOperation = "destination-out";
-  for (const x of [-67, 67]) {
-    context.beginPath();
-    context.arc(x, -25, 38, 0, Math.PI * 2);
-    context.fill();
-  }
-  for (let i = 0; i < 145; i++) {
-    const x = (seededRandom(i * 17 + 3) - 0.5) * 520;
-    const y = (seededRandom(i * 29 + 7) - 0.5) * 470;
-    context.fillRect(x, y, 8 + seededRandom(i * 31) * 45, 3 + seededRandom(i * 43) * 12);
-  }
-  const logoTexture = new THREE.CanvasTexture(logoCanvas);
-  const logo = new THREE.Mesh(
-    new THREE.PlaneGeometry(46, 46),
-    new THREE.MeshBasicMaterial({ map: logoTexture, transparent: true, opacity: 0.72, depthWrite: false, side: THREE.DoubleSide })
-  );
-  logo.rotation.x = -Math.PI * 0.5;
-  logo.position.y = 0.75;
-  group.add(logo);
   for (let i = 0; i < 16; i++) {
     const angle = i / 16 * Math.PI * 2;
     const marker = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.28, 8), i % 2 ? materials.prisonPipe : materials.pyramidTrim);
@@ -1569,21 +1400,6 @@ function createSupplyArena() {
     marker.rotation.y = -angle;
     group.add(marker);
   }
-
-  const pipeField = new THREE.Group();
-  for (let i = 0; i < 6; i++) {
-    const pipe = new THREE.Mesh(prisonGeometry.cylinder, i % 2 ? materials.prisonPipe : materials.prisonPipeDirty);
-    pipe.position.set(-14 + i * 5.5, 3.3 + (i % 2) * 1.8, 218);
-    pipe.rotation.x = Math.PI * 0.5;
-    pipe.scale.set(1.15, 128, 1.15);
-    pipeField.add(pipe);
-  }
-  for (let z = 98; z <= 338; z += 40) {
-    const cradle = new THREE.Mesh(new THREE.BoxGeometry(38, 1.4, 4), materials.prisonConcrete);
-    cradle.position.set(0, 1.1, z);
-    pipeField.add(cradle);
-  }
-  group.add(pipeField);
   group.userData.landmark = "central-supply-arena";
   return group;
 }
@@ -3019,11 +2835,12 @@ class RefuelTowerManager {
   }
 
   spawnTowers() {
+    const arenaSites = [[-68, 0], [68, 0], [0, 68], [0, -68]];
     for (let i = 0; i < CONFIG.refuelTowerCount; i++) {
-      const angle = (i / CONFIG.refuelTowerCount) * Math.PI * 2 + Math.PI / 8;
-      const radius = 92;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+      const angle = (i / CONFIG.refuelTowerCount) * Math.PI * 2 + seededRandom(i * 41) * 0.35;
+      const ring = i % 3;
+      const radius = 150 + ring * 125 + seededRandom(i * 53) * 62;
+      const [x, z] = i < arenaSites.length ? arenaSites[i] : [Math.cos(angle) * radius, Math.sin(angle) * radius];
       this.terrain.reserveClearZone(x, z, CONFIG.refuelTowerRadius + CONFIG.tankCollisionRadius + 11);
       const tower = new RefuelTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
@@ -3131,10 +2948,9 @@ class MissileTowerManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.towers = [];
+    const arenaSites = [[-34, -34], [34, -34], [-34, 34], [34, 34]];
     for (let i = 0; i < CONFIG.missileTowerCount; i++) {
-      const angle = (i / CONFIG.missileTowerCount) * Math.PI * 2 + Math.PI / 4;
-      const x = Math.cos(angle) * 64;
-      const z = Math.sin(angle) * 64;
+      const [x, z] = arenaSites[i];
       this.terrain.reserveClearZone(x, z, CONFIG.missileTowerRadius + CONFIG.tankCollisionRadius + 8);
       const tower = new MissileTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
@@ -3687,7 +3503,7 @@ class AudioManager {
       }, { once: true });
       this.music.addEventListener("error", () => finish(CONFIG.sessionDuration), { once: true });
       this.music.load();
-      window.setTimeout(() => finish(CONFIG.sessionDuration), 900);
+      window.setTimeout(() => finish(CONFIG.sessionDuration), 12000);
     });
   }
 
@@ -3831,35 +3647,6 @@ class AudioManager {
     utterance.pitch = 0.52;
     window.speechSynthesis.cancel();
     window.setTimeout(() => window.speechSynthesis.speak(utterance), 260);
-  }
-
-  speakReturnToBase() {
-    if (this.muted || this.commsVolume <= 0 || !("speechSynthesis" in window)) return;
-    const ctx = this.ensureContext();
-    if (ctx) {
-      const now = ctx.currentTime;
-      for (const [delay, frequency] of [[0, 620], [0.16, 620], [0.32, 430]]) {
-        const tone = ctx.createOscillator();
-        const gain = ctx.createGain();
-        tone.type = "square";
-        tone.frequency.value = frequency;
-        gain.gain.setValueAtTime(0.0001, now + delay);
-        gain.gain.exponentialRampToValueAtTime(0.1 * this.commsVolume, now + delay + 0.008);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.11);
-        tone.connect(gain).connect(this.master);
-        tone.start(now + delay);
-        tone.stop(now + delay + 0.12);
-      }
-    }
-    const utterance = new SpeechSynthesisUtterance("Return to base.");
-    const voices = window.speechSynthesis.getVoices();
-    utterance.voice = voices.find(voice => /^en/i.test(voice.lang) && /mark|david|guy|microsoft|google/i.test(voice.name)) || voices.find(voice => /^en/i.test(voice.lang));
-    utterance.lang = "en-US";
-    utterance.volume = this.commsVolume;
-    utterance.rate = 0.74;
-    utterance.pitch = 0.48;
-    window.speechSynthesis.cancel();
-    window.setTimeout(() => window.speechSynthesis.speak(utterance), 500);
   }
 
   update(delta, tankRef) {
@@ -4239,7 +4026,6 @@ projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 prisonEscapees = new PrisonEscapeManager(scene, enemies);
 skyDrones = new SkyDroneManager(scene);
-surveillanceFleet = null;
 refuelTowers = new RefuelTowerManager(scene, terrain);
 missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
@@ -4266,7 +4052,6 @@ function animate() {
     enemies.update(delta, tank);
     prisonEscapees.update(delta, tank);
     skyDrones.update(delta, tank);
-    if (surveillanceFleet) surveillanceFleet.update(delta);
     refuelTowers.update(delta, tank);
     missileTowers.update(delta, tank);
     projectiles.update(delta, input, tank, enemies, skyDrones);
@@ -4334,13 +4119,6 @@ function updateHUD(delta) {
   sessionTimeRemaining = Math.max(0, (missionEndsAt - performance.now()) / 1000);
   const missionSeconds = Math.ceil(sessionTimeRemaining);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
-  hud.missionCountdown.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
-  if (sessionTimeRemaining <= 30 && returnToBaseWarningArmed) {
-    returnToBaseWarningArmed = false;
-    audio.speakReturnToBase();
-    hud.status.textContent = "RETURN TO BASE. Black-circle recovery bonus available.";
-    statusTimer = 5;
-  }
   hud.speed.textContent = `${Math.round(Math.abs(tank.speed) * 2.4)} kph`;
   hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${THREE.MathUtils.radToDeg(tank.turretPitch).toFixed(1)} deg`;
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
