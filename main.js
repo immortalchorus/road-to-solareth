@@ -895,6 +895,14 @@ class Tank {
     cockpit.castShadow = true;
     this.group.add(cockpit);
     addBox([1.5, 0.18, 0.5], [-1.25, 3.42, 1.48], materials.tankDark);
+    const turretPedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.52, 1.72, 1.82, 28),
+      materials.tankMechanics
+    );
+    turretPedestal.position.set(0, 4.28, -0.55);
+    turretPedestal.castShadow = true;
+    turretPedestal.receiveShadow = true;
+    this.group.add(turretPedestal);
     this.turret = new THREE.Group();
     this.turret.position.set(0, 5.4, -0.55);
     const addTurretBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
