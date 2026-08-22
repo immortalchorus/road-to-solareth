@@ -1026,13 +1026,12 @@ class Tank {
     this.beacons.push({ light, halo });
   }
 
-  updateBeacons(delta) {
-    this.beaconTime += delta;
-    const blink = Math.sin(this.beaconTime * 7.5) > 0.05 ? 1 : 0.18;
+  updateBeacons(musicPulse) {
+    const beat = Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 1.35);
     for (const { light, halo } of this.beacons) {
-      light.material.opacity = 0.38 + blink * 0.62;
-      halo.material.opacity = 0.07 + blink * 0.36;
-      halo.scale.setScalar(0.82 + blink * 0.46);
+      light.material.opacity = 0.3 + beat * 0.7;
+      halo.material.opacity = 0.06 + beat * 0.43;
+      halo.scale.setScalar(0.84 + beat * 0.68);
     }
   }
 
@@ -2810,12 +2809,17 @@ class AudioManager {
     this.commsVolume = commsVolume;
     this.lastCommsAt = -Infinity;
     this.muted = false;
+    this.musicSource = null;
+    this.musicAnalyser = null;
+    this.musicFrequencyData = null;
+    this.musicEnergyAverage = 0.08;
+    this.musicPulse = 0;
     this.playlist = [
-      { title: "Iron Circuit", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/iron-circuit.mp3" },
-      { title: "NeuroDark Guitar Solos", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-16.mp3" },
-      { title: "NeuroDark Guitar Solos (7)", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-7.mp3" },
-      { title: "NeuroDark Guitar Solos (28)", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-28.mp3" },
-      { title: "NeuroDark Guitar Solos (29)", src: "https://raw.githubusercontent.com/immortalchorus/road-to-solareth/main/assets/neurodark-guitar-solos-29.mp3" }
+      { title: "Iron Circuit", src: "assets/iron-circuit.mp3" },
+      { title: "NeuroDark Guitar Solos", src: "assets/neurodark-guitar-solos-16.mp3" },
+      { title: "NeuroDark Guitar Solos (7)", src: "assets/neurodark-guitar-solos-7.mp3" },
+      { title: "NeuroDark Guitar Solos (28)", src: "assets/neurodark-guitar-solos-28.mp3" },
+      { title: "NeuroDark Guitar Solos (29)", src: "assets/neurodark-guitar-solos-29.mp3" }
     ];
     this.currentTrack = this.selectTrack();
     this.music = new Audio(this.currentTrack.src);
@@ -2974,12 +2978,33 @@ class AudioManager {
 
   update(delta, tankRef) {
     if (!this.started) return;
+    this.updateMusicPulse(delta);
     this.updateRotor(tankRef);
     this.radioTimer -= delta;
     if (this.radioTimer <= 0) {
       this.radioTimer = CONFIG.radioChatterEvery;
       this.playRadioChatter();
     }
+  }
+
+  updateMusicPulse(delta) {
+    if (!this.musicAnalyser || !this.musicFrequencyData || this.music.paused) {
+      this.musicPulse = moveToward(this.musicPulse, 0, delta * 3.5);
+      return;
+    }
+    this.musicAnalyser.getByteFrequencyData(this.musicFrequencyData);
+    const binWidth = this.context.sampleRate / this.musicAnalyser.fftSize;
+    const lowBin = Math.max(1, Math.floor(45 / binWidth));
+    const highBin = Math.min(this.musicFrequencyData.length - 1, Math.ceil(190 / binWidth));
+    let total = 0;
+    for (let i = lowBin; i <= highBin; i++) total += this.musicFrequencyData[i];
+    const energy = total / Math.max(1, highBin - lowBin + 1) / 255;
+    const baselineRate = energy > this.musicEnergyAverage ? 0.7 : 1.8;
+    this.musicEnergyAverage += (energy - this.musicEnergyAverage) * Math.min(1, delta * baselineRate);
+    const transient = Math.max(0, energy - this.musicEnergyAverage * 1.08);
+    const detectedPulse = THREE.MathUtils.clamp(energy * 0.5 + transient * 4.8, 0, 1);
+    const response = detectedPulse > this.musicPulse ? 16 : 5.2;
+    this.musicPulse += (detectedPulse - this.musicPulse) * Math.min(1, delta * response);
   }
 
   updateRotor(tankRef) {
@@ -3256,6 +3281,12 @@ class AudioManager {
     this.ammoOutput.gain.value = Math.SQRT2 * Math.sin(this.musicAmmoBalance * Math.PI * 0.5);
     this.ammoOutput.connect(this.master);
     this.master.connect(limiter).connect(this.context.destination);
+    this.musicAnalyser = this.context.createAnalyser();
+    this.musicAnalyser.fftSize = 1024;
+    this.musicAnalyser.smoothingTimeConstant = 0.66;
+    this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
+    this.musicSource = this.context.createMediaElementSource(this.music);
+    this.musicSource.connect(this.musicAnalyser).connect(this.context.destination);
     return this.context;
   }
 
@@ -3321,6 +3352,7 @@ function animate() {
     updateCamera(delta);
     updateHUD(delta);
     audio.update(delta, tank);
+    tank.updateBeacons(audio.musicPulse);
   }
   if (!gamePaused) {
     updateExplosions(delta);
