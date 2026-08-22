@@ -1003,20 +1003,20 @@ class Tank {
     const altitudeClimb = hasFuel && keys.KeyF && !altitudeLower;
     if (!hasFuel) this.altitudeHoldY = null;
     if (altitudeLower) {
-      const surfaceY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
-      const heldY = this.altitudeHoldY === null ? this.group.position.y : this.altitudeHoldY;
-      this.altitudeHoldY = Math.max(surfaceY, heldY - 13 * delta);
-      hud.status.textContent = "Controlled descent engaged.";
+      this.altitudeHoldY = null;
+      hud.status.textContent = "Lift released. Freefall engaged.";
       statusTimer = 1.2;
     } else if (altitudeClimb) {
       this.altitudeHoldY = null;
       this.verticalVelocity += CONFIG.verticalThrust * delta;
       hud.status.textContent = "Vertical thrusters flare beneath the hull.";
       statusTimer = 3;
-    } else if (this.wasAltitudeClimbing) {
+    } else if (this.wasAltitudeClimbing || this.wasAltitudeLowering) {
       this.holdCurrentAltitude();
+      this.verticalVelocity = 0;
     }
     this.wasAltitudeClimbing = altitudeClimb;
+    this.wasAltitudeLowering = altitudeLower;
 
     if (turningTurret) {
       if (keys.ArrowLeft) this.turret.rotation.y += this.turretTurnSpeed * delta;
@@ -3067,9 +3067,10 @@ class RefuelTowerManager {
   }
 
   spawnTowers() {
+    const perimeterSlots = [0, 2, 3, 5, 6, 8, 9, 11];
     for (let i = 0; i < CONFIG.refuelTowerCount; i++) {
-      const angle = (i / CONFIG.refuelTowerCount) * Math.PI * 2 + Math.PI / 8;
-      const radius = 92;
+      const angle = perimeterSlots[i] / 12 * Math.PI * 2 - Math.PI * 0.5;
+      const radius = 80;
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       this.terrain.reserveClearZone(x, z, CONFIG.refuelTowerRadius + CONFIG.tankCollisionRadius + 11);
@@ -3179,10 +3180,11 @@ class MissileTowerManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.towers = [];
+    const perimeterSlots = [1, 4, 7, 10];
     for (let i = 0; i < CONFIG.missileTowerCount; i++) {
-      const angle = (i / CONFIG.missileTowerCount) * Math.PI * 2 + Math.PI / 4;
-      const x = Math.cos(angle) * 64;
-      const z = Math.sin(angle) * 64;
+      const angle = perimeterSlots[i] / 12 * Math.PI * 2 - Math.PI * 0.5;
+      const x = Math.cos(angle) * 80;
+      const z = Math.sin(angle) * 80;
       this.terrain.reserveClearZone(x, z, CONFIG.missileTowerRadius + CONFIG.tankCollisionRadius + 8);
       const tower = new MissileTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
