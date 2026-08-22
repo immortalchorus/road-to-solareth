@@ -4113,10 +4113,18 @@ function addImportedPyramid(group, radius, height) {
     });
 
     const scale = Math.min(height / Math.max(sourceSize.y, 0.001), radius * 2 / Math.max(sourceSize.x, sourceSize.z, 0.001));
+    const modelTop = sourceSize.y * scale;
     model.scale.setScalar(scale);
     model.position.set(-sourceCenter.x * scale, -sourceBounds.min.y * scale, -sourceCenter.z * scale);
     model.rotation.y = Math.PI / 4;
     group.add(model);
+
+    const apexNeedle = group.getObjectByName("pyramid-apex-needle");
+    const beacon = group.getObjectByName("pyramid-beacon");
+    const halo = group.getObjectByName("pyramid-beacon-halo");
+    if (apexNeedle) apexNeedle.position.y = modelTop + 1.25;
+    if (beacon) beacon.position.y = modelTop + 2.65;
+    if (halo && beacon) halo.position.copy(beacon.position);
     group.userData.refreshCollisionBounds?.();
   }).catch(error => console.error("Unable to load pyramid model", error));
 }
@@ -4133,15 +4141,18 @@ function createHighTechPyramid(seed) {
   group.add(podium);
 
   const apexNeedle = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 2.5, 6), materials.pyramidTrim);
+  apexNeedle.name = "pyramid-apex-needle";
   apexNeedle.position.y = height + 1.25;
   group.add(apexNeedle);
 
   const beaconMaterial = new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.95 });
   const beaconGlowMaterial = new THREE.MeshBasicMaterial({ color: 0xff2b17, transparent: true, opacity: 0.28, depthWrite: false });
   const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 8), beaconMaterial);
+  beacon.name = "pyramid-beacon";
   beacon.position.y = height + 2.65;
   group.add(beacon);
   const halo = new THREE.Mesh(new THREE.SphereGeometry(1.45, 14, 8), beaconGlowMaterial);
+  halo.name = "pyramid-beacon-halo";
   halo.position.copy(beacon.position);
   group.add(halo);
   pyramidBeacons.push({ root: group, beacon, halo, phase: seededRandom(seed + 97) * Math.PI * 2 });
