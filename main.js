@@ -53,7 +53,8 @@ const CONFIG = {
   enemyTankDamage: 10,
   enemyTankFireInterval: 2.1,
   enemyTankProjectileSpeed: 58,
-  prisonPatrolTankCount: 8,
+  prisonPatrolTankCount: 16,
+  prisonEscapeeCount: 48,
   escortDroneCount: 4,
   escortDroneAmmo: 10,
   escortDroneDamage: 2,
@@ -77,11 +78,11 @@ renderer.shadowMap.enabled = CONFIG.enableShadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.82;
+renderer.toneMappingExposure = 0.62;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x231027);
-scene.fog = new THREE.FogExp2(0x522d35, 0.0048);
+scene.background = new THREE.Color(0x060913);
+scene.fog = new THREE.FogExp2(0x111827, 0.0052);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2600);
 const clock = new THREE.Clock();
@@ -317,13 +318,15 @@ const materials = {
   redEye: new THREE.MeshStandardMaterial({ color: 0xff2e2e, emissive: 0xff1010, emissiveIntensity: 2.4 }),
   ruin: new THREE.MeshStandardMaterial({ color: 0x57555f, metalness: 0.45, roughness: 0.72, map: architectureArmorTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.09 }),
   detentionConcrete: new THREE.MeshStandardMaterial({ color: 0x8a7568, metalness: 0.22, roughness: 0.82, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.055 }),
-  prisonConcrete: new THREE.MeshStandardMaterial({ color: 0x665b55, metalness: 0.3, roughness: 0.76, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.045 }),
-  prisonPanel: new THREE.MeshStandardMaterial({ color: 0x3f4142, metalness: 0.62, roughness: 0.54, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.035 }),
+  prisonConcrete: new THREE.MeshStandardMaterial({ color: 0x4a5057, metalness: 0.55, roughness: 0.58, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.045 }),
+  prisonPanel: new THREE.MeshStandardMaterial({ color: 0x2c343c, metalness: 0.84, roughness: 0.34, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.035 }),
   prisonPipe: new THREE.MeshStandardMaterial({ color: 0x667075, metalness: 0.92, roughness: 0.23, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.025 }),
   prisonPipeDirty: new THREE.MeshStandardMaterial({ color: 0x3e4140, metalness: 0.78, roughness: 0.48, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.035 }),
   toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
   radioTower: new THREE.MeshStandardMaterial({ color: 0x3f484d, metalness: 0.9, roughness: 0.25 }),
   radioSphere: new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 1, depthWrite: false }),
+  facilityLightWarm: new THREE.MeshStandardMaterial({ color: 0xffad56, emissive: 0xff6b1f, emissiveIntensity: 2.2, metalness: 0.55, roughness: 0.3 }),
+  facilityLightCool: new THREE.MeshStandardMaterial({ color: 0x71d9ff, emissive: 0x208dff, emissiveIntensity: 2.4, metalness: 0.62, roughness: 0.24 }),
   collisionInvisible: new THREE.MeshBasicMaterial({ visible: false }),
   architectureVent: new THREE.MeshStandardMaterial({ color: 0x353a40, metalness: 0.62, roughness: 0.58, map: architectureVentTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.06 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
@@ -515,18 +518,22 @@ function drawPlayCoin() {
 drawPlayCoin();
 
 function initLights() {
-  const hemi = new THREE.HemisphereLight(0xffd1a6, 0x2f2038, 1.8);
+  const hemi = new THREE.HemisphereLight(0x6684ad, 0x05070d, 0.62);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffb06b, 2.15);
-  sun.position.set(-180, 260, 120);
-  sun.castShadow = CONFIG.enableShadows;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -220;
-  sun.shadow.camera.right = 220;
-  sun.shadow.camera.top = 220;
-  sun.shadow.camera.bottom = -220;
-  scene.add(sun);
+  const moon = new THREE.DirectionalLight(0x9fc7ff, 1.55);
+  moon.position.set(-220, 300, 140);
+  moon.castShadow = CONFIG.enableShadows;
+  moon.shadow.mapSize.set(1024, 1024);
+  moon.shadow.camera.left = -220;
+  moon.shadow.camera.right = 220;
+  moon.shadow.camera.top = 220;
+  moon.shadow.camera.bottom = -220;
+  scene.add(moon);
+
+  const horizonFill = new THREE.DirectionalLight(0x7a3448, 0.32);
+  horizonFill.position.set(260, 70, -300);
+  scene.add(horizonFill);
 }
 
 function createSky() {
@@ -537,6 +544,7 @@ function createSky() {
   panorama.minFilter = THREE.LinearFilter;
   const skyMat = new THREE.MeshBasicMaterial({
     map: panorama,
+    color: 0x141a2c,
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
@@ -648,7 +656,7 @@ function updateDroneOrbs(delta) {
 function createCloudBand(x, y, z, width) {
   const cloud = new THREE.Mesh(
     new THREE.PlaneGeometry(width, 26),
-    new THREE.MeshBasicMaterial({ color: 0xf1a073, transparent: true, opacity: 0.17, depthWrite: false, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: 0x38445e, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide })
   );
   cloud.position.set(x, y, z);
   cloud.rotation.x = -0.08;
@@ -663,7 +671,7 @@ function createMountains() {
     const height = 90 + seededRandom(i * 31) * 170;
     const mountain = new THREE.Mesh(
       new THREE.ConeGeometry(55 + seededRandom(i * 7) * 70, height, 5),
-      new THREE.MeshStandardMaterial({ color: 0x63333d, roughness: 1 })
+      new THREE.MeshStandardMaterial({ color: 0x1b2230, metalness: 0.12, roughness: 0.88 })
     );
     mountain.position.set(Math.cos(angle) * radius, height * 0.5 - 28, Math.sin(angle) * radius);
     mountain.rotation.y = seededRandom(i) * Math.PI;
@@ -1220,7 +1228,7 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
   const worldOriginZ = cz * CONFIG.chunkSize;
   const isReserved = (x, z, radius) => terrainManager.overlapsClearZone(worldOriginX + x, worldOriginZ + z, radius);
   const matrices = {
-    concrete: [], panel: [], pipe: [], dirtyPipe: []
+    concrete: [], panel: [], pipe: [], dirtyPipe: [], lightWarm: [], lightCool: []
   };
   const dummy = new THREE.Object3D();
   const addInstance = (list, x, y, z, sx, sy, sz, rotationY = 0) => {
@@ -1266,6 +1274,20 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     for (let rib = 0; rib < ribCount; rib++) {
       const rx = x + THREE.MathUtils.lerp(-width * 0.38, width * 0.38, rib / Math.max(1, ribCount - 1));
       addInstance(matrices.panel, rx, height * 0.54, z - depth * 0.5 - 0.32, 1.1, height * 0.72, 0.65);
+    }
+    const lightRows = Math.max(2, Math.floor((height - 8) / 12));
+    for (let row = 0; row < lightRows; row++) {
+      const lightY = 8 + row * 11;
+      for (const offsetX of [-width * 0.28, 0, width * 0.28]) {
+        const lightList = (row + i + Math.abs(cx + cz)) % 3 === 0 ? matrices.lightWarm : matrices.lightCool;
+        addInstance(lightList, x + offsetX, lightY, z - depth * 0.5 - 0.68, 4.5, 0.42, 0.28);
+        addInstance(lightList, x + offsetX, lightY, z + depth * 0.5 + 0.68, 4.5, 0.42, 0.28);
+      }
+      for (const offsetZ of [-depth * 0.25, depth * 0.25]) {
+        const lightList = (row + i + Math.abs(cx - cz)) % 4 === 0 ? matrices.lightWarm : matrices.lightCool;
+        addInstance(lightList, x - width * 0.5 - 0.68, lightY, z + offsetZ, 0.28, 0.42, 4.5);
+        addInstance(lightList, x + width * 0.5 + 0.68, lightY, z + offsetZ, 0.28, 0.42, 4.5);
+      }
     }
     addCollider(x, height * 0.5, z, width, height, depth);
     if ((i + Math.abs(cx * 3 + cz)) % 3 === 0) addRadioTowerToRoof(group, x, height + 2.8, z, seedBase + i * 101);
@@ -1347,6 +1369,8 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
   buildInstances(prisonGeometry.box, materials.prisonPanel, matrices.panel, false);
   buildInstances(prisonGeometry.cylinder, materials.prisonPipe, matrices.pipe, true);
   buildInstances(prisonGeometry.cylinder, materials.prisonPipeDirty, matrices.dirtyPipe, false);
+  buildInstances(prisonGeometry.box, materials.facilityLightWarm, matrices.lightWarm, false);
+  buildInstances(prisonGeometry.box, materials.facilityLightCool, matrices.lightCool, false);
   group.userData.landmark = "prison-sprawl-district";
   return { group, colliders };
 }
@@ -2170,9 +2194,11 @@ class EnemyManager {
 
   spawnPatrolTanks() {
     this.patrolsSpawned = true;
+    const laneCount = CONFIG.prisonPatrolTankCount * 0.5;
     for (let i = 0; i < CONFIG.prisonPatrolTankCount; i++) {
-      const vertical = i < CONFIG.prisonPatrolTankCount * 0.5;
-      const lane = (i % 4 - 1.5) * CONFIG.chunkSize;
+      const vertical = i < laneCount;
+      const laneIndex = vertical ? i : i - laneCount;
+      const lane = (laneIndex - (laneCount - 1) * 0.5) * CONFIG.chunkSize;
       const path = vertical
         ? [new THREE.Vector3(lane, 0, -440), new THREE.Vector3(lane, 0, 440)]
         : [new THREE.Vector3(-440, 0, lane), new THREE.Vector3(440, 0, lane)];
@@ -2248,7 +2274,24 @@ class PrisonEscapeManager {
     this.enemyManager = enemyManager;
     this.prisoners = [];
     this.breachPosition = new THREE.Vector3(prisonCitySite.worldX + 52, 0, prisonCitySite.worldZ + 88);
-    for (let i = 0; i < 10; i++) this.spawn(i);
+    for (let i = 0; i < CONFIG.prisonEscapeeCount; i++) this.spawn(i);
+  }
+
+  getEscapeRoute(index) {
+    if (index < 10) {
+      return {
+        origin: new THREE.Vector3(this.breachPosition.x + (index % 3 - 1) * 3.2, 0, this.breachPosition.z - Math.floor(index / 3) * 6),
+        direction: new THREE.Vector3(0, 0, 1)
+      };
+    }
+    const vertical = index % 2 === 0;
+    const lane = ((index * 3) % 7 - 3) * CONFIG.chunkSize;
+    const along = ((Math.floor(index / 7) % 7) - 3) * 175;
+    const directionSign = index % 4 < 2 ? 1 : -1;
+    return {
+      origin: vertical ? new THREE.Vector3(lane, 0, along) : new THREE.Vector3(along, 0, lane),
+      direction: vertical ? new THREE.Vector3(0, 0, directionSign) : new THREE.Vector3(directionSign, 0, 0)
+    };
   }
 
   spawn(index) {
@@ -2267,15 +2310,11 @@ class PrisonEscapeManager {
     rifle.position.set(0.62, 2.75, -0.75);
     rifle.rotation.x = -0.08;
     group.add(rifle);
-    const row = Math.floor(index / 3);
-    group.position.set(
-      this.breachPosition.x + (index % 3 - 1) * 3.2,
-      0,
-      this.breachPosition.z - row * 6
-    );
+    const route = this.getEscapeRoute(index);
+    group.position.copy(route.origin);
     group.position.y = terrain.getHeightAt(group.position.x, group.position.z);
     this.parent.add(group);
-    this.prisoners.push({ group, rifle, index, speed: 1.8 + (index % 4) * 0.28, fireTimer: 3 + index * 2.7, stride: index * 0.8, dead: false, respawnTimer: 0 });
+    this.prisoners.push({ group, rifle, index, origin: route.origin, direction: route.direction, speed: 1.8 + (index % 4) * 0.28, fireTimer: 3 + index * 0.63, stride: index * 0.8, dead: false, respawnTimer: 0 });
   }
 
   update(delta, tankRef) {
@@ -2286,12 +2325,10 @@ class PrisonEscapeManager {
         continue;
       }
       const { group } = prisoner;
-      group.position.z += prisoner.speed * delta;
-      group.position.x += Math.sin(performance.now() * 0.0016 + prisoner.stride) * delta * 0.45;
-      if (group.position.z > this.breachPosition.z + 115) {
-        group.position.z = this.breachPosition.z + (prisoner.index % 4) * 5;
-        group.position.x = this.breachPosition.x + (prisoner.index % 3 - 1) * 3.2;
-      }
+      group.position.addScaledVector(prisoner.direction, prisoner.speed * delta);
+      const side = new THREE.Vector3(-prisoner.direction.z, 0, prisoner.direction.x);
+      group.position.addScaledVector(side, Math.sin(performance.now() * 0.0016 + prisoner.stride) * delta * 0.45);
+      if (group.position.distanceToSquared(prisoner.origin) > 230 * 230) group.position.copy(prisoner.origin);
       group.position.y = terrain.getHeightAt(group.position.x, group.position.z);
       const toTank = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)).sub(group.position);
       const distance = toTank.length();
@@ -2309,11 +2346,8 @@ class PrisonEscapeManager {
   resetPrisoner(prisoner) {
     prisoner.dead = false;
     prisoner.fireTimer = 5 + prisoner.index * 2.5;
-    prisoner.group.position.set(
-      this.breachPosition.x + (prisoner.index % 3 - 1) * 3.2,
-      terrain.getHeightAt(this.breachPosition.x, this.breachPosition.z),
-      this.breachPosition.z + (prisoner.index % 4) * 5
-    );
+    prisoner.group.position.copy(prisoner.origin);
+    prisoner.group.position.y = terrain.getHeightAt(prisoner.origin.x, prisoner.origin.z);
     this.parent.add(prisoner.group);
   }
 
@@ -4439,7 +4473,9 @@ function calculateCompositeScore() {
   const rangeBonus = Math.round(Math.min(runStats.longestShot, 300) * 3);
   const armorBonus = hitPoints * 20;
   const resupplyBonus = runStats.resupplies * 200;
-  const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus;
+  const parkedInArena = hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
+  const arenaBonus = parkedInArena ? 10000 : 0;
+  const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus + arenaBonus;
   const missedShots = Math.max(0, runStats.shotsFired - runStats.shotsHit);
   const missedMissiles = Math.max(0, runStats.missilesFired - runStats.missileHits);
   const penalties = missedShots * 2 + missedMissiles * 25 + runStats.collisions * 50;
@@ -4449,7 +4485,7 @@ function calculateCompositeScore() {
       : total >= 25000 ? "Warden"
         : total >= 10000 ? "Enforcer"
           : "Recruit";
-  return { accuracyRatio, accuracyMultiplier, adjustedCombat, fieldScore, penalties, total, rank };
+  return { accuracyRatio, accuracyMultiplier, adjustedCombat, fieldScore, arenaBonus, penalties, total, rank };
 }
 
 function showRunSummary() {
@@ -4476,6 +4512,7 @@ function showRunSummary() {
   document.querySelector("#stat-collisions").textContent = runStats.collisions;
   document.querySelector("#stat-combat-score").textContent = score.adjustedCombat.toLocaleString();
   document.querySelector("#stat-field-score").textContent = score.fieldScore.toLocaleString();
+  document.querySelector("#stat-arena-bonus").textContent = score.arenaBonus > 0 ? `+${score.arenaBonus.toLocaleString()}` : "0";
   document.querySelector("#stat-penalties").textContent = `-${score.penalties.toLocaleString()}`;
   document.querySelector("#stat-score").textContent = score.total.toLocaleString();
   document.querySelector("#stat-rank").textContent = score.rank;
