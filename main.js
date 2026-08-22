@@ -1235,6 +1235,17 @@ class TerrainManager {
       if (this.registerDestructible(object, group, objectRadius)) group.add(object);
     }
 
+    if (cx === 1 && cz === 1) {
+      const prison = createPrisonBuilding();
+      const x = 0;
+      const z = 0;
+      const worldX = group.position.x + x;
+      const worldZ = group.position.z + z;
+      prison.position.set(x, this.getHeightAt(worldX, worldZ), z);
+      prison.rotation.y = Math.atan2(worldX, worldZ);
+      if (this.registerDestructible(prison, group, 35, { indestructible: true })) group.add(prison);
+    }
+
     if (Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
       const city = createDistantCity(CONFIG.worldColors.gold);
       city.position.set(0, 2, 0);
@@ -1264,9 +1275,17 @@ class TerrainManager {
       disposeObject(object);
       return false;
     }
-    object.userData.destructible = true;
+    object.userData.destructible = options.indestructible !== true;
     object.userData.collisionRadius = radius;
-    const item = { object, chunk, radius, position, collisionBox: new THREE.Box3(), solid: options.solid !== false };
+    const item = {
+      object,
+      chunk,
+      radius,
+      position,
+      collisionBox: new THREE.Box3(),
+      solid: options.solid !== false,
+      indestructible: options.indestructible === true
+    };
     object.userData.refreshCollisionBounds = () => {
       object.updateMatrixWorld(true);
       item.collisionBox.setFromObject(object);
@@ -1281,7 +1300,7 @@ class TerrainManager {
   }
 
   destroyDestructible(item) {
-    if (!item || !item.object.parent) return false;
+    if (!item || item.indestructible || !item.object.parent) return false;
     createExplosion(item.position);
     item.object.parent.remove(item.object);
     disposeObject(item.object);
@@ -1296,6 +1315,7 @@ class TerrainManager {
         this.destructibles = this.destructibles.filter(candidate => candidate !== item);
         continue;
       }
+      if (item.indestructible) continue;
       const hitRadius = radius + item.radius;
       const dx = item.position.x - position.x;
       const dy = item.position.y - position.y;
@@ -1312,6 +1332,23 @@ class TerrainManager {
     let closestDistance = Infinity;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
+      if (item.indestructible && item.collisionBox) {
+        const expandedBox = item.collisionBox.clone().expandByScalar(radius);
+        const direction = new THREE.Vector3().subVectors(end, start);
+        const segmentLength = direction.length();
+        if (segmentLength > 0.0001) {
+          direction.multiplyScalar(1 / segmentLength);
+          const impact = new THREE.Ray(start, direction).intersectBox(expandedBox, new THREE.Vector3());
+          if (impact) {
+            const impactDistance = impact.distanceToSquared(start);
+            if (impactDistance <= segmentLength * segmentLength && impactDistance < closestDistance) {
+              closest = item;
+              closestDistance = impactDistance;
+            }
+          }
+        }
+        continue;
+      }
       const hitRadius = radius + item.radius;
       const distanceSq = distanceToSegmentSquared(item.position, start, end);
       if (distanceSq <= hitRadius * hitRadius && distanceSq < closestDistance) {
@@ -1319,6 +1356,8 @@ class TerrainManager {
         closestDistance = distanceSq;
       }
     }
+    if (!closest) return false;
+    if (closest.indestructible) return true;
     return this.destroyDestructible(closest);
   }
 
@@ -4157,6 +4196,85 @@ function createHighTechPyramid(seed) {
   group.add(halo);
   pyramidBeacons.push({ root: group, beacon, halo, phase: seededRandom(seed + 97) * Math.PI * 2 });
 
+  return group;
+}
+
+function createPrisonBuilding() {
+  const group = new THREE.Group();
+  const concrete = materials.ruin;
+  const inset = materials.architectureVent;
+  const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x090c0f, metalness: 0.7, roughness: 0.28 });
+
+  const addBlock = (width, height, depth, x, y, z, material = concrete) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  };
+
+  addBlock(50, 31, 28, 0, 15.5, 0);
+  addBlock(14, 38, 32, -20, 19, 0);
+  addBlock(14, 38, 32, 20, 19, 0);
+  addBlock(18, 6, 34, -20, 37, 0);
+  addBlock(18, 6, 34, 20, 37, 0);
+  addBlock(8, 36, 31, -6, 18, -0.5, inset);
+  addBlock(8, 36, 31, 6, 18, -0.5, inset);
+  addBlock(20, 5, 31, 0, 32.5, -0.5, inset);
+
+  for (const x of [-27, -13, 13, 27]) {
+    const buttress = addBlock(3.4, 18, 5, x, 9, -16.2, inset);
+    buttress.rotation.x = -0.07;
+  }
+
+  const addRoundWindow = (x, y, z = -14.18, rotationY = 0) => {
+    const assembly = new THREE.Group();
+    assembly.position.set(x, y, z);
+    assembly.rotation.y = rotationY;
+    const dark = new THREE.Mesh(new THREE.CylinderGeometry(2.45, 2.45, 0.32, 28), windowMaterial);
+    dark.rotation.x = Math.PI / 2;
+    assembly.add(dark);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(2.62, 0.34, 10, 28), materials.pyramidTrim);
+    assembly.add(rim);
+    for (const offset of [-0.82, 0, 0.82]) {
+      const vertical = new THREE.Mesh(new THREE.BoxGeometry(0.16, 4.15, 0.22), materials.darkMetal);
+      vertical.position.set(offset, 0, -0.28);
+      assembly.add(vertical);
+    }
+    const horizontal = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.18, 0.22), materials.darkMetal);
+    horizontal.position.z = -0.28;
+    assembly.add(horizontal);
+    group.add(assembly);
+  };
+
+  for (const x of [-20, 20]) {
+    for (const y of [7, 15, 23, 31]) addRoundWindow(x, y);
+  }
+  for (const x of [-11, 11]) {
+    for (const y of [9, 18, 27]) addRoundWindow(x, y);
+  }
+
+  const entranceFrame = addBlock(14, 12, 2.2, 0, 6, -15.1, inset);
+  entranceFrame.castShadow = true;
+  const door = addBlock(9.6, 9, 0.7, 0, 4.5, -16.55, materials.darkMetal);
+  for (const x of [-2.45, 2.45]) {
+    const slash = new THREE.Mesh(new THREE.BoxGeometry(0.65, 4.5, 0.24), materials.redEye);
+    slash.position.set(x, 5.1, -17);
+    slash.rotation.z = x < 0 ? -0.55 : 0.55;
+    group.add(slash);
+  }
+  for (let step = 0; step < 4; step++) {
+    addBlock(15 + step * 2.2, 0.65, 2.1, 0, 0.33 + step * 0.62, -21 + step * 1.65, inset);
+  }
+
+  for (const x of [-24, -8, 8, 24]) {
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 4.5, 6), materials.darkMetal);
+    antenna.position.set(x, 42.25 - Math.abs(x) * 0.08, 0);
+    group.add(antenna);
+  }
+
+  group.userData.landmark = "prison";
   return group;
 }
 
