@@ -307,6 +307,7 @@ const materials = {
   enemy: new THREE.MeshStandardMaterial({ color: 0x3b3d42, metalness: 0.7, roughness: 0.35 }),
   redEye: new THREE.MeshStandardMaterial({ color: 0xff2e2e, emissive: 0xff1010, emissiveIntensity: 2.4 }),
   ruin: new THREE.MeshStandardMaterial({ color: 0x57555f, metalness: 0.45, roughness: 0.72, map: architectureArmorTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.09 }),
+  detentionConcrete: new THREE.MeshStandardMaterial({ color: 0x8a7568, metalness: 0.22, roughness: 0.82, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.055 }),
   architectureVent: new THREE.MeshStandardMaterial({ color: 0x353a40, metalness: 0.62, roughness: 0.58, map: architectureVentTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.06 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
   pyramidGlass: new THREE.MeshStandardMaterial({ color: 0x071018, metalness: 0.86, roughness: 0.18 }),
@@ -1119,6 +1120,12 @@ class Tank {
   }
 }
 
+const detentionBuildingSites = new Set([
+  "2,2", "2,-2", "-2,2", "-2,-2",
+  "3,0", "-3,0", "0,3", "0,-3",
+  "3,2", "3,-2", "-3,2", "-3,-2"
+]);
+
 class TerrainManager {
   constructor(parent) {
     this.parent = parent;
@@ -1209,11 +1216,13 @@ class TerrainManager {
   }
 
   addScenery(group, cx, cz) {
+    const hasDetentionBuilding = detentionBuildingSites.has(`${cx},${cz}`);
     const count = 8 + Math.floor(seededRandom(cx * 11 - cz * 29) * 8);
     for (let i = 0; i < count; i++) {
       const seed = cx * 10000 + cz * 101 + i * 37;
       const x = (seededRandom(seed) - 0.5) * this.size * 0.9;
       const z = (seededRandom(seed + 9) - 0.5) * this.size * 0.9;
+      if (hasDetentionBuilding && Math.hypot(x, z) < 42) continue;
       const wx = group.position.x + x;
       const wz = group.position.z + z;
       const y = this.getHeightAt(wx, wz);
@@ -1235,6 +1244,17 @@ class TerrainManager {
       if (this.registerDestructible(object, group, objectRadius)) group.add(object);
     }
 
+    if (hasDetentionBuilding) {
+      const building = createDetentionBlock();
+      const localX = 0;
+      const localZ = 0;
+      const worldX = group.position.x + localX;
+      const worldZ = group.position.z + localZ;
+      building.position.set(localX, this.getHeightAt(worldX, worldZ), localZ);
+      building.rotation.y = Math.atan2(worldX, worldZ);
+      if (this.registerDestructible(building, group, 22, { preciseHit: true })) group.add(building);
+    }
+
     if (cx === 1 && cz === 1) {
       const prison = createPrisonBuilding();
       const x = 0;
@@ -1246,14 +1266,14 @@ class TerrainManager {
       if (this.registerDestructible(prison, group, 35, { indestructible: true })) group.add(prison);
     }
 
-    if (Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
+    if (!hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
       const city = createDistantCity(CONFIG.worldColors.gold);
       city.position.set(0, 2, 0);
       city.scale.setScalar(0.65 + seededRandom(cx + cz) * 0.8);
       if (this.registerDestructible(city, group, 26 * city.scale.x)) group.add(city);
     }
 
-    if (Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 53 - cz * 61) > 0.9) {
+    if (!hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 53 - cz * 61) > 0.9) {
       const burningCity = createBurningDystopianCity(cx * 41 + cz * 97);
       burningCity.position.set(
         (seededRandom(cx * 23 + cz) - 0.5) * this.size * 0.45,
@@ -1284,7 +1304,8 @@ class TerrainManager {
       position,
       collisionBox: new THREE.Box3(),
       solid: options.solid !== false,
-      indestructible: options.indestructible === true
+      indestructible: options.indestructible === true,
+      preciseHit: options.preciseHit === true
     };
     object.userData.refreshCollisionBounds = () => {
       object.updateMatrixWorld(true);
@@ -1332,7 +1353,7 @@ class TerrainManager {
     let closestDistance = Infinity;
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
-      if (item.indestructible && item.collisionBox) {
+      if ((item.indestructible || item.preciseHit) && item.collisionBox) {
         const expandedBox = item.collisionBox.clone().expandByScalar(radius);
         const direction = new THREE.Vector3().subVectors(end, start);
         const segmentLength = direction.length();
@@ -4196,6 +4217,100 @@ function createHighTechPyramid(seed) {
   group.add(halo);
   pyramidBeacons.push({ root: group, beacon, halo, phase: seededRandom(seed + 97) * Math.PI * 2 });
 
+  return group;
+}
+
+function createDetentionBlock() {
+  const group = new THREE.Group();
+  const concrete = materials.detentionConcrete;
+
+  const addBlock = (width, height, depth, x, y, z, material = concrete) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
+  };
+
+  addBlock(38, 29, 22, 0, 14.5, 0);
+  addBlock(42, 2.2, 24, 0, 1.1, 0, materials.architectureVent);
+  addBlock(42, 2.4, 24, 0, 28.5, 0, materials.architectureVent);
+  for (const x of [-18.5, -6.5, 6.5, 18.5]) {
+    const height = Math.abs(x) < 10 ? 34 : 31;
+    addBlock(4.2, height, 24.5, x, height * 0.5, -0.6);
+    addBlock(5.2, 2.2, 25.2, x, height - 1.1, -0.6, materials.architectureVent);
+  }
+
+  const createBarredWindow = (width = 4.4, height = 6.8) => {
+    const window = new THREE.Group();
+    window.add(new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.45), materials.darkMetal));
+    const verticalCount = Math.max(4, Math.round(width / 0.72));
+    for (let index = 0; index < verticalCount; index++) {
+      const x = THREE.MathUtils.lerp(-width * 0.42, width * 0.42, index / Math.max(1, verticalCount - 1));
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.11, height * 0.9, 0.16), materials.pyramidTrim);
+      bar.position.set(x, 0, -0.3);
+      window.add(bar);
+    }
+    for (const y of [-height * 0.28, 0, height * 0.28]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(width * 0.9, 0.1, 0.16), materials.pyramidTrim);
+      bar.position.set(0, y, -0.3);
+      window.add(bar);
+    }
+    return window;
+  };
+
+  for (const x of [-13, -9, 9, 13]) {
+    for (const y of [6.5, 15.5, 24]) {
+      const window = createBarredWindow(3.25, 6.2);
+      window.position.set(x, y, -11.25);
+      group.add(window);
+    }
+  }
+  for (const y of [17.5, 25.5]) {
+    const window = createBarredWindow(7.2, 6.1);
+    window.position.set(0, y, -11.3);
+    group.add(window);
+  }
+  for (const side of [-1, 1]) {
+    for (const z of [-6, 3, 8]) {
+      const window = createBarredWindow(3.3, 6.2);
+      window.position.set(side * 19.15, 16.5, z);
+      window.rotation.y = side * Math.PI / 2;
+      group.add(window);
+    }
+  }
+
+  addBlock(12, 11, 2.2, 0, 5.5, -11.45, materials.architectureVent);
+  addBlock(8.2, 8.3, 0.7, 0, 4.15, -12.9, materials.darkMetal);
+  for (const x of [-2.05, 2.05]) addBlock(0.18, 7.2, 0.18, x, 4.3, -13.35, materials.pyramidTrim);
+  for (let step = 0; step < 3; step++) {
+    addBlock(11 + step * 1.8, 0.55, 1.5, 0, 0.28 + step * 0.5, -15.3 + step * 1.15, materials.architectureVent);
+  }
+
+  const signCanvas = document.createElement("canvas");
+  signCanvas.width = 512;
+  signCanvas.height = 96;
+  const context = signCanvas.getContext("2d");
+  context.fillStyle = "#312a27";
+  context.fillRect(0, 0, signCanvas.width, signCanvas.height);
+  context.strokeStyle = "#a68b74";
+  context.lineWidth = 8;
+  context.strokeRect(5, 5, signCanvas.width - 10, signCanvas.height - 10);
+  context.fillStyle = "#c2a28a";
+  context.font = "700 54px Arial";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText("DETENTION", 256, 52);
+  const signTexture = new THREE.CanvasTexture(signCanvas);
+  signTexture.encoding = THREE.sRGBEncoding;
+  const signMaterial = new THREE.MeshBasicMaterial({ map: signTexture });
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(11.5, 2.15), signMaterial);
+  sign.position.set(0, 29.2, -12.3);
+  sign.rotation.y = Math.PI;
+  group.add(sign);
+
+  group.userData.landmark = "detention-block";
   return group;
 }
 
