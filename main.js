@@ -1277,15 +1277,6 @@ class SurveillanceFleet {
     halo.position.y = bulbY;
     root.add(core, halo);
 
-    const sensorPivot = new THREE.Group();
-    sensorPivot.position.y = this.sourceSize.y * modelScale * 0.43;
-    const sensorBar = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.42, 1.1), materials.surveillanceChrome);
-    const sensorSpine = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.34, 4.8), materials.surveillanceChrome);
-    const sensorTip = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 7), materials.blueGlow);
-    sensorTip.position.x = 3.55;
-    sensorPivot.add(sensorBar, sensorSpine, sensorTip);
-    root.add(sensorPivot);
-
     const horizontal = i % 2 === 0;
     const lane = -770 + (Math.floor(i / 2) % 8) * 220 + (i >= 16 ? 72 : 0);
     const progress = -1150 + seededRandom(i * 97 + 11) * 2300;
@@ -1294,7 +1285,7 @@ class SurveillanceFleet {
     this.parent.add(root);
     this.droids.push({
       root,
-      panel: sensorPivot,
+      panel: model.getObjectByName("Cube2"),
       core,
       halo,
       horizontal,
@@ -1327,7 +1318,7 @@ class SurveillanceFleet {
       const clearance = 32 + (0.5 + Math.sin(this.elapsed * 0.16 + droid.altitudePhase) * 0.5) * 58;
       const ground = this.terrain.getHeightAt(droid.root.position.x, droid.root.position.z);
       droid.root.position.y = ground + clearance + Math.sin(this.elapsed * 1.15 + droid.phase) * 1.4;
-      if (droid.panel) droid.panel.rotation.y += delta * 0.48;
+      if (droid.panel) droid.panel.rotation.y += delta * 1.44;
       const pulse = 0.5 + Math.sin(this.elapsed * 4.6 + droid.phase) * 0.5;
       const flash = Math.sin(this.elapsed * 1.35 + droid.phase) > 0.82 ? 1 : 0.42;
       droid.core.scale.setScalar(0.85 + pulse * 0.5);
