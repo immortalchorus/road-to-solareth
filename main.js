@@ -94,6 +94,7 @@ const cameraProfiles = {
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
 };
 let cameraMode = "chase";
+let cameraTrackedAltitude = null;
 const hud = {
   speed: document.querySelector("#speed"),
   turret: document.querySelector("#turret-angle"),
@@ -1277,6 +1278,16 @@ class SurveillanceFleet {
     halo.position.y = bulbY;
     root.add(core, halo);
 
+    const panel = model.getObjectByName("Cube2");
+    if (panel) {
+      const rotationMark = new THREE.Mesh(
+        new THREE.BoxGeometry(1.65, 0.16, 0.1),
+        new THREE.MeshBasicMaterial({ color: 0x68efff, toneMapped: false })
+      );
+      rotationMark.position.set(1.65, 0.46, 0.09);
+      panel.add(rotationMark);
+    }
+
     const horizontal = i % 2 === 0;
     const lane = -770 + (Math.floor(i / 2) % 8) * 220 + (i >= 16 ? 72 : 0);
     const progress = -1150 + seededRandom(i * 97 + 11) * 2300;
@@ -1285,7 +1296,7 @@ class SurveillanceFleet {
     this.parent.add(root);
     this.droids.push({
       root,
-      panel: model.getObjectByName("Cube2"),
+      panel,
       core,
       halo,
       horizontal,
@@ -1318,7 +1329,7 @@ class SurveillanceFleet {
       const clearance = 32 + (0.5 + Math.sin(this.elapsed * 0.16 + droid.altitudePhase) * 0.5) * 58;
       const ground = this.terrain.getHeightAt(droid.root.position.x, droid.root.position.z);
       droid.root.position.y = ground + clearance + Math.sin(this.elapsed * 1.15 + droid.phase) * 1.4;
-      if (droid.panel) droid.panel.rotation.y += delta * 1.44;
+      if (droid.panel) droid.panel.rotation.y = this.elapsed * 1.44 + droid.phase;
       const pulse = 0.5 + Math.sin(this.elapsed * 4.6 + droid.phase) * 0.5;
       const flash = Math.sin(this.elapsed * 1.35 + droid.phase) > 0.82 ? 1 : 0.42;
       droid.core.scale.setScalar(0.85 + pulse * 0.5);
@@ -4357,6 +4368,7 @@ function toggleGamePause() {
 
 function positionTankOnTerrain() {
   tank.group.position.set(0, terrain.getHeightAt(0, 0) + CONFIG.tankHoverHeight, 0);
+  cameraTrackedAltitude = tank.group.position.y;
 }
 
 function toggleCameraMode() {
@@ -4370,12 +4382,20 @@ function updateCamera(delta) {
   const narrowViewport = window.innerWidth <= 620;
   const cameraDistance = profile.distance * (narrowViewport ? 1.35 : 1);
   const cameraHeight = profile.height + (narrowViewport ? 2.5 : 0);
+  if (cameraTrackedAltitude === null) cameraTrackedAltitude = tank.group.position.y;
+  cameraTrackedAltitude = THREE.MathUtils.lerp(
+    cameraTrackedAltitude,
+    tank.group.position.y,
+    1 - Math.exp(-3.6 * delta)
+  );
+  const trackedPosition = tank.group.position.clone();
+  trackedPosition.y = cameraTrackedAltitude;
   const behind = new THREE.Vector3(Math.sin(tank.group.rotation.y), 0, Math.cos(tank.group.rotation.y));
-  const target = tank.group.position.clone().add(new THREE.Vector3(0, cameraHeight, 0)).addScaledVector(behind, cameraDistance);
+  const target = trackedPosition.clone().add(new THREE.Vector3(0, cameraHeight, 0)).addScaledVector(behind, cameraDistance);
   camera.position.lerp(target, 1 - Math.pow(profile.settle, delta));
   camera.fov = THREE.MathUtils.lerp(camera.fov, profile.fov, 1 - Math.pow(0.025, delta));
   camera.updateProjectionMatrix();
-  const look = tank.group.position.clone().add(new THREE.Vector3(0, profile.lookHeight, 0));
+  const look = trackedPosition.clone().add(new THREE.Vector3(0, profile.lookHeight, 0));
   camera.lookAt(look);
 }
 
