@@ -105,6 +105,8 @@ const hud = {
   missiles: document.querySelector("#missiles"),
   hitPoints: document.querySelector("#hit-points"),
   missionCountdown: document.querySelector("#mission-countdown"),
+  coordinates: document.querySelector("#coordinates"),
+  baseRange: document.querySelector("#base-range"),
   sessionTime: document.querySelector("#session-time"),
   autopilotStatus: document.querySelector("#autopilot-status"),
   status: document.querySelector("#status"),
@@ -997,11 +999,15 @@ class Tank {
       this.speed *= 0.985;
       this.bumpTimer -= delta;
     }
-    const altitudeRelease = hasFuel && keys.KeyF && (keys.ShiftLeft || keys.ShiftRight);
-    const altitudeClimb = hasFuel && keys.KeyF && !altitudeRelease;
+    const altitudeLower = hasFuel && keys.KeyF && (keys.ShiftLeft || keys.ShiftRight);
+    const altitudeClimb = hasFuel && keys.KeyF && !altitudeLower;
     if (!hasFuel) this.altitudeHoldY = null;
-    if (altitudeRelease) {
-      this.releaseAltitudeHold();
+    if (altitudeLower) {
+      const surfaceY = terrainManager.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
+      const heldY = this.altitudeHoldY === null ? this.group.position.y : this.altitudeHoldY;
+      this.altitudeHoldY = Math.max(surfaceY, heldY - 13 * delta);
+      hud.status.textContent = "Controlled descent engaged.";
+      statusTimer = 1.2;
     } else if (altitudeClimb) {
       this.altitudeHoldY = null;
       this.verticalVelocity += CONFIG.verticalThrust * delta;
@@ -1263,6 +1269,15 @@ class SurveillanceFleet {
     halo.position.y = bulbY;
     root.add(core, halo);
 
+    const sensorPivot = new THREE.Group();
+    sensorPivot.position.y = this.sourceSize.y * modelScale * 0.43;
+    const sensorBar = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.42, 1.1), materials.surveillanceChrome);
+    const sensorSpine = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.34, 4.8), materials.surveillanceChrome);
+    const sensorTip = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 7), materials.blueGlow);
+    sensorTip.position.x = 3.55;
+    sensorPivot.add(sensorBar, sensorSpine, sensorTip);
+    root.add(sensorPivot);
+
     const horizontal = i % 2 === 0;
     const lane = -770 + (Math.floor(i / 2) % 8) * 220 + (i >= 16 ? 72 : 0);
     const progress = -1150 + seededRandom(i * 97 + 11) * 2300;
@@ -1271,7 +1286,7 @@ class SurveillanceFleet {
     this.parent.add(root);
     this.droids.push({
       root,
-      panel: model.getObjectByName("Cube2"),
+      panel: sensorPivot,
       core,
       halo,
       horizontal,
@@ -1385,14 +1400,6 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     const streetFill = new THREE.PointLight(warmDistrict ? 0xff9a55 : 0x55c8ff, warmDistrict ? 0.72 : 0.58, 145, 2);
     streetFill.position.set(0, 16, 0);
     group.add(streetFill);
-  }
-
-  for (const offset of [-76, -38, 0, 38, 76]) {
-    const materialList = Math.abs(offset / 38 + cx + cz) % 3 === 0 ? matrices.lightCool : matrices.lightWarm;
-    addInstance(materialList, offset, 0.72, -12.5, 5.8, 0.18, 0.7);
-    addInstance(materialList, offset, 0.72, 12.5, 5.8, 0.18, 0.7);
-    addInstance(materialList, -12.5, 0.72, offset, 0.7, 0.18, 5.8);
-    addInstance(materialList, 12.5, 0.72, offset, 0.7, 0.18, 5.8);
   }
 
   const buildingCount = 4 + Math.floor(seededRandom(seedBase + 3) * 3);
@@ -4376,6 +4383,16 @@ function updateHUD(delta) {
   const missionSeconds = Math.ceil(sessionTimeRemaining);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   hud.missionCountdown.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
+  const northSouth = tank.group.position.z <= 0 ? "N" : "S";
+  const eastWest = tank.group.position.x >= 0 ? "E" : "W";
+  hud.coordinates.textContent = `${northSouth} ${String(Math.round(Math.abs(tank.group.position.z))).padStart(4, "0")} | ${eastWest} ${String(Math.round(Math.abs(tank.group.position.x))).padStart(4, "0")}`;
+  const baseDistance = Math.hypot(tank.group.position.x, tank.group.position.z);
+  const baseBearingX = -tank.group.position.x;
+  const baseBearingZ = -tank.group.position.z;
+  const baseDirection = Math.abs(baseBearingZ) >= Math.abs(baseBearingX)
+    ? (baseBearingZ <= 0 ? "N" : "S")
+    : (baseBearingX >= 0 ? "E" : "W");
+  hud.baseRange.textContent = `BASE ${baseDirection} ${Math.round(baseDistance)} m`;
   if (sessionTimeRemaining <= 30 && returnToBaseWarningArmed) {
     returnToBaseWarningArmed = false;
     audio.speakReturnToBase();
