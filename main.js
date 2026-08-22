@@ -275,6 +275,17 @@ const tankSurfaceTexture = loadSurfaceTexture("assets/textures/tank-surface.jpg?
 const architectureArmorTexture = loadSurfaceTexture("assets/textures/architecture-armor.jpg?v=embedded-assets-1", 1.6, 2.4);
 const architectureVentTexture = loadSurfaceTexture("assets/textures/architecture-vents.jpg?v=embedded-assets-1", 1.2, 2.2);
 const mechanicalRibTexture = loadSurfaceTexture("assets/textures/mechanical-ribs.jpg?v=embedded-assets-1", 1.4, 3.2);
+const pyramidPanelTexture = loadSurfaceTexture("assets/textures/pyramid-panel-0056.png?v=imported-pyramid-1");
+
+const pyramidPanelMaterial = new THREE.MeshStandardMaterial({
+  color: 0xb8bdc0,
+  map: pyramidPanelTexture,
+  bumpMap: pyramidPanelTexture,
+  bumpScale: 0.035,
+  roughnessMap: pyramidPanelTexture,
+  metalness: 0.62,
+  roughness: 0.48
+});
 
 const tankMaterial = (color, metalness, roughness, bumpScale) => new THREE.MeshStandardMaterial({
   color,
@@ -1255,11 +1266,17 @@ class TerrainManager {
     }
     object.userData.destructible = true;
     object.userData.collisionRadius = radius;
-    object.updateMatrixWorld(true);
-    const collisionBox = new THREE.Box3().setFromObject(object);
-    collisionBox.min.add(chunk.position);
-    collisionBox.max.add(chunk.position);
-    this.destructibles.push({ object, chunk, radius, position, collisionBox, solid: options.solid !== false });
+    const item = { object, chunk, radius, position, collisionBox: new THREE.Box3(), solid: options.solid !== false };
+    object.userData.refreshCollisionBounds = () => {
+      object.updateMatrixWorld(true);
+      item.collisionBox.setFromObject(object);
+      if (object.parent !== chunk) {
+        item.collisionBox.min.add(chunk.position);
+        item.collisionBox.max.add(chunk.position);
+      }
+    };
+    object.userData.refreshCollisionBounds();
+    this.destructibles.push(item);
     return true;
   }
 
@@ -4030,39 +4047,85 @@ function createBrokenArch(seed) {
   return group;
 }
 
+var pyramidModelPromise;
+
+function loadPyramidModel() {
+  if (!pyramidModelPromise) {
+    pyramidModelPromise = new Promise((resolve, reject) => {
+      const loader = new THREE.OBJLoader();
+      loader.load("assets/models/Pyramid_Four-Sides_001.obj?v=imported-pyramid-1", resolve, undefined, reject);
+    });
+  }
+  return pyramidModelPromise;
+}
+
+function projectPyramidFaceUvs(sourceGeometry, modelBounds) {
+  const geometry = sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone();
+  const positions = geometry.getAttribute("position");
+  const uvs = new Float32Array(positions.count * 2);
+  const size = modelBounds.getSize(new THREE.Vector3());
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const edge = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  for (let i = 0; i < positions.count; i += 3) {
+    a.fromBufferAttribute(positions, i);
+    b.fromBufferAttribute(positions, i + 1);
+    c.fromBufferAttribute(positions, i + 2);
+    normal.subVectors(b, a).cross(edge.subVectors(c, a)).normalize();
+    const useDepth = Math.abs(normal.x) >= Math.abs(normal.z);
+
+    for (let vertex = 0; vertex < 3; vertex++) {
+      const index = i + vertex;
+      const x = positions.getX(index);
+      const y = positions.getY(index);
+      const z = positions.getZ(index);
+      let u = useDepth
+        ? (z - modelBounds.min.z) / Math.max(size.z, 0.001)
+        : (x - modelBounds.min.x) / Math.max(size.x, 0.001);
+      if ((useDepth && normal.x < 0) || (!useDepth && normal.z > 0)) u = 1 - u;
+      uvs[index * 2] = u;
+      uvs[index * 2 + 1] = (y - modelBounds.min.y) / Math.max(size.y, 0.001);
+    }
+  }
+
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addImportedPyramid(group, radius, height) {
+  loadPyramidModel().then(source => {
+    if (!group.parent) return;
+    const model = source.clone(true);
+    const sourceBounds = new THREE.Box3().setFromObject(model);
+    const sourceSize = sourceBounds.getSize(new THREE.Vector3());
+    const sourceCenter = sourceBounds.getCenter(new THREE.Vector3());
+
+    model.traverse(child => {
+      if (!child.isMesh) return;
+      child.geometry = projectPyramidFaceUvs(child.geometry, sourceBounds);
+      child.material = pyramidPanelMaterial;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    });
+
+    const scale = Math.min(height / Math.max(sourceSize.y, 0.001), radius * 2 / Math.max(sourceSize.x, sourceSize.z, 0.001));
+    model.scale.setScalar(scale);
+    model.position.set(-sourceCenter.x * scale, -sourceBounds.min.y * scale, -sourceCenter.z * scale);
+    model.rotation.y = Math.PI / 4;
+    group.add(model);
+    group.userData.refreshCollisionBounds?.();
+  }).catch(error => console.error("Unable to load pyramid model", error));
+}
+
 function createHighTechPyramid(seed) {
   const group = new THREE.Group();
   const radius = 10 + seededRandom(seed) * 9;
   const height = 19 + seededRandom(seed + 1) * 21;
-  const bodyMaterial = seededRandom(seed + 67) > 0.82 ? materials.pyramidBronze : materials.pyramidGlass;
-  const pyramid = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 4), bodyMaterial);
-  pyramid.position.y = height * 0.5;
-  pyramid.rotation.y = Math.PI / 4;
-  pyramid.castShadow = true;
-  group.add(pyramid);
-
-  const baseGlow = seededRandom(seed + 3) > 0.5 ? materials.hotelCyan : materials.hotelAmber;
-  const accentGlow = seededRandom(seed + 5) > 0.48 ? materials.hotelMagenta : materials.hotelCyan;
-  const faceAngles = [Math.PI * 0.25, Math.PI * 0.75, Math.PI * 1.25, Math.PI * 1.75];
-  for (let face = 0; face < faceAngles.length; face++) {
-    const angle = faceAngles[face];
-    const faceGlow = face % 2 === 0 ? baseGlow : materials.redEye;
-    for (let row = 0; row < 4; row++) {
-      const y = height * (0.18 + row * 0.16);
-      const faceRadius = radius * (1 - y / height) + 0.16;
-      const stripWidth = Math.max(1.25, radius * (0.72 - row * 0.11));
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(stripWidth, 0.18, 0.16), faceGlow);
-      strip.position.set(Math.sin(angle) * faceRadius, y, Math.cos(angle) * faceRadius);
-      strip.rotation.y = angle;
-      group.add(strip);
-    }
-
-    const verticalSeam = new THREE.Mesh(new THREE.BoxGeometry(0.2, height * 0.62, 0.18), face % 2 === 0 ? materials.redEye : accentGlow);
-    const seamRadius = radius * 0.48;
-    verticalSeam.position.set(Math.sin(angle) * seamRadius, height * 0.41, Math.cos(angle) * seamRadius);
-    verticalSeam.rotation.y = angle;
-    group.add(verticalSeam);
-  }
+  addImportedPyramid(group, radius, height);
 
   const podium = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.84, radius * 1.08, 1.15, 4), materials.architectureVent);
   podium.position.y = 0.58;
