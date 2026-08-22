@@ -92,10 +92,19 @@
         <div class="summary-panel">
           <div class="summary-kicker">Mission ended</div>
           <h1>Run Statistics</h1>
+          <div class="composite-score">
+            <span>Composite score</span>
+            <strong id="stat-score">0</strong>
+            <b id="stat-rank">Recruit</b>
+          </div>
           <dl>
             <div><dt>Drones destroyed</dt><dd id="stat-drones">0</dd></div>
+            <div><dt>Enemy vehicles destroyed</dt><dd id="stat-vehicles">0</dd></div>
+            <div><dt>Prisoners stopped</dt><dd id="stat-prisoners">0</dd></div>
             <div><dt>Missiles fired</dt><dd id="stat-missiles-fired">0</dd></div>
+            <div><dt>Missile hits</dt><dd id="stat-missile-hits">0</dd></div>
             <div><dt>Accuracy</dt><dd id="stat-accuracy">0%</dd></div>
+            <div><dt>Accuracy multiplier</dt><dd id="stat-multiplier">x0.50</dd></div>
             <div><dt>Longest shot</dt><dd id="stat-longest">0 m</dd></div>
             <div><dt>Ricochet kills</dt><dd id="stat-ricochets">0</dd></div>
             <div><dt>Objects destroyed</dt><dd id="stat-objects">0</dd></div>
@@ -104,6 +113,11 @@
             <div><dt>Confirmed hits</dt><dd id="stat-shots-hit">0</dd></div>
             <div><dt>Distance traveled</dt><dd id="stat-distance">0.0 km</dd></div>
             <div><dt>Armor remaining</dt><dd id="stat-armor">300 / 300</dd></div>
+            <div><dt>Resupplies</dt><dd id="stat-resupplies">0</dd></div>
+            <div><dt>Collisions</dt><dd id="stat-collisions">0</dd></div>
+            <div><dt>Adjusted combat score</dt><dd id="stat-combat-score">0</dd></div>
+            <div><dt>Survival + exploration</dt><dd id="stat-field-score">0</dd></div>
+            <div><dt>Penalties</dt><dd id="stat-penalties">0</dd></div>
           </dl>
           <button id="restart-button" type="button">Start new run</button>
         </div>
@@ -130,7 +144,7 @@
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=prison-city-1"></script>
+    <script src="main.js?v=composite-score-1"></script>
   </body>
 </html>
 

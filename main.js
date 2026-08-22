@@ -251,12 +251,17 @@ let sessionTimeRemaining = CONFIG.sessionDuration;
 let missionEndsAt = 0;
 const runStats = {
   dronesDestroyed: 0,
+  enemyVehiclesDestroyed: 0,
+  prisonersStopped: 0,
   shotsFired: 0,
   missilesFired: 0,
+  missileHits: 0,
   shotsHit: 0,
   longestShot: 0,
   ricochetKills: 0,
   objectsDestroyed: 0,
+  resupplies: 0,
+  collisions: 0,
   flightTime: 0
 };
 
@@ -1376,8 +1381,12 @@ class TerrainManager {
       }
     }
     if (!closest) return false;
-    if (closest.indestructible) return true;
-    return this.destroyDestructible(closest);
+    if (closest.indestructible) {
+      this.lastHitDestroyed = false;
+      return true;
+    }
+    this.lastHitDestroyed = this.destroyDestructible(closest);
+    return this.lastHitDestroyed;
   }
 
   resolveTankCollision(tankRef, previousPosition) {
@@ -1416,6 +1425,8 @@ class TerrainManager {
       const box = item.collisionBox;
       if (!box || tankBottom > box.max.y + 0.5 || tankTop < box.min.y - 0.5) continue;
       if (segmentHitsExpandedBox(box)) {
+        if (tankRef.bumpTimer <= 0) runStats.collisions++;
+        tankRef.bumpTimer = Math.max(tankRef.bumpTimer, 0.6);
         const previousBottom = previousPosition.y - 0.8;
         const landingFromAbove = previousBottom >= box.max.y - 0.25 && tankBottom < box.max.y + 0.5;
         if (landingFromAbove) {
@@ -1954,11 +1965,16 @@ class PrisonEscapeManager {
     );
     group.position.y = terrain.getHeightAt(group.position.x, group.position.z);
     this.parent.add(group);
-    this.prisoners.push({ group, rifle, index, speed: 1.8 + (index % 4) * 0.28, fireTimer: 3 + index * 2.7, stride: index * 0.8 });
+    this.prisoners.push({ group, rifle, index, speed: 1.8 + (index % 4) * 0.28, fireTimer: 3 + index * 2.7, stride: index * 0.8, dead: false, respawnTimer: 0 });
   }
 
   update(delta, tankRef) {
     for (const prisoner of this.prisoners) {
+      if (prisoner.dead) {
+        prisoner.respawnTimer -= delta;
+        if (prisoner.respawnTimer <= 0) this.resetPrisoner(prisoner);
+        continue;
+      }
       const { group } = prisoner;
       group.position.z += prisoner.speed * delta;
       group.position.x += Math.sin(performance.now() * 0.0016 + prisoner.stride) * delta * 0.45;
@@ -1978,6 +1994,55 @@ class PrisonEscapeManager {
         this.enemyManager.firePrisonerShot(muzzle, direction);
       }
     }
+  }
+
+  resetPrisoner(prisoner) {
+    prisoner.dead = false;
+    prisoner.fireTimer = 5 + prisoner.index * 2.5;
+    prisoner.group.position.set(
+      this.breachPosition.x + (prisoner.index % 3 - 1) * 3.2,
+      terrain.getHeightAt(this.breachPosition.x, this.breachPosition.z),
+      this.breachPosition.z + (prisoner.index % 4) * 5
+    );
+    this.parent.add(prisoner.group);
+  }
+
+  destroyPrisoner(prisoner, shot, position = prisoner.group.position) {
+    if (!prisoner || prisoner.dead) return false;
+    prisoner.dead = true;
+    prisoner.respawnTimer = 8;
+    this.parent.remove(prisoner.group);
+    destroyedEnemies++;
+    runStats.prisonersStopped++;
+    registerPlayerHit(shot, position, 100, "prisoner");
+    createExplosion(position, { radius: 0.9, growth: 14, life: 0.45, color: 0xff5525, coreColor: 0xffd69a });
+    audio.playExplosion();
+    return true;
+  }
+
+  hitAlongSegment(start, end, radius, shot) {
+    let closest = null;
+    let closestDistance = Infinity;
+    for (const prisoner of this.prisoners) {
+      if (prisoner.dead) continue;
+      const distance = distanceToSegmentSquared(prisoner.group.position.clone().add(new THREE.Vector3(0, 2.2, 0)), start, end);
+      const hitRadius = radius + 1.25;
+      if (distance <= hitRadius * hitRadius && distance < closestDistance) {
+        closest = prisoner;
+        closestDistance = distance;
+      }
+    }
+    return closest ? this.destroyPrisoner(closest, shot, closest.group.position.clone().add(new THREE.Vector3(0, 2, 0))) : false;
+  }
+
+  destroyNear(position, radius, shot) {
+    let destroyed = 0;
+    for (const prisoner of this.prisoners) {
+      if (!prisoner.dead && prisoner.group.position.distanceTo(position) <= radius + 1.25) {
+        if (this.destroyPrisoner(prisoner, shot)) destroyed++;
+      }
+    }
+    return destroyed;
   }
 }
 
@@ -2053,6 +2118,7 @@ class GroundEnemyTank {
     if (this.health <= 0) {
       this.dead = true;
       destroyedEnemies++;
+      runStats.enemyVehiclesDestroyed++;
       createExplosion(this.group.position, { radius: 2.8, growth: 30, life: 0.9, color: 0xff281b, coreColor: 0xffd7aa });
       audio.playExplosion();
     }
@@ -2687,7 +2753,7 @@ class ProjectileManager {
         this.detonateBomb(shot.mesh.position, enemyManager, skyDroneManager);
         shot.life = -1;
       } else if (shot.kind === "missile" && shot.mesh.position.y <= groundHeight + shot.radius) {
-        this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+        this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
         shot.life = -1;
       } else if (shot.mesh.position.y <= groundHeight + shot.radius * 0.4 && shot.velocity.y < 0) {
         const normal = terrain.getNormalAt(shot.mesh.position.x, shot.mesh.position.z);
@@ -2700,23 +2766,30 @@ class ProjectileManager {
         if (shot.bounces > 4) shot.life = -1;
       }
 
-      for (const enemy of enemyManager.enemies) {
-        const hitRadius = enemy.collisionRadius + collisionRadius;
-        if (!enemy.dead && distanceToSegmentSquared(enemy.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
-          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
-          else {
-            registerPlayerHit(shot, enemy.group.position, 100, "object");
-            enemy.destroy();
+      if (shot.life > 0 && prisonEscapees.hitAlongSegment(shot.previousPosition, shot.mesh.position, collisionRadius, shot)) {
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
+        shot.life = -1;
+      }
+
+      if (shot.life > 0) {
+        for (const enemy of enemyManager.enemies) {
+          const hitRadius = enemy.collisionRadius + collisionRadius;
+          if (!enemy.dead && distanceToSegmentSquared(enemy.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
+            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
+            else {
+              registerPlayerHit(shot, enemy.group.position, 100, "object");
+              enemy.destroy();
+            }
+            shot.life = -1;
+            break;
           }
-          shot.life = -1;
-          break;
         }
       }
 
       if (shot.life > 0 && enemyManager.enemyTank && !enemyManager.enemyTank.dead) {
         const hitRadius = enemyManager.enemyTank.collisionRadius + collisionRadius;
         if (distanceToSegmentSquared(enemyManager.enemyTank.group.position, shot.previousPosition, shot.mesh.position) < hitRadius * hitRadius) {
-          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
           else enemyManager.enemyTank.receiveHit(shot);
           shot.life = -1;
         }
@@ -2730,7 +2803,7 @@ class ProjectileManager {
           const alongPath = pathLengthSq > 0.001 ? THREE.MathUtils.clamp(toEscort.dot(shotPath) / pathLengthSq, 0, 1) : 0;
           const closestPoint = shot.previousPosition.clone().addScaledVector(shotPath, alongPath);
           if (!escort.dead && closestPoint.distanceTo(escort.group.position) < escort.collisionRadius + collisionRadius) {
-            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+            if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
             else {
               registerPlayerHit(shot, escort.group.position, 100, "drone");
               escort.destroy();
@@ -2744,7 +2817,7 @@ class ProjectileManager {
       if (shot.life > 0) {
         const droneHit = skyDroneManager.hitDroneAlongSegment(shot.previousPosition, shot.mesh.position, collisionRadius);
         if (droneHit) {
-          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
           else {
             registerPlayerHit(shot, droneHit.group.position, 100, "drone");
             droneHit.destroy();
@@ -2753,17 +2826,20 @@ class ProjectileManager {
         }
       }
 
-      if (shot.life > 0 && terrain.hitDestructibleAlongSegment(shot.previousPosition, shot.mesh.position, collisionRadius)) {
-        registerPlayerHit(shot, shot.mesh.position, 100, "object");
-        shot.life = -1;
-        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
-        else audio.playExplosion();
+      if (shot.life > 0) {
+        const terrainHit = terrain.hitDestructibleAlongSegment(shot.previousPosition, shot.mesh.position, collisionRadius);
+        if (terrainHit) {
+          registerPlayerHit(shot, shot.mesh.position, 100, terrain.lastHitDestroyed ? "object" : "hit");
+          shot.life = -1;
+          if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
+          else audio.playExplosion();
+        }
       }
 
       if (shot.life > 0 && hitUniverseTargetAlongSegment(shot.previousPosition, shot.mesh.position, collisionRadius)) {
         registerPlayerHit(shot, shot.mesh.position, 100, "object");
         shot.life = -1;
-        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager);
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
         else audio.playExplosion();
       }
 
@@ -2917,6 +2993,8 @@ class ProjectileManager {
     createBombShockwaves(position);
     let destroyedByBlast = terrain.destroyNear(position, 24);
     destroyedByBlast += destroyUniverseNear(position, 42);
+    const blastShot = { kind: "bomb", origin: position.clone(), direction: new THREE.Vector3(0, 1, 0), bounces: 0 };
+    prisonEscapees.destroyNear(position, 24, blastShot);
     for (const enemy of enemyManager.enemies) {
       if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + 24) {
         enemy.destroy();
@@ -2937,12 +3015,13 @@ class ProjectileManager {
     audio.playExplosion();
   }
 
-  detonateMissile(position, enemyManager, skyDroneManager) {
+  detonateMissile(position, enemyManager, skyDroneManager, sourceShot = null) {
     createExplosion(position, { radius: 2.1, growth: 24, life: 0.72, color: 0xff3a14, opacity: 0.82, coreColor: 0xffe7a0, coreOpacity: 0.88 });
     const blastRadius = 16;
     let destroyedByBlast = terrain.destroyNear(position, 13);
     destroyedByBlast += destroyUniverseNear(position, 18);
-    const blastShot = { kind: "missile", origin: position.clone(), direction: new THREE.Vector3(0, 0, -1), bounces: 0 };
+    const blastShot = sourceShot || { kind: "missile", origin: position.clone(), direction: new THREE.Vector3(0, 0, -1), bounces: 0 };
+    prisonEscapees.destroyNear(position, blastRadius, blastShot);
     for (const enemy of enemyManager.enemies) {
       if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + blastRadius) {
         registerPlayerHit(blastShot, enemy.group.position, 100, "object");
@@ -3704,6 +3783,7 @@ function updateFuel(delta) {
 }
 
 function resupplyTank() {
+  runStats.resupplies++;
   fuel = CONFIG.maxFuel;
   ammo = CONFIG.maxAmmo;
   const previousHitPoints = hitPoints;
@@ -3859,11 +3939,13 @@ function createBombShockwaves(position) {
 
 function registerPlayerHit(shot, position, damage, targetType) {
   const isBullet = shot.kind !== "bomb";
-  if (isBullet) {
+  if (isBullet && !shot.statsHitRegistered) {
+    shot.statsHitRegistered = true;
     runStats.shotsHit++;
+    if (shot.kind === "missile") runStats.missileHits++;
     const shotDistance = shot.origin ? shot.origin.distanceTo(position) : 0;
     runStats.longestShot = Math.max(runStats.longestShot, shotDistance);
-    if (shot.bounces > 0 && (targetType === "drone" || targetType === "object")) runStats.ricochetKills++;
+    if (shot.bounces > 0 && (targetType === "drone" || targetType === "object" || targetType === "prisoner")) runStats.ricochetKills++;
   }
   if (targetType === "object") runStats.objectsDestroyed++;
   flashHitFeedback();
@@ -4008,13 +4090,49 @@ function endRun(summaryDelay = 0) {
   }
 }
 
+function calculateCompositeScore() {
+  const accuracyRatio = runStats.shotsFired > 0
+    ? Math.min(1, runStats.shotsHit / runStats.shotsFired)
+    : 0;
+  const accuracyMultiplier = 0.5 + accuracyRatio;
+  const combatBase =
+    runStats.dronesDestroyed * 100 +
+    runStats.enemyVehiclesDestroyed * 300 +
+    runStats.objectsDestroyed * 75 +
+    runStats.missileHits * 125 +
+    runStats.ricochetKills * 250 +
+    runStats.prisonersStopped * 150;
+  const adjustedCombat = Math.round(combatBase * accuracyMultiplier);
+  const flightScore = Math.round(runStats.flightTime * 10);
+  const distanceScore = Math.round(distanceTravelled * 5);
+  const rangeBonus = Math.round(Math.min(runStats.longestShot, 300) * 3);
+  const armorBonus = hitPoints * 20;
+  const resupplyBonus = runStats.resupplies * 200;
+  const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus;
+  const missedShots = Math.max(0, runStats.shotsFired - runStats.shotsHit);
+  const missedMissiles = Math.max(0, runStats.missilesFired - runStats.missileHits);
+  const penalties = missedShots * 2 + missedMissiles * 25 + runStats.collisions * 50;
+  const total = Math.max(0, adjustedCombat + fieldScore - penalties);
+  const rank = total >= 100000 ? "Protocol Legend"
+    : total >= 50000 ? "Planetary Ace"
+      : total >= 25000 ? "Warden"
+        : total >= 10000 ? "Enforcer"
+          : "Recruit";
+  return { accuracyRatio, accuracyMultiplier, adjustedCombat, fieldScore, penalties, total, rank };
+}
+
 function showRunSummary() {
-  const accuracy = runStats.shotsFired > 0 ? Math.round(runStats.shotsHit / runStats.shotsFired * 100) : 0;
+  const score = calculateCompositeScore();
+  const accuracy = Math.round(score.accuracyRatio * 100);
   const minutes = Math.floor(runStats.flightTime / 60);
   const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
   document.querySelector("#stat-drones").textContent = runStats.dronesDestroyed;
+  document.querySelector("#stat-vehicles").textContent = runStats.enemyVehiclesDestroyed;
+  document.querySelector("#stat-prisoners").textContent = runStats.prisonersStopped;
   document.querySelector("#stat-missiles-fired").textContent = runStats.missilesFired;
+  document.querySelector("#stat-missile-hits").textContent = runStats.missileHits;
   document.querySelector("#stat-accuracy").textContent = `${accuracy}%`;
+  document.querySelector("#stat-multiplier").textContent = `x${score.accuracyMultiplier.toFixed(2)}`;
   document.querySelector("#stat-longest").textContent = `${Math.round(runStats.longestShot)} m`;
   document.querySelector("#stat-ricochets").textContent = runStats.ricochetKills;
   document.querySelector("#stat-objects").textContent = runStats.objectsDestroyed;
@@ -4023,6 +4141,13 @@ function showRunSummary() {
   document.querySelector("#stat-shots-hit").textContent = runStats.shotsHit;
   document.querySelector("#stat-distance").textContent = `${(distanceTravelled / 1000).toFixed(2)} km`;
   document.querySelector("#stat-armor").textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
+  document.querySelector("#stat-resupplies").textContent = runStats.resupplies;
+  document.querySelector("#stat-collisions").textContent = runStats.collisions;
+  document.querySelector("#stat-combat-score").textContent = score.adjustedCombat.toLocaleString();
+  document.querySelector("#stat-field-score").textContent = score.fieldScore.toLocaleString();
+  document.querySelector("#stat-penalties").textContent = `-${score.penalties.toLocaleString()}`;
+  document.querySelector("#stat-score").textContent = score.total.toLocaleString();
+  document.querySelector("#stat-rank").textContent = score.rank;
   hud.runSummary.hidden = false;
 }
 
