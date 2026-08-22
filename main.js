@@ -2811,6 +2811,7 @@ class AudioManager {
     this.muted = false;
     this.musicSource = null;
     this.musicAnalyser = null;
+    this.musicAnalysisOutput = null;
     this.musicFrequencyData = null;
     this.musicEnergyAverage = 0.08;
     this.musicPulse = 0;
@@ -3011,6 +3012,9 @@ class AudioManager {
     if (!this.musicAnalyser || !this.musicFrequencyData || this.analysisMusic.paused) {
       this.musicPulse = moveToward(this.musicPulse, 0, delta * 3.5);
       return;
+    }
+    if (Math.abs(this.analysisMusic.currentTime - this.music.currentTime) > 0.12) {
+      this.analysisMusic.currentTime = this.music.currentTime;
     }
     this.musicAnalyser.getByteFrequencyData(this.musicFrequencyData);
     const binWidth = this.context.sampleRate / this.musicAnalyser.fftSize;
@@ -3307,11 +3311,14 @@ class AudioManager {
       this.musicAnalyser.smoothingTimeConstant = 0.66;
       this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
       this.musicSource = this.context.createMediaElementSource(this.analysisMusic);
-      this.musicSource.connect(this.musicAnalyser);
+      this.musicAnalysisOutput = this.context.createGain();
+      this.musicAnalysisOutput.gain.value = 0;
+      this.musicSource.connect(this.musicAnalyser).connect(this.musicAnalysisOutput).connect(this.context.destination);
     } catch (_) {
       this.musicSource = null;
       this.musicAnalyser = null;
       this.musicFrequencyData = null;
+      this.musicAnalysisOutput = null;
     }
     return this.context;
   }
