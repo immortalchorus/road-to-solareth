@@ -1349,7 +1349,7 @@ class TacticalGrid {
 
   updateCannonMarker(impact) {
     const points = [];
-    const towardCamera = new THREE.Vector2(camera.position.x - impact.x, camera.position.z - impact.z);
+    const towardCamera = new THREE.Vector2(impact.x - camera.position.x, impact.z - camera.position.z);
     if (towardCamera.lengthSq() < 0.001) towardCamera.set(0, 1);
     towardCamera.normalize();
     const right = new THREE.Vector2(towardCamera.y, -towardCamera.x);
