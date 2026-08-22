@@ -434,26 +434,32 @@ playButton.addEventListener("click", () => {
   if (gameStarted) return;
   playButton.disabled = true;
   playLaunch.classList.add("depositing");
-  playButton.textContent = "ENTERING";
-  const sessionDuration = CONFIG.sessionDuration;
-  gameStarted = true;
-  sessionTimeRemaining = sessionDuration;
-  missionEndsAt = performance.now() + sessionDuration * 1000;
-  const missionSeconds = Math.ceil(sessionDuration);
-  hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
-  splashScreen.hidden = true;
-  splashScreen.style.display = "none";
-  document.body.classList.add("game-running");
-  clock.getDelta();
-  hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
-  statusTimer = 4;
+  playButton.textContent = "INSERTING";
   try {
     audio.armAudio();
-    audio.playCoinRing();
-    void audio.start().catch(error => console.warn("Soundtrack startup will retry during play", error));
   } catch (error) {
-    console.warn("Audio startup skipped; gameplay remains active", error);
+    console.warn("Audio arming skipped; gameplay will still start", error);
   }
+  window.setTimeout(() => {
+    const sessionDuration = CONFIG.sessionDuration;
+    gameStarted = true;
+    sessionTimeRemaining = sessionDuration;
+    missionEndsAt = performance.now() + sessionDuration * 1000;
+    const missionSeconds = Math.ceil(sessionDuration);
+    hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
+    splashScreen.hidden = true;
+    splashScreen.style.display = "none";
+    document.body.classList.add("game-running");
+    clock.getDelta();
+    hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
+    statusTimer = 4;
+    try {
+      audio.playCoinRing();
+      void audio.start().catch(error => console.warn("Soundtrack startup will retry during play", error));
+    } catch (error) {
+      console.warn("Audio startup skipped; gameplay remains active", error);
+    }
+  }, 700);
 });
 
 function drawPlayCoin() {
@@ -3702,7 +3708,6 @@ class AudioManager {
   armAudio() {
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") ctx.resume();
-    this.prepareBeatEnvelope();
     this.music.volume = 0;
     this.music.play().catch(() => {
       // start() makes the normal audible playback attempt after the coin sequence.
@@ -4234,7 +4239,7 @@ projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 prisonEscapees = new PrisonEscapeManager(scene, enemies);
 skyDrones = new SkyDroneManager(scene);
-surveillanceFleet = new SurveillanceFleet(scene, terrain);
+surveillanceFleet = null;
 refuelTowers = new RefuelTowerManager(scene, terrain);
 missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
@@ -4261,7 +4266,7 @@ function animate() {
     enemies.update(delta, tank);
     prisonEscapees.update(delta, tank);
     skyDrones.update(delta, tank);
-    surveillanceFleet.update(delta);
+    if (surveillanceFleet) surveillanceFleet.update(delta);
     refuelTowers.update(delta, tank);
     missileTowers.update(delta, tank);
     projectiles.update(delta, input, tank, enemies, skyDrones);
