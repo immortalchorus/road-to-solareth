@@ -275,7 +275,7 @@ const tankSurfaceTexture = loadSurfaceTexture("assets/textures/tank-surface.jpg?
 const architectureArmorTexture = loadSurfaceTexture("assets/textures/architecture-armor.jpg?v=embedded-assets-1", 1.6, 2.4);
 const architectureVentTexture = loadSurfaceTexture("assets/textures/architecture-vents.jpg?v=embedded-assets-1", 1.2, 2.2);
 const mechanicalRibTexture = loadSurfaceTexture("assets/textures/mechanical-ribs.jpg?v=embedded-assets-1", 1.4, 3.2);
-const pyramidPanelTexture = loadSurfaceTexture("assets/textures/pyramid-panel-0056.png?v=imported-pyramid-1");
+const pyramidPanelTexture = loadSurfaceTexture("assets/textures/pyramid-panel-0056.jpg?v=imported-pyramid-1");
 
 const pyramidPanelMaterial = new THREE.MeshStandardMaterial({
   color: 0xb8bdc0,
