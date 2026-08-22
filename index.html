@@ -64,15 +64,17 @@
       </section>
 
       <section id="hud" aria-live="polite">
-        <div class="hud-title">//PRISON PLANET PROTOCOL//</div>
-        <div>Destination: <span>Solareth</span></div>
-        <div>Speed: <span id="speed">0</span></div>
-        <div>Turret: <span id="turret-angle">0</span></div>
-        <div>Distance: <span id="distance">0.0 km</span></div>
-        <div>Machines stilled: <span id="destroyed">0</span></div>
-        <div>Missiles fired: <span id="missiles-fired">0</span></div>
-        <div>Mission time: <span id="session-time">--:--</span></div>
-        <div>Autopilot: <span id="autopilot-status">OFF</span></div>
+        <div id="gameplay-stats" hidden>
+          <div class="hud-title">//PRISON PLANET PROTOCOL//</div>
+          <div>Destination: <span>Solareth</span></div>
+          <div>Speed: <span id="speed">0</span></div>
+          <div>Turret: <span id="turret-angle">0</span></div>
+          <div>Distance: <span id="distance">0.0 km</span></div>
+          <div>Machines stilled: <span id="destroyed">0</span></div>
+          <div>Missiles fired: <span id="missiles-fired">0</span></div>
+          <div>Mission time: <span id="session-time">--:--</span></div>
+          <div>Autopilot: <span id="autopilot-status">OFF</span></div>
+        </div>
         <div id="status">Metallic orbs watch the red waste.</div>
       </section>
 
@@ -98,6 +100,10 @@
             <div><dt>Ricochet kills</dt><dd id="stat-ricochets">0</dd></div>
             <div><dt>Objects destroyed</dt><dd id="stat-objects">0</dd></div>
             <div><dt>Flight time</dt><dd id="stat-flight">0:00</dd></div>
+            <div><dt>Cannon shots fired</dt><dd id="stat-shots-fired">0</dd></div>
+            <div><dt>Confirmed hits</dt><dd id="stat-shots-hit">0</dd></div>
+            <div><dt>Distance traveled</dt><dd id="stat-distance">0.0 km</dd></div>
+            <div><dt>Armor remaining</dt><dd id="stat-armor">300 / 300</dd></div>
           </dl>
           <button id="restart-button" type="button">Start new run</button>
         </div>
@@ -124,7 +130,7 @@
     <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="main.js?v=brighter-beacons-darker-ground-1"></script>
+    <script src="main.js?v=lean-hud-brown-ground-1"></script>
   </body>
 </html>
 

@@ -60,8 +60,8 @@ const CONFIG = {
   escortDroneFireInterval: 10,
   sessionDuration: 180,
   worldColors: {
-    sand: 0x8f3824,
-    darkSand: 0x5f2923,
+    sand: 0x68452f,
+    darkSand: 0x422d25,
     road: 0x3a2f34,
     crystal: 0x58f3ff,
     gold: 0xffc45c
@@ -3760,6 +3760,10 @@ function endRun() {
   document.querySelector("#stat-ricochets").textContent = runStats.ricochetKills;
   document.querySelector("#stat-objects").textContent = runStats.objectsDestroyed;
   document.querySelector("#stat-flight").textContent = `${minutes}:${seconds}`;
+  document.querySelector("#stat-shots-fired").textContent = runStats.shotsFired;
+  document.querySelector("#stat-shots-hit").textContent = runStats.shotsHit;
+  document.querySelector("#stat-distance").textContent = `${(distanceTravelled / 1000).toFixed(2)} km`;
+  document.querySelector("#stat-armor").textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   hud.runSummary.hidden = false;
 }
 
