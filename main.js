@@ -1711,6 +1711,10 @@ class TerrainManager {
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
       if (!item.solid) continue;
+      const broadphaseRadius = item.radius + CONFIG.tankCollisionRadius + 4;
+      const broadphaseX = item.position.x - tankPosition.x;
+      const broadphaseZ = item.position.z - tankPosition.z;
+      if (broadphaseX * broadphaseX + broadphaseZ * broadphaseZ > broadphaseRadius * broadphaseRadius) continue;
       const box = item.collisionBox;
       if (!box || tankBottom > box.max.y + 0.5 || tankTop < box.min.y - 0.5) continue;
       if (segmentHitsExpandedBox(box)) {
@@ -2099,16 +2103,24 @@ class EnemyManager {
     this.enemies = [];
     this.timer = 3;
     this.enemyTank = null;
-    this.enemyTankRespawn = 0;
+    this.enemyTankRespawn = 2.5;
     this.patrolTanks = [];
     this.patrolsSpawned = false;
+    this.patrolSpawnIndex = 0;
+    this.patrolSpawnTimer = 0.75;
     this.hostileShots = [];
     this.escortDrones = [];
   }
 
   update(delta, tankRef) {
     if (gameEnded) return;
-    if (!this.patrolsSpawned) this.spawnPatrolTanks();
+    if (!this.patrolsSpawned) {
+      this.patrolSpawnTimer -= delta;
+      if (this.patrolSpawnTimer <= 0) {
+        this.spawnNextPatrolTank();
+        this.patrolSpawnTimer = 0.75;
+      }
+    }
     if (!this.enemyTank) {
       this.enemyTankRespawn -= delta;
       if (this.enemyTankRespawn <= 0) this.spawnEnemyTank(tankRef);
@@ -2201,22 +2213,21 @@ class EnemyManager {
     statusTimer = 4;
   }
 
-  spawnPatrolTanks() {
-    this.patrolsSpawned = true;
+  spawnNextPatrolTank() {
+    const i = this.patrolSpawnIndex++;
     const laneCount = CONFIG.prisonPatrolTankCount * 0.5;
-    for (let i = 0; i < CONFIG.prisonPatrolTankCount; i++) {
-      const vertical = i < laneCount;
-      const laneIndex = vertical ? i : i - laneCount;
-      const lane = (laneIndex - (laneCount - 1) * 0.5) * CONFIG.chunkSize;
-      const path = vertical
-        ? [new THREE.Vector3(lane, 0, -440), new THREE.Vector3(lane, 0, 440)]
-        : [new THREE.Vector3(-440, 0, lane), new THREE.Vector3(440, 0, lane)];
-      const patrol = new GroundEnemyTank(path, i);
-      patrol.group.position.copy(path[i % 2]);
-      patrol.group.position.y = terrain.getHeightAt(patrol.group.position.x, patrol.group.position.z) + 1.2;
-      this.parent.add(patrol.group);
-      this.patrolTanks.push(patrol);
-    }
+    const vertical = i < laneCount;
+    const laneIndex = vertical ? i : i - laneCount;
+    const lane = (laneIndex - (laneCount - 1) * 0.5) * CONFIG.chunkSize;
+    const path = vertical
+      ? [new THREE.Vector3(lane, 0, -440), new THREE.Vector3(lane, 0, 440)]
+      : [new THREE.Vector3(-440, 0, lane), new THREE.Vector3(440, 0, lane)];
+    const patrol = new GroundEnemyTank(path, i);
+    patrol.group.position.copy(path[i % 2]);
+    patrol.group.position.y = terrain.getHeightAt(patrol.group.position.x, patrol.group.position.z) + 1.2;
+    this.parent.add(patrol.group);
+    this.patrolTanks.push(patrol);
+    this.patrolsSpawned = this.patrolSpawnIndex >= CONFIG.prisonPatrolTankCount;
   }
 
   getGroundTanks() {
