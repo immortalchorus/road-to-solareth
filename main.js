@@ -2826,6 +2826,8 @@ class AudioManager {
     this.music.id = "soundtrack";
     this.music.setAttribute("aria-hidden", "true");
     this.music.preload = "auto";
+    this.analysisMusic = new Audio(this.currentTrack.src);
+    this.analysisMusic.preload = "auto";
     this.musicAmmoBalance = Number(musicAmmoBalanceControl.value) / 100;
     this.music.volume = 0.58;
     this.setMusicAmmoBalance(this.musicAmmoBalance);
@@ -2878,7 +2880,11 @@ class AudioManager {
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") await ctx.resume();
     this.music.currentTime = 0;
+    this.analysisMusic.currentTime = 0;
     this.setMusicAmmoBalance(this.musicAmmoBalance);
+    this.analysisMusic.play().catch(() => {
+      this.musicPulse = 0;
+    });
     await this.music.play().catch(() => {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
@@ -2892,6 +2898,9 @@ class AudioManager {
     this.music.volume = 0;
     this.music.play().catch(() => {
       // start() makes the normal audible playback attempt after the coin sequence.
+    });
+    this.analysisMusic.play().catch(() => {
+      // Beat detection is optional; native soundtrack playback remains independent.
     });
   }
 
@@ -2940,6 +2949,7 @@ class AudioManager {
   pause() {
     if (!this.started) return;
     this.music.pause();
+    this.analysisMusic.pause();
     if (this.context && this.context.state === "running") this.context.suspend();
     if ("speechSynthesis" in window) window.speechSynthesis.pause();
   }
@@ -2952,10 +2962,14 @@ class AudioManager {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
     });
+    this.analysisMusic.play().catch(() => {
+      this.musicPulse = 0;
+    });
   }
 
   stopMusic() {
     this.music.pause();
+    this.analysisMusic.pause();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
@@ -2994,7 +3008,7 @@ class AudioManager {
   }
 
   updateMusicPulse(delta) {
-    if (!this.musicAnalyser || !this.musicFrequencyData || this.music.paused) {
+    if (!this.musicAnalyser || !this.musicFrequencyData || this.analysisMusic.paused) {
       this.musicPulse = moveToward(this.musicPulse, 0, delta * 3.5);
       return;
     }
@@ -3287,13 +3301,18 @@ class AudioManager {
     this.ammoOutput.gain.value = Math.SQRT2 * Math.sin(this.musicAmmoBalance * Math.PI * 0.5);
     this.ammoOutput.connect(this.master);
     this.master.connect(limiter).connect(this.context.destination);
-    this.musicAnalyser = this.context.createAnalyser();
-    this.musicAnalyser.fftSize = 1024;
-    this.musicAnalyser.smoothingTimeConstant = 0.66;
-    this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
-    this.musicSource = this.context.createMediaElementSource(this.music);
-    this.musicSource.connect(this.context.destination);
-    this.musicSource.connect(this.musicAnalyser);
+    try {
+      this.musicAnalyser = this.context.createAnalyser();
+      this.musicAnalyser.fftSize = 1024;
+      this.musicAnalyser.smoothingTimeConstant = 0.66;
+      this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
+      this.musicSource = this.context.createMediaElementSource(this.analysisMusic);
+      this.musicSource.connect(this.musicAnalyser);
+    } catch (_) {
+      this.musicSource = null;
+      this.musicAnalyser = null;
+      this.musicFrequencyData = null;
+    }
     return this.context;
   }
 
