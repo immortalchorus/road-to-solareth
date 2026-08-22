@@ -3624,7 +3624,11 @@ class AudioManager {
       { title: "NeuroDark Guitar Solos", src: "assets/neurodark-guitar-solos-16.mp3" },
       { title: "NeuroDark Guitar Solos (7)", src: "assets/neurodark-guitar-solos-7.mp3" },
       { title: "NeuroDark Guitar Solos (28)", src: "assets/neurodark-guitar-solos-28.mp3" },
-      { title: "NeuroDark Guitar Solos (29)", src: "assets/neurodark-guitar-solos-29.mp3" }
+      { title: "NeuroDark Guitar Solos (29)", src: "assets/neurodark-guitar-solos-29.mp3" },
+      { title: "Prison Escape", src: "assets/prison-escape.mp3" },
+      { title: "Prison Escape (1)", src: "assets/prison-escape-1.mp3" },
+      { title: "Prison Escape (2)", src: "assets/prison-escape-2.mp3" },
+      { title: "Prison Escape (3)", src: "assets/prison-escape-3.mp3" }
     ];
     this.currentTrack = this.selectTrack();
     this.music = new Audio(this.currentTrack.src);
