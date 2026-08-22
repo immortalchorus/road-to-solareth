@@ -60,7 +60,7 @@ const CONFIG = {
   escortDroneFireInterval: 10,
   sessionDuration: 180,
   worldColors: {
-    sand: 0x9b3f28,
+    sand: 0x8f3824,
     darkSand: 0x5f2923,
     road: 0x3a2f34,
     crystal: 0x58f3ff,
@@ -1011,28 +1011,32 @@ class Tank {
 
   addBeacon(parent, position) {
     const light = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24, 12, 8),
+      new THREE.SphereGeometry(0.3, 12, 8),
       new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1 })
     );
     light.position.copy(position);
     parent.add(light);
     const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(0.58, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff2424, transparent: true, opacity: 0.32, depthWrite: false })
+      new THREE.SphereGeometry(0.72, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff3824, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending })
     );
     halo.position.copy(position);
     parent.add(halo);
-    this.beacons.push({ light, halo });
+    const cast = new THREE.PointLight(0xff321c, 0, 18, 2);
+    cast.position.copy(position);
+    parent.add(cast);
+    this.beacons.push({ light, halo, cast });
   }
 
   updateBeacons(musicPulse) {
     const beat = Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 1.18);
-    for (const { light, halo } of this.beacons) {
-      light.material.opacity = 0.22 + beat * 0.78;
-      light.material.color.setRGB(1, 0.06 + beat * 0.58, 0.04 + beat * 0.16);
-      light.scale.setScalar(0.88 + beat * 0.62);
-      halo.material.opacity = 0.04 + beat * 0.58;
-      halo.scale.setScalar(0.72 + beat * 1.18);
+    for (const { light, halo, cast } of this.beacons) {
+      light.material.opacity = 0.38 + beat * 0.62;
+      light.material.color.setRGB(1, 0.08 + beat * 0.72, 0.04 + beat * 0.28);
+      light.scale.setScalar(1 + beat * 0.82);
+      halo.material.opacity = 0.1 + beat * 0.82;
+      halo.scale.setScalar(0.82 + beat * 1.62);
+      cast.intensity = 0.35 + beat * 5.8;
     }
   }
 
