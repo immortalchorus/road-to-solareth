@@ -325,8 +325,8 @@ const materials = {
   toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
   radioTower: new THREE.MeshStandardMaterial({ color: 0x3f484d, metalness: 0.9, roughness: 0.25 }),
   radioSphere: new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 1, depthWrite: false }),
-  facilityLightWarm: new THREE.MeshStandardMaterial({ color: 0xffad56, emissive: 0xff6b1f, emissiveIntensity: 2.2, metalness: 0.55, roughness: 0.3 }),
-  facilityLightCool: new THREE.MeshStandardMaterial({ color: 0x71d9ff, emissive: 0x208dff, emissiveIntensity: 2.4, metalness: 0.62, roughness: 0.24 }),
+  facilityLightWarm: new THREE.MeshStandardMaterial({ color: 0xffbd72, emissive: 0xff7428, emissiveIntensity: 3.15, metalness: 0.55, roughness: 0.3 }),
+  facilityLightCool: new THREE.MeshStandardMaterial({ color: 0x8ee8ff, emissive: 0x2aa8ff, emissiveIntensity: 3.35, metalness: 0.62, roughness: 0.24 }),
   collisionInvisible: new THREE.MeshBasicMaterial({ visible: false }),
   architectureVent: new THREE.MeshStandardMaterial({ color: 0x353a40, metalness: 0.62, roughness: 0.58, map: architectureVentTexture, bumpMap: tankSurfaceTexture, bumpScale: 0.06 }),
   darkMetal: new THREE.MeshStandardMaterial({ color: 0x20242b, metalness: 0.78, roughness: 0.36 }),
@@ -521,7 +521,7 @@ function drawPlayCoin() {
 drawPlayCoin();
 
 function initLights() {
-  const hemi = new THREE.HemisphereLight(0x6f6254, 0x030403, 0.48);
+  const hemi = new THREE.HemisphereLight(0x837669, 0x050504, 0.6);
   scene.add(hemi);
 
   const twilightKey = new THREE.DirectionalLight(0xffc387, 1.48);
@@ -534,7 +534,7 @@ function initLights() {
   twilightKey.shadow.camera.bottom = -220;
   scene.add(twilightKey);
 
-  const horizonFill = new THREE.DirectionalLight(0x8b4326, 0.24);
+  const horizonFill = new THREE.DirectionalLight(0xa55232, 0.34);
   horizonFill.position.set(-280, 65, 260);
   scene.add(horizonFill);
 }
@@ -1262,6 +1262,23 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     colliders.push(collider);
   };
 
+  // One broad, shadowless pool per alternating district keeps streets readable
+  // without multiplying expensive real-time lights across every visible chunk.
+  if (Math.abs(cx + cz) % 2 === 0) {
+    const warmDistrict = Math.abs(cx * 3 + cz) % 3 !== 0;
+    const streetFill = new THREE.PointLight(warmDistrict ? 0xff9a55 : 0x55c8ff, warmDistrict ? 0.72 : 0.58, 145, 2);
+    streetFill.position.set(0, 16, 0);
+    group.add(streetFill);
+  }
+
+  for (const offset of [-76, -38, 0, 38, 76]) {
+    const materialList = Math.abs(offset / 38 + cx + cz) % 3 === 0 ? matrices.lightCool : matrices.lightWarm;
+    addInstance(materialList, offset, 0.72, -12.5, 5.8, 0.18, 0.7);
+    addInstance(materialList, offset, 0.72, 12.5, 5.8, 0.18, 0.7);
+    addInstance(materialList, -12.5, 0.72, offset, 0.7, 0.18, 5.8);
+    addInstance(materialList, 12.5, 0.72, offset, 0.7, 0.18, 5.8);
+  }
+
   const buildingCount = 4 + Math.floor(seededRandom(seedBase + 3) * 3);
   const buildingSites = [[-66, -62], [66, -62], [-66, 62], [66, 62], [-68, 0], [68, 0]];
   for (let i = 0; i < buildingCount; i++) {
@@ -1315,6 +1332,11 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     addInstance(matrices.concrete, 0, bridgeY, 0, alongX ? 224 : 15, 4, alongX ? 15 : 224);
     addInstance(matrices.panel, 0, bridgeY + 3.25, alongX ? -7.25 : 0, alongX ? 224 : 0.7, 2.5, alongX ? 0.7 : 224);
     addInstance(matrices.panel, 0, bridgeY + 3.25, alongX ? 7.25 : 0, alongX ? 224 : 0.7, 2.5, alongX ? 0.7 : 224);
+    for (const offset of [-82, -41, 0, 41, 82]) {
+      const lightList = Math.abs(offset / 41 + cx - cz) % 3 === 0 ? matrices.lightWarm : matrices.lightCool;
+      addInstance(lightList, alongX ? offset : -6.35, bridgeY - 2.25, alongX ? -6.35 : offset, 3.4, 0.24, 0.42);
+      addInstance(lightList, alongX ? offset : 6.35, bridgeY - 2.25, alongX ? 6.35 : offset, 3.4, 0.24, 0.42);
+    }
     for (const offset of [-82, -41, 0, 41, 82]) {
       if (offset === 0 || (reserveCenter && Math.abs(offset) < 58)) continue;
       const pierX = alongX ? offset : 0;
