@@ -60,8 +60,8 @@ const CONFIG = {
   escortDroneFireInterval: 10,
   sessionDuration: 180,
   worldColors: {
-    sand: 0x68452f,
-    darkSand: 0x422d25,
+    sand: 0x503522,
+    darkSand: 0x32231c,
     road: 0x3a2f34,
     crystal: 0x58f3ff,
     gold: 0xffc45c
@@ -1255,7 +1255,11 @@ class TerrainManager {
     }
     object.userData.destructible = true;
     object.userData.collisionRadius = radius;
-    this.destructibles.push({ object, chunk, radius, position, solid: options.solid !== false });
+    object.updateMatrixWorld(true);
+    const collisionBox = new THREE.Box3().setFromObject(object);
+    collisionBox.min.add(chunk.position);
+    collisionBox.max.add(chunk.position);
+    this.destructibles.push({ object, chunk, radius, position, collisionBox, solid: options.solid !== false });
     return true;
   }
 
@@ -1304,24 +1308,50 @@ class TerrainManager {
   resolveTankCollision(tankRef, previousPosition) {
     const tankPosition = tankRef.group.position;
     const tankHoverY = this.getHeightAt(tankPosition.x, tankPosition.z) + CONFIG.tankHoverHeight;
+    const tankBottom = tankPosition.y - 0.8;
+    const tankTop = tankPosition.y + 8.2;
+    const segmentHitsExpandedBox = box => {
+      const minX = box.min.x - CONFIG.tankCollisionRadius;
+      const maxX = box.max.x + CONFIG.tankCollisionRadius;
+      const minZ = box.min.z - CONFIG.tankCollisionRadius;
+      const maxZ = box.max.z + CONFIG.tankCollisionRadius;
+      const dx = tankPosition.x - previousPosition.x;
+      const dz = tankPosition.z - previousPosition.z;
+      let near = 0;
+      let far = 1;
+      for (const [start, delta, min, max] of [
+        [previousPosition.x, dx, minX, maxX],
+        [previousPosition.z, dz, minZ, maxZ]
+      ]) {
+        if (Math.abs(delta) < 0.0001) {
+          if (start < min || start > max) return false;
+          continue;
+        }
+        const first = (min - start) / delta;
+        const second = (max - start) / delta;
+        near = Math.max(near, Math.min(first, second));
+        far = Math.min(far, Math.max(first, second));
+        if (near > far) return false;
+      }
+      return far >= 0 && near <= 1;
+    };
     for (const item of this.destructibles) {
       if (!item.object.parent) continue;
       if (!item.solid) continue;
-      const obstacleTop = item.position.y + Math.max(8, item.radius * 0.75);
-      if (tankPosition.y > obstacleTop) continue;
-      const dx = tankPosition.x - item.position.x;
-      const dz = tankPosition.z - item.position.z;
-      const distance = Math.hypot(dx, dz);
-      const minimumDistance = CONFIG.tankCollisionRadius + item.radius;
-      if (distance < minimumDistance) {
-        const normal = distance > 0.001
-          ? new THREE.Vector3(dx / distance, 0, dz / distance)
-          : previousPosition.clone().sub(item.position).setY(0).normalize();
-        if (normal.lengthSq() < 0.001) normal.set(0, 0, 1);
-        tankPosition.x = item.position.x + normal.x * minimumDistance;
-        tankPosition.z = item.position.z + normal.z * minimumDistance;
-        tankPosition.y = Math.max(tankPosition.y, tankHoverY);
-        tankRef.speed = Math.min(tankRef.speed, 0);
+      const box = item.collisionBox;
+      if (!box || tankBottom > box.max.y + 0.5 || tankTop < box.min.y - 0.5) continue;
+      if (segmentHitsExpandedBox(box)) {
+        const previousBottom = previousPosition.y - 0.8;
+        const landingFromAbove = previousBottom >= box.max.y - 0.25 && tankBottom < box.max.y + 0.5;
+        if (landingFromAbove) {
+          tankPosition.y = box.max.y + 0.8;
+          tankRef.verticalVelocity = Math.max(0, tankRef.verticalVelocity * -0.12);
+        } else {
+          tankPosition.x = previousPosition.x;
+          tankPosition.z = previousPosition.z;
+          tankPosition.y = Math.max(previousPosition.y, tankHoverY);
+        }
+        tankRef.speed = 0;
         hud.status.textContent = "The hull meets solid ruin. Back up and steer around.";
         statusTimer = 5;
         return true;
