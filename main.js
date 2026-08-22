@@ -30,6 +30,7 @@ const CONFIG = {
   projectileCooldown: 0.085,
   projectileRadius: 0.34,
   projectileCollisionRadius: 0.52,
+  cannonGravity: 4.5,
   bombRadius: 0.82,
   bombDropCount: 8,
   bombGravity: 38,
@@ -96,6 +97,7 @@ const hud = {
   turret: document.querySelector("#turret-angle"),
   distance: document.querySelector("#distance"),
   destroyed: document.querySelector("#destroyed"),
+  missilesFired: document.querySelector("#missiles-fired"),
   fuel: document.querySelector("#fuel"),
   ammo: document.querySelector("#ammo"),
   missiles: document.querySelector("#missiles"),
@@ -247,6 +249,7 @@ let missionEndsAt = 0;
 const runStats = {
   dronesDestroyed: 0,
   shotsFired: 0,
+  missilesFired: 0,
   shotsHit: 0,
   longestShot: 0,
   ricochetKills: 0,
@@ -1428,11 +1431,12 @@ class TacticalGrid {
   predictCannonImpact(tankRef) {
     tankRef.group.updateMatrixWorld(true);
     const point = tankRef.getMuzzleWorldPosition();
-    const direction = tankRef.getTurretWorldDirection();
-    const step = 4.72;
-    const maxSightDistance = 180;
-    for (let distance = 0; distance < maxSightDistance; distance += step) {
-      point.addScaledVector(direction, step);
+    const velocity = tankRef.getTurretWorldDirection().multiplyScalar(118);
+    const dt = 0.04;
+    const maxSightTime = 180 / 118;
+    for (let elapsed = 0; elapsed < maxSightTime; elapsed += dt) {
+      velocity.y -= CONFIG.cannonGravity * dt;
+      point.addScaledVector(velocity, dt);
       if (point.y <= this.terrain.getHeightAt(point.x, point.z) + CONFIG.projectileRadius * 0.4) return point;
     }
     point.y = this.terrain.getHeightAt(point.x, point.z) + CONFIG.projectileRadius * 0.4;
@@ -2379,6 +2383,10 @@ class ProjectileManager {
         }
       } else {
         shot.homingTarget = null;
+        shot.velocity.y -= CONFIG.cannonGravity * delta;
+        shot.direction.copy(shot.velocity).normalize();
+        shot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), shot.direction);
+        shot.trail.quaternion.copy(shot.quaternion);
       }
       shot.mesh.position.addScaledVector(shot.velocity, delta);
       if (shot.trail) {
@@ -2571,6 +2579,7 @@ class ProjectileManager {
       radius: 0.68
     });
     runStats.shotsFired++;
+    runStats.missilesFired++;
     hud.status.textContent = `Missile launched. ${tankRef.getMissileCount()} remaining.`;
     statusTimer = 2.5;
     audio.playFire();
@@ -3236,6 +3245,7 @@ function updateHUD(delta) {
   hud.turret.textContent = `Yaw ${Math.round(THREE.MathUtils.radToDeg(wrapAngle(tank.turret.rotation.y)))} / Pitch ${THREE.MathUtils.radToDeg(tank.turretPitch).toFixed(1)} deg`;
   hud.distance.textContent = `${(distanceTravelled / 1000).toFixed(1)} km`;
   hud.destroyed.textContent = destroyedEnemies;
+  hud.missilesFired.textContent = runStats.missilesFired;
   hud.fuel.textContent = Math.max(0, Math.ceil(fuel));
   hud.ammo.textContent = ammo;
   hud.missiles.textContent = tank.getMissileCount();
@@ -3533,6 +3543,7 @@ function endRun() {
   const minutes = Math.floor(runStats.flightTime / 60);
   const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
   document.querySelector("#stat-drones").textContent = runStats.dronesDestroyed;
+  document.querySelector("#stat-missiles-fired").textContent = runStats.missilesFired;
   document.querySelector("#stat-accuracy").textContent = `${accuracy}%`;
   document.querySelector("#stat-longest").textContent = `${Math.round(runStats.longestShot)} m`;
   document.querySelector("#stat-ricochets").textContent = runStats.ricochetKills;
