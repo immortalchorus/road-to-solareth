@@ -321,7 +321,9 @@ const materials = {
   water: new THREE.MeshStandardMaterial({ color: 0x5ed5ff, emissive: 0x1b7d9a, transparent: true, opacity: 0.52, side: THREE.DoubleSide }),
   road: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.road, roughness: 0.92 }),
   terrain: new THREE.MeshStandardMaterial({ color: CONFIG.worldColors.sand, roughness: 0.95, vertexColors: true }),
-  smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false })
+  smoke: new THREE.MeshBasicMaterial({ color: 0x1a1112, transparent: true, opacity: 0.42, depthWrite: false }),
+  prisonerUniform: new THREE.MeshStandardMaterial({ color: 0xb85d24, roughness: 0.78 }),
+  prisonerSkin: new THREE.MeshStandardMaterial({ color: 0x9a715c, roughness: 0.86 })
 };
 
 let terrain;
@@ -333,12 +335,14 @@ let refuelTowers;
 let missileTowers;
 let tacticalGrid;
 let autopilot;
+let prisonEscapees;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
 const universeTargets = [];
 const pyramidBeacons = [];
 const droneOrbs = [];
+const prisonBreachEffects = [];
 let beaconTime = 0;
 
 window.addEventListener("resize", onResize);
@@ -1125,6 +1129,7 @@ const detentionBuildingSites = new Set([
   "3,0", "-3,0", "0,3", "0,-3",
   "3,2", "3,-2", "-3,2", "-3,-2"
 ]);
+const prisonCitySite = { chunkX: 0, chunkZ: -1, localX: 0, localZ: 40, worldX: 0, worldZ: -180 };
 
 class TerrainManager {
   constructor(parent) {
@@ -1134,6 +1139,7 @@ class TerrainManager {
     this.clearZones = [];
     this.size = CONFIG.chunkSize;
     this.radius = CONFIG.visibleChunkRadius;
+    this.reserveClearZone(prisonCitySite.worldX, prisonCitySite.worldZ, 112);
   }
 
   reserveClearZone(x, z, radius) {
@@ -1196,33 +1202,21 @@ class TerrainManager {
     mesh.receiveShadow = true;
     group.add(mesh);
 
-    this.addRoads(group, cx, cz);
     this.addScenery(group, cx, cz);
     this.parent.add(group);
     this.chunks.set(key, group);
   }
 
-  addRoads(group, cx, cz) {
-    const r = seededRandom(cx * 91 + cz * 177);
-    if (Math.abs((cx + cz) % 4) === 0 || r > 0.78) {
-      const road = new THREE.Mesh(new THREE.PlaneGeometry(this.size * 1.24, 18 + r * 16), materials.road);
-      road.rotation.x = -Math.PI / 2;
-      road.rotation.z = (r - 0.5) * 0.55;
-      road.position.y = 0.22;
-      road.receiveShadow = true;
-      this.registerDestructible(road, group, this.size * 0.65, { solid: false });
-      group.add(road);
-    }
-  }
-
   addScenery(group, cx, cz) {
     const hasDetentionBuilding = detentionBuildingSites.has(`${cx},${cz}`);
+    const hasPrisonCity = cx === prisonCitySite.chunkX && cz === prisonCitySite.chunkZ;
     const count = 8 + Math.floor(seededRandom(cx * 11 - cz * 29) * 8);
     for (let i = 0; i < count; i++) {
       const seed = cx * 10000 + cz * 101 + i * 37;
       const x = (seededRandom(seed) - 0.5) * this.size * 0.9;
       const z = (seededRandom(seed + 9) - 0.5) * this.size * 0.9;
       if (hasDetentionBuilding && Math.hypot(x, z) < 42) continue;
+      if (hasPrisonCity && Math.hypot(x - prisonCitySite.localX, z - prisonCitySite.localZ) < 108) continue;
       const wx = group.position.x + x;
       const wz = group.position.z + z;
       const y = this.getHeightAt(wx, wz);
@@ -1255,15 +1249,19 @@ class TerrainManager {
       if (this.registerDestructible(building, group, 22, { preciseHit: true })) group.add(building);
     }
 
-    if (cx === 1 && cz === 1) {
-      const prison = createPrisonBuilding();
-      const x = 0;
-      const z = 0;
-      const worldX = group.position.x + x;
-      const worldZ = group.position.z + z;
-      prison.position.set(x, this.getHeightAt(worldX, worldZ), z);
-      prison.rotation.y = Math.atan2(worldX, worldZ);
-      if (this.registerDestructible(prison, group, 35, { indestructible: true })) group.add(prison);
+    if (hasPrisonCity) {
+      const city = createPrisonCity();
+      const groundY = this.getHeightAt(prisonCitySite.worldX, prisonCitySite.worldZ);
+      city.group.position.set(prisonCitySite.localX, groundY, prisonCitySite.localZ);
+      group.add(city.group);
+      for (const collider of city.colliders) {
+        collider.position.x += prisonCitySite.localX;
+        collider.position.y += groundY;
+        collider.position.z += prisonCitySite.localZ;
+        if (this.registerDestructible(collider, group, collider.userData.radius, { indestructible: true, ignoreClearZone: true, preciseHit: true })) {
+          group.add(collider);
+        }
+      }
     }
 
     if (!hasDetentionBuilding && Math.abs(cx) + Math.abs(cz) > 2 && seededRandom(cx * 7 + cz * 13) > 0.93) {
@@ -1291,7 +1289,7 @@ class TerrainManager {
       chunk.position.y + object.position.y,
       chunk.position.z + object.position.z
     );
-    if (options.solid !== false && this.overlapsClearZone(position.x, position.z, radius)) {
+    if (!options.ignoreClearZone && options.solid !== false && this.overlapsClearZone(position.x, position.z, radius)) {
       disposeObject(object);
       return false;
     }
@@ -1891,6 +1889,17 @@ class EnemyManager {
     audio.playDroneFire();
   }
 
+  firePrisonerShot(position, direction) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 7, 5),
+      new THREE.MeshBasicMaterial({ color: 0xffb13b })
+    );
+    mesh.position.copy(position);
+    this.parent.add(mesh);
+    this.hostileShots.push({ mesh, velocity: direction.multiplyScalar(48), life: 6, damage: 2, radius: 0.3 });
+    audio.playEnemyFire();
+  }
+
   updateHostileShots(delta, tankRef) {
     for (let i = this.hostileShots.length - 1; i >= 0; i--) {
       const shell = this.hostileShots[i];
@@ -1907,6 +1916,66 @@ class EnemyManager {
         this.parent.remove(shell.mesh);
         disposeObject(shell.mesh);
         this.hostileShots.splice(i, 1);
+      }
+    }
+  }
+}
+
+class PrisonEscapeManager {
+  constructor(parent, enemyManager) {
+    this.parent = parent;
+    this.enemyManager = enemyManager;
+    this.prisoners = [];
+    this.breachPosition = new THREE.Vector3(prisonCitySite.worldX + 52, 0, prisonCitySite.worldZ + 88);
+    for (let i = 0; i < 10; i++) this.spawn(i);
+  }
+
+  spawn(index) {
+    const group = new THREE.Group();
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.9, 0.7), materials.prisonerUniform);
+    torso.position.y = 2.65;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.46, 10, 7), materials.prisonerSkin);
+    head.position.y = 4.05;
+    group.add(torso, head);
+    for (const x of [-0.34, 0.34]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.8, 0.38), materials.prisonerUniform);
+      leg.position.set(x, 0.9, 0);
+      group.add(leg);
+    }
+    const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 2.25), materials.darkMetal);
+    rifle.position.set(0.62, 2.75, -0.75);
+    rifle.rotation.x = -0.08;
+    group.add(rifle);
+    const row = Math.floor(index / 3);
+    group.position.set(
+      this.breachPosition.x + (index % 3 - 1) * 3.2,
+      0,
+      this.breachPosition.z - row * 6
+    );
+    group.position.y = terrain.getHeightAt(group.position.x, group.position.z);
+    this.parent.add(group);
+    this.prisoners.push({ group, rifle, index, speed: 1.8 + (index % 4) * 0.28, fireTimer: 3 + index * 2.7, stride: index * 0.8 });
+  }
+
+  update(delta, tankRef) {
+    for (const prisoner of this.prisoners) {
+      const { group } = prisoner;
+      group.position.z += prisoner.speed * delta;
+      group.position.x += Math.sin(performance.now() * 0.0016 + prisoner.stride) * delta * 0.45;
+      if (group.position.z > this.breachPosition.z + 115) {
+        group.position.z = this.breachPosition.z + (prisoner.index % 4) * 5;
+        group.position.x = this.breachPosition.x + (prisoner.index % 3 - 1) * 3.2;
+      }
+      group.position.y = terrain.getHeightAt(group.position.x, group.position.z);
+      const toTank = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)).sub(group.position);
+      const distance = toTank.length();
+      group.rotation.y = Math.atan2(-toTank.x, -toTank.z);
+      prisoner.fireTimer -= delta;
+      if (distance < 250 && prisoner.fireTimer <= 0) {
+        prisoner.fireTimer = 30;
+        const muzzle = prisoner.rifle.localToWorld(new THREE.Vector3(0, 0, -1.25));
+        const direction = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.2, 0)).sub(muzzle).normalize();
+        this.enemyManager.firePrisonerShot(muzzle, direction);
       }
     }
   }
@@ -3502,6 +3571,7 @@ tank = new Tank(scene);
 tacticalGrid = new TacticalGrid(scene, terrain);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
+prisonEscapees = new PrisonEscapeManager(scene, enemies);
 skyDrones = new SkyDroneManager(scene);
 refuelTowers = new RefuelTowerManager(scene, terrain);
 missileTowers = new MissileTowerManager(scene, terrain);
@@ -3527,6 +3597,7 @@ function animate() {
     terrain.update(tank.group.position);
     tacticalGrid.update(delta, tank);
     enemies.update(delta, tank);
+    prisonEscapees.update(delta, tank);
     skyDrones.update(delta, tank);
     refuelTowers.update(delta, tank);
     missileTowers.update(delta, tank);
@@ -3542,6 +3613,7 @@ function animate() {
     updateImpactEffects(delta);
     updatePyramidBeacons(delta);
     updateDroneOrbs(delta);
+    updatePrisonBreachEffects(delta);
   }
 
   renderer.render(scene, camera);
@@ -4053,6 +4125,30 @@ function updatePyramidBeacons(delta) {
   }
 }
 
+function updatePrisonBreachEffects(delta) {
+  for (let i = prisonBreachEffects.length - 1; i >= 0; i--) {
+    const effect = prisonBreachEffects[i];
+    if (!effect.root.parent || !effect.root.parent.parent) {
+      prisonBreachEffects.splice(i, 1);
+      continue;
+    }
+    effect.time += delta;
+    for (const flame of effect.flames) {
+      const flicker = 0.78 + Math.sin(effect.time * 11 + flame.phase) * 0.18 + Math.sin(effect.time * 17 + flame.phase) * 0.08;
+      flame.mesh.scale.set(0.9 + flicker * 0.18, flicker, 0.9 + flicker * 0.12);
+      flame.mesh.position.y = flame.baseY + Math.sin(effect.time * 8 + flame.phase) * 0.35;
+    }
+    for (const plume of effect.smoke) {
+      const cycle = (effect.time * 0.065 + plume.phase) % 1;
+      plume.mesh.position.y = plume.baseY + cycle * 13;
+      plume.mesh.position.x += Math.sin(effect.time * 0.7 + plume.phase * 8) * delta * 0.42;
+      plume.mesh.material.opacity = Math.sin(cycle * Math.PI) * 0.3;
+      const scale = 0.72 + cycle * 0.75;
+      plume.mesh.scale.set(scale, scale * 1.35, scale);
+    }
+  }
+}
+
 function createRock(seed) {
   const group = new THREE.Group();
   const count = 1 + Math.floor(seededRandom(seed) * 4);
@@ -4312,6 +4408,129 @@ function createDetentionBlock() {
 
   group.userData.landmark = "detention-block";
   return group;
+}
+
+function createPrisonCity() {
+  const group = new THREE.Group();
+  const colliders = [];
+  const stone = materials.detentionConcrete;
+  const wallDepth = 5;
+  const wallHeight = 17;
+
+  const addBlock = (width, height, depth, x, y, z, material = stone, parent = group) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    return mesh;
+  };
+  const addCollider = (width, height, depth, x, y, z) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(width, height, depth),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    mesh.position.set(x, y, z);
+    mesh.userData.radius = Math.hypot(width, depth) * 0.5;
+    colliders.push(mesh);
+  };
+  const addWallRun = (width, x, z, rotate = false) => {
+    addBlock(rotate ? wallDepth : width, wallHeight, rotate ? width : wallDepth, x, wallHeight * 0.5, z);
+    addBlock(rotate ? wallDepth + 1.2 : width + 1.2, 1.1, rotate ? width + 1.2 : wallDepth + 1.2, x, wallHeight + 0.55, z, materials.architectureVent);
+    addCollider(rotate ? wallDepth : width, wallHeight, rotate ? width : wallDepth, x, wallHeight * 0.5, z);
+  };
+
+  addWallRun(176, 0, -88);
+  addWallRun(176, -88, 0, true);
+  addWallRun(176, 88, 0, true);
+  addWallRun(66, -55, 88);
+  addWallRun(18, 31, 88);
+  addWallRun(24, 76, 88);
+
+  for (const x of [-88, 88]) {
+    for (const z of [-88, 88]) {
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(9, 11, 27, 8), stone);
+      tower.position.set(x, 13.5, z);
+      tower.castShadow = true;
+      group.add(tower);
+      addBlock(20, 2, 20, x, 27, z, materials.architectureVent);
+      addCollider(19, 27, 19, x, 13.5, z);
+    }
+  }
+
+  for (const x of [-13, 13]) {
+    addBlock(9, 30, 11, x, 15, 89, stone);
+    addBlock(11, 2.2, 13, x, 29.4, 89, materials.architectureVent);
+    addCollider(9, 30, 11, x, 15, 89);
+  }
+  addBlock(17, 7, 7, 0, 25.5, 89, stone);
+  addBlock(19, 1.4, 8, 0, 29.3, 89, materials.architectureVent);
+  addCollider(17, 7, 7, 0, 25.5, 89);
+  const gateDoor = addBlock(16, 17, 1.3, 0, 8.5, 91.7, materials.darkMetal);
+  for (const x of [-5.6, -2.8, 0, 2.8, 5.6]) addBlock(0.3, 15, 0.35, x, 8.5, 92.5, materials.pyramidTrim);
+  gateDoor.castShadow = true;
+
+  const keep = createPrisonBuilding();
+  keep.scale.setScalar(1.35);
+  keep.position.set(0, 0, 25);
+  keep.rotation.y = Math.PI;
+  group.add(keep);
+  addCollider(76, 58, 46, 0, 29, 25);
+
+  const cellBlockSites = [
+    [-52, -35, Math.PI / 2], [52, -35, -Math.PI / 2],
+    [-52, 35, Math.PI / 2], [52, 35, -Math.PI / 2]
+  ];
+  for (const [x, z, rotation] of cellBlockSites) {
+    const block = createDetentionBlock();
+    block.scale.setScalar(0.72);
+    block.position.set(x, 0, z);
+    block.rotation.y = rotation;
+    group.add(block);
+    addCollider(28, 25, 18, x, 12.5, z);
+  }
+
+  for (const x of [-68, -34, 34, 68]) {
+    addBlock(18, 1.1, 36, x, 0.55, 1, materials.architectureVent);
+    for (const z of [-14, 14]) {
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 7), materials.redEye);
+      lamp.position.set(x, 5.5, z);
+      group.add(lamp);
+      addBlock(0.22, 5, 0.22, x, 2.5, z, materials.darkMetal);
+    }
+  }
+
+  const breachX = 52;
+  const breachZ = 88;
+  for (let i = 0; i < 18; i++) {
+    const size = 1.2 + seededRandom(8100 + i) * 3.1;
+    const rubble = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stone);
+    rubble.position.set(breachX + (seededRandom(8200 + i) - 0.5) * 24, size * 0.35, breachZ + (seededRandom(8300 + i) - 0.5) * 15);
+    rubble.rotation.set(seededRandom(8400 + i) * Math.PI, seededRandom(8500 + i) * Math.PI, seededRandom(8600 + i) * Math.PI);
+    group.add(rubble);
+  }
+
+  const flames = [];
+  for (let i = 0; i < 5; i++) {
+    const flameMaterial = new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffb52e : 0xff4818, transparent: true, opacity: 0.82 });
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(1.5 + i * 0.22, 6 + i * 0.8, 8), flameMaterial);
+    flame.position.set(breachX - 5 + i * 2.4, 2.8 + i * 0.25, breachZ + 1.5);
+    group.add(flame);
+    flames.push({ mesh: flame, baseY: flame.position.y, phase: i * 1.17 });
+  }
+  const smoke = [];
+  for (let i = 0; i < 8; i++) {
+    const smokeMaterial = new THREE.MeshBasicMaterial({ color: 0x171214, transparent: true, opacity: 0.3, depthWrite: false });
+    const plume = new THREE.Mesh(new THREE.SphereGeometry(3.8 + i * 0.42, 9, 7), smokeMaterial);
+    plume.position.set(breachX + (i % 2 ? 2.2 : -2.2), 6 + i * 4.2, breachZ + 1.2);
+    plume.scale.set(1, 1.35, 1);
+    group.add(plume);
+    smoke.push({ mesh: plume, baseY: plume.position.y, phase: i / 8 });
+  }
+  prisonBreachEffects.push({ root: group, flames, smoke, time: 0 });
+
+  group.userData.landmark = "prison-city";
+  return { group, colliders };
 }
 
 function createPrisonBuilding() {
