@@ -78,11 +78,11 @@ renderer.shadowMap.enabled = CONFIG.enableShadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.62;
+renderer.toneMappingExposure = 0.66;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x060913);
-scene.fog = new THREE.FogExp2(0x111827, 0.0052);
+scene.background = new THREE.Color(0x030504);
+scene.fog = new THREE.FogExp2(0x17110d, 0.0049);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2600);
 const clock = new THREE.Clock();
@@ -518,45 +518,51 @@ function drawPlayCoin() {
 drawPlayCoin();
 
 function initLights() {
-  const hemi = new THREE.HemisphereLight(0x6684ad, 0x05070d, 0.62);
+  const hemi = new THREE.HemisphereLight(0x6f6254, 0x030403, 0.48);
   scene.add(hemi);
 
-  const moon = new THREE.DirectionalLight(0x9fc7ff, 1.55);
-  moon.position.set(-220, 300, 140);
-  moon.castShadow = CONFIG.enableShadows;
-  moon.shadow.mapSize.set(1024, 1024);
-  moon.shadow.camera.left = -220;
-  moon.shadow.camera.right = 220;
-  moon.shadow.camera.top = 220;
-  moon.shadow.camera.bottom = -220;
-  scene.add(moon);
+  const twilightKey = new THREE.DirectionalLight(0xffc387, 1.48);
+  twilightKey.position.set(70, 285, -420);
+  twilightKey.castShadow = CONFIG.enableShadows;
+  twilightKey.shadow.mapSize.set(1024, 1024);
+  twilightKey.shadow.camera.left = -220;
+  twilightKey.shadow.camera.right = 220;
+  twilightKey.shadow.camera.top = 220;
+  twilightKey.shadow.camera.bottom = -220;
+  scene.add(twilightKey);
 
-  const horizonFill = new THREE.DirectionalLight(0x7a3448, 0.32);
-  horizonFill.position.set(260, 70, -300);
+  const horizonFill = new THREE.DirectionalLight(0x8b4326, 0.24);
+  horizonFill.position.set(-280, 65, 260);
   scene.add(horizonFill);
 }
 
 function createSky() {
-  const skyGeo = new THREE.SphereGeometry(1500, 32, 16);
-  const panorama = new THREE.TextureLoader().load("assets/mountain-panorama.png?v=panorama-visible-1");
+  const vault = new THREE.Mesh(
+    new THREE.SphereGeometry(1490, 24, 12),
+    new THREE.MeshBasicMaterial({ color: 0x020302, side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false })
+  );
+  scene.add(vault);
+
+  const panorama = new THREE.TextureLoader().load("assets/twilight-environment-2048.jpg?v=twilight-environment-3");
   panorama.encoding = THREE.sRGBEncoding;
   panorama.wrapS = THREE.RepeatWrapping;
-  panorama.minFilter = THREE.LinearFilter;
+  panorama.minFilter = THREE.LinearMipmapLinearFilter;
+  panorama.magFilter = THREE.LinearFilter;
+  panorama.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const skyMat = new THREE.MeshBasicMaterial({
     map: panorama,
-    color: 0x141a2c,
+    color: 0xc9b59e,
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
     toneMapped: false
   });
-  scene.add(new THREE.Mesh(skyGeo, skyMat));
+  const horizon = new THREE.Mesh(new THREE.CylinderGeometry(1280, 1280, 960, 72, 1, true), skyMat);
+  horizon.position.y = 300;
+  scene.add(horizon);
 
-  createDroneOrb(-280, 170, -520, 66, true);
-  createDroneOrb(360, 110, -430, 42, false);
   createCloudBand(-360, 72, -520, 260);
   createCloudBand(180, 64, -650, 330);
-  createMountains();
 }
 
 function createDroneOrb(x, y, z, radius, ringed) {
@@ -1279,12 +1285,12 @@ function createPrisonDistrict(cx, cz, terrainManager, reserveCenter = false) {
     for (let row = 0; row < lightRows; row++) {
       const lightY = 8 + row * 11;
       for (const offsetX of [-width * 0.28, 0, width * 0.28]) {
-        const lightList = (row + i + Math.abs(cx + cz)) % 3 === 0 ? matrices.lightWarm : matrices.lightCool;
+        const lightList = (row + i + Math.abs(cx + cz)) % 4 === 0 ? matrices.lightCool : matrices.lightWarm;
         addInstance(lightList, x + offsetX, lightY, z - depth * 0.5 - 0.68, 4.5, 0.42, 0.28);
         addInstance(lightList, x + offsetX, lightY, z + depth * 0.5 + 0.68, 4.5, 0.42, 0.28);
       }
       for (const offsetZ of [-depth * 0.25, depth * 0.25]) {
-        const lightList = (row + i + Math.abs(cx - cz)) % 4 === 0 ? matrices.lightWarm : matrices.lightCool;
+        const lightList = (row + i + Math.abs(cx - cz)) % 5 === 0 ? matrices.lightCool : matrices.lightWarm;
         addInstance(lightList, x - width * 0.5 - 0.68, lightY, z + offsetZ, 0.28, 0.42, 4.5);
         addInstance(lightList, x + width * 0.5 + 0.68, lightY, z + offsetZ, 0.28, 0.42, 4.5);
       }
