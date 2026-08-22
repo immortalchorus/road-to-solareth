@@ -1014,6 +1014,10 @@ class Tank {
   getMuzzleWorldPosition() {
     return this.cannon.localToWorld(new THREE.Vector3(0, 0, -16.72));
   }
+
+  getCannonCollisionStart() {
+    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -1.1));
+  }
 }
 
 class TerrainManager {
@@ -2346,7 +2350,7 @@ class ProjectileManager {
     this.bombCooldown -= delta;
     if (keys.fireHeld && this.cooldown <= 0) {
       if (ammo > 0) {
-        this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld);
+        this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld, tankRef.getCannonCollisionStart());
       } else {
         hud.status.textContent = "Ammo depleted. Find a resupply tower.";
         statusTimer = 2.2;
@@ -2358,7 +2362,8 @@ class ProjectileManager {
       const shot = this.projectiles[i];
       const collisionRadius = shot.kind === "missile" ? 10 : shot.radius;
       shot.life -= delta;
-      shot.previousPosition.copy(shot.mesh.position);
+      if (shot.collisionStartPending) shot.collisionStartPending = false;
+      else shot.previousPosition.copy(shot.mesh.position);
       if (shot.kind === "bomb") {
         shot.velocity.y -= CONFIG.bombGravity * delta;
       } else if (shot.kind === "missile") {
@@ -2491,7 +2496,7 @@ class ProjectileManager {
     }
   }
 
-  fire(position, direction, skyDroneManager, homingEnabled) {
+  fire(position, direction, skyDroneManager, homingEnabled, collisionStart = position) {
     if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
     const group = new THREE.Group();
     const target = homingEnabled ? skyDroneManager.acquireHomingTarget(position, direction) : null;
@@ -2515,7 +2520,8 @@ class ProjectileManager {
       homingTarget: target,
       bounces: 0,
       life: target ? CONFIG.homingLife : 2.8,
-      previousPosition: position.clone(),
+      previousPosition: collisionStart.clone(),
+      collisionStartPending: true,
       origin: position.clone(),
       radius: CONFIG.projectileCollisionRadius
     });
