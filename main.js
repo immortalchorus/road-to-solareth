@@ -719,11 +719,11 @@ class Tank {
       pod.position.set(x, 1.58, z);
 
       const turbineRingMaterial = materials.tankMechanics.clone();
-      turbineRingMaterial.color.setHex(0x3d4b56);
-      turbineRingMaterial.metalness = 0.76;
-      turbineRingMaterial.roughness = 0.38;
-      turbineRingMaterial.emissive.setHex(0x102834);
-      turbineRingMaterial.emissiveIntensity = 0.34;
+      turbineRingMaterial.color.setHex(0x718795);
+      turbineRingMaterial.metalness = 0.84;
+      turbineRingMaterial.roughness = 0.3;
+      turbineRingMaterial.emissive.setHex(0x173a48);
+      turbineRingMaterial.emissiveIntensity = 0.58;
       const outerRing = new THREE.Mesh(new THREE.TorusGeometry(1.72, 0.48, 10, 28), turbineRingMaterial);
       outerRing.rotation.x = Math.PI / 2;
       outerRing.castShadow = true;
@@ -976,7 +976,6 @@ class Tank {
     this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
     this.cannon.rotation.x = this.turretPitch;
     this.missileRack.rotation.x = this.turretPitch;
-    this.updateBeacons(delta);
     this.updateFuelTint(fuel / CONFIG.maxFuel);
 
     const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
@@ -1027,11 +1026,13 @@ class Tank {
   }
 
   updateBeacons(musicPulse) {
-    const beat = Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 1.35);
+    const beat = Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 1.18);
     for (const { light, halo } of this.beacons) {
-      light.material.opacity = 0.3 + beat * 0.7;
-      halo.material.opacity = 0.06 + beat * 0.43;
-      halo.scale.setScalar(0.84 + beat * 0.68);
+      light.material.opacity = 0.22 + beat * 0.78;
+      light.material.color.setRGB(1, 0.06 + beat * 0.58, 0.04 + beat * 0.16);
+      light.scale.setScalar(0.88 + beat * 0.62);
+      halo.material.opacity = 0.04 + beat * 0.58;
+      halo.scale.setScalar(0.72 + beat * 1.18);
     }
   }
 
@@ -2809,11 +2810,9 @@ class AudioManager {
     this.commsVolume = commsVolume;
     this.lastCommsAt = -Infinity;
     this.muted = false;
-    this.musicSource = null;
-    this.musicAnalyser = null;
-    this.musicAnalysisOutput = null;
-    this.musicFrequencyData = null;
-    this.musicEnergyAverage = 0.08;
+    this.beatEnvelope = null;
+    this.beatEnvelopeStep = 0.04;
+    this.beatEnvelopePromise = null;
     this.musicPulse = 0;
     this.playlist = [
       { title: "Iron Circuit", src: "assets/iron-circuit.mp3" },
@@ -2827,8 +2826,6 @@ class AudioManager {
     this.music.id = "soundtrack";
     this.music.setAttribute("aria-hidden", "true");
     this.music.preload = "auto";
-    this.analysisMusic = new Audio(this.currentTrack.src);
-    this.analysisMusic.preload = "auto";
     this.musicAmmoBalance = Number(musicAmmoBalanceControl.value) / 100;
     this.music.volume = 0.58;
     this.setMusicAmmoBalance(this.musicAmmoBalance);
@@ -2881,11 +2878,7 @@ class AudioManager {
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") await ctx.resume();
     this.music.currentTime = 0;
-    this.analysisMusic.currentTime = 0;
     this.setMusicAmmoBalance(this.musicAmmoBalance);
-    this.analysisMusic.play().catch(() => {
-      this.musicPulse = 0;
-    });
     await this.music.play().catch(() => {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
@@ -2896,12 +2889,10 @@ class AudioManager {
   armAudio() {
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") ctx.resume();
+    this.prepareBeatEnvelope();
     this.music.volume = 0;
     this.music.play().catch(() => {
       // start() makes the normal audible playback attempt after the coin sequence.
-    });
-    this.analysisMusic.play().catch(() => {
-      // Beat detection is optional; native soundtrack playback remains independent.
     });
   }
 
@@ -2950,7 +2941,6 @@ class AudioManager {
   pause() {
     if (!this.started) return;
     this.music.pause();
-    this.analysisMusic.pause();
     if (this.context && this.context.state === "running") this.context.suspend();
     if ("speechSynthesis" in window) window.speechSynthesis.pause();
   }
@@ -2963,14 +2953,10 @@ class AudioManager {
       hud.status.textContent = "Soundtrack playback is waiting for browser audio permission.";
       statusTimer = 3;
     });
-    this.analysisMusic.play().catch(() => {
-      this.musicPulse = 0;
-    });
   }
 
   stopMusic() {
     this.music.pause();
-    this.analysisMusic.pause();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
@@ -3009,26 +2995,60 @@ class AudioManager {
   }
 
   updateMusicPulse(delta) {
-    if (!this.musicAnalyser || !this.musicFrequencyData || this.analysisMusic.paused) {
+    if (!this.beatEnvelope || this.music.paused) {
       this.musicPulse = moveToward(this.musicPulse, 0, delta * 3.5);
       return;
     }
-    if (Math.abs(this.analysisMusic.currentTime - this.music.currentTime) > 0.12) {
-      this.analysisMusic.currentTime = this.music.currentTime;
-    }
-    this.musicAnalyser.getByteFrequencyData(this.musicFrequencyData);
-    const binWidth = this.context.sampleRate / this.musicAnalyser.fftSize;
-    const lowBin = Math.max(1, Math.floor(45 / binWidth));
-    const highBin = Math.min(this.musicFrequencyData.length - 1, Math.ceil(190 / binWidth));
-    let total = 0;
-    for (let i = lowBin; i <= highBin; i++) total += this.musicFrequencyData[i];
-    const energy = total / Math.max(1, highBin - lowBin + 1) / 255;
-    const baselineRate = energy > this.musicEnergyAverage ? 0.7 : 1.8;
-    this.musicEnergyAverage += (energy - this.musicEnergyAverage) * Math.min(1, delta * baselineRate);
-    const transient = Math.max(0, energy - this.musicEnergyAverage * 1.08);
-    const detectedPulse = THREE.MathUtils.clamp(energy * 0.5 + transient * 4.8, 0, 1);
+    const position = this.music.currentTime / this.beatEnvelopeStep;
+    const index = Math.min(this.beatEnvelope.length - 1, Math.max(0, Math.floor(position)));
+    const nextIndex = Math.min(this.beatEnvelope.length - 1, index + 1);
+    const detectedPulse = THREE.MathUtils.lerp(this.beatEnvelope[index], this.beatEnvelope[nextIndex], position - index);
     const response = detectedPulse > this.musicPulse ? 16 : 5.2;
     this.musicPulse += (detectedPulse - this.musicPulse) * Math.min(1, delta * response);
+  }
+
+  prepareBeatEnvelope() {
+    if (this.beatEnvelopePromise || !this.context) return this.beatEnvelopePromise;
+    this.beatEnvelopePromise = fetch(this.currentTrack.src)
+      .then(response => {
+        if (!response.ok) throw new Error("Unable to load soundtrack analysis data");
+        return response.arrayBuffer();
+      })
+      .then(data => this.context.decodeAudioData(data))
+      .then(buffer => {
+        const samples = buffer.getChannelData(0);
+        const windowSize = Math.max(512, Math.floor(buffer.sampleRate * 0.04));
+        const energies = [];
+        const lowPassMix = 1 - Math.exp(-2 * Math.PI * 190 / buffer.sampleRate);
+        let lowPass = 0;
+        for (let start = 0; start < samples.length; start += windowSize) {
+          let sum = 0;
+          const end = Math.min(samples.length, start + windowSize);
+          for (let i = start; i < end; i += 2) {
+            lowPass += (samples[i] - lowPass) * lowPassMix;
+            sum += lowPass * lowPass;
+          }
+          energies.push(Math.sqrt(sum / Math.max(1, Math.ceil((end - start) / 2))));
+        }
+        const sorted = energies.slice().sort((a, b) => a - b);
+        const floor = sorted[Math.floor(sorted.length * 0.18)] || 0;
+        const ceiling = sorted[Math.floor(sorted.length * 0.92)] || floor + 0.001;
+        const range = Math.max(0.0001, ceiling - floor);
+        const envelope = new Float32Array(energies.length);
+        let previous = 0;
+        for (let i = 0; i < energies.length; i++) {
+          const level = THREE.MathUtils.clamp((energies[i] - floor) / range, 0, 1);
+          const onset = Math.max(0, level - previous);
+          envelope[i] = THREE.MathUtils.clamp(Math.pow(level, 1.8) * 0.38 + onset * 4.6, 0, 1);
+          previous += (level - previous) * 0.42;
+        }
+        this.beatEnvelopeStep = windowSize / buffer.sampleRate;
+        this.beatEnvelope = envelope;
+      })
+      .catch(() => {
+        this.beatEnvelope = null;
+      });
+    return this.beatEnvelopePromise;
   }
 
   updateRotor(tankRef) {
@@ -3305,21 +3325,6 @@ class AudioManager {
     this.ammoOutput.gain.value = Math.SQRT2 * Math.sin(this.musicAmmoBalance * Math.PI * 0.5);
     this.ammoOutput.connect(this.master);
     this.master.connect(limiter).connect(this.context.destination);
-    try {
-      this.musicAnalyser = this.context.createAnalyser();
-      this.musicAnalyser.fftSize = 1024;
-      this.musicAnalyser.smoothingTimeConstant = 0.66;
-      this.musicFrequencyData = new Uint8Array(this.musicAnalyser.frequencyBinCount);
-      this.musicSource = this.context.createMediaElementSource(this.analysisMusic);
-      this.musicAnalysisOutput = this.context.createGain();
-      this.musicAnalysisOutput.gain.value = 0;
-      this.musicSource.connect(this.musicAnalyser).connect(this.musicAnalysisOutput).connect(this.context.destination);
-    } catch (_) {
-      this.musicSource = null;
-      this.musicAnalyser = null;
-      this.musicFrequencyData = null;
-      this.musicAnalysisOutput = null;
-    }
     return this.context;
   }
 
