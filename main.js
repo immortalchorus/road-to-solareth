@@ -1087,6 +1087,41 @@ class Tank {
     ];
     for (const center of turbineCenters) this.addBeacon(model, center, 1 / modelScale);
 
+    const spotlightOrigin = new THREE.Vector3(0, 0.72, -6.35);
+    const spotlightDirection = new THREE.Vector3(0, -0.5, -Math.sqrt(3) * 0.5).normalize();
+    const spotlightTarget = new THREE.Object3D();
+    spotlightTarget.position.copy(spotlightOrigin).addScaledVector(spotlightDirection, 42);
+    const spotlight = new THREE.SpotLight(
+      0xd8f5ff,
+      24,
+      125,
+      THREE.MathUtils.degToRad(18),
+      0.58,
+      2
+    );
+    spotlight.position.copy(spotlightOrigin);
+    spotlight.target = spotlightTarget;
+    this.group.add(spotlight, spotlightTarget);
+
+    const beamLength = 42;
+    const beamRadius = Math.tan(THREE.MathUtils.degToRad(18)) * beamLength;
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, beamRadius, beamLength, 20, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xbceeff,
+        transparent: true,
+        opacity: 0.032,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      })
+    );
+    beam.position.copy(spotlightOrigin).addScaledVector(spotlightDirection, beamLength * 0.5);
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), spotlightDirection.clone().negate());
+    this.group.add(beam);
+    this.playerSpotlight = spotlight;
+
     this.legacyVisuals.forEach(child => { child.visible = false; });
     this.missileSlots = this.missileSlots.filter(missile => missile.parent === missileRack);
     this.group.add(model);
@@ -1212,7 +1247,7 @@ class Tank {
   addBeacon(parent, position, visualScale = 1) {
     const light = new THREE.Mesh(
       new THREE.SphereGeometry(0.3, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1, toneMapped: false, blending: THREE.AdditiveBlending })
+      new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 0.64, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })
     );
     light.position.copy(position);
     light.scale.setScalar(visualScale);
@@ -1233,7 +1268,7 @@ class Tank {
   updateBeacons(musicPulse) {
     const beat = THREE.MathUtils.clamp(Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 0.58) * 1.35, 0, 1);
     for (const { light, halo, cast, visualScale = 1 } of this.beacons) {
-      light.material.opacity = 0.72 + beat * 0.28;
+      light.material.opacity = 0.34 + beat * 0.32;
       light.material.color.setRGB(1, 0.08 + beat * 0.92, 0.03 + beat * 0.68);
       light.scale.setScalar((1.18 + beat * 0.625) * visualScale);
       halo.material.opacity = 0.24 + beat * 0.76;
