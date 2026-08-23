@@ -1086,6 +1086,7 @@ class Tank {
       new THREE.Vector3(2.54, 0.14, 1.99)
     ];
     for (const center of turbineCenters) this.addBeacon(model, center, 1 / modelScale);
+    this.installPropulsionEnergy(turbineCenters, modelScale, model.position.y);
 
     const spotlightOrigin = new THREE.Vector3(0, 0.72, -6.35);
     const spotlightDirection = new THREE.Vector3(0, -0.5, -Math.sqrt(3) * 0.5).normalize();
@@ -1136,6 +1137,133 @@ class Tank {
       if (child.isMesh && child.material === materials.playerChrome) child.material = chrome;
     });
     this.paintMaterials = [chrome];
+  }
+
+  installPropulsionEnergy(turbineCenters, modelScale, modelOffsetY) {
+    this.energyTime = 0;
+    this.turbineEnergy = [];
+    const jetStartY = -1.44 * modelScale + modelOffsetY + 0.06;
+    for (let jetIndex = 0; jetIndex < turbineCenters.length; jetIndex++) {
+      const center = turbineCenters[jetIndex];
+      const group = new THREE.Group();
+      group.position.set(center.x * modelScale, jetStartY, center.z * modelScale);
+
+      const outerMaterial = new THREE.MeshBasicMaterial({
+        color: 0x168dff,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+      const innerMaterial = new THREE.MeshBasicMaterial({
+        color: 0xa8f7ff,
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+      const outer = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.1, 5.8, 16, 1, true), outerMaterial);
+      outer.position.y = -2.9;
+      const inner = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.045, 4.15, 12, 1, true), innerMaterial);
+      inner.position.y = -2.075;
+      group.add(outer, inner);
+
+      const particles = [];
+      for (let i = 0; i < 7; i++) {
+        const particle = new THREE.Mesh(
+          new THREE.SphereGeometry(0.09 + (i % 3) * 0.035, 6, 4),
+          new THREE.MeshBasicMaterial({
+            color: i % 2 ? 0x4ddcff : 0xb8fbff,
+            transparent: true,
+            opacity: 0.34,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            toneMapped: false
+          })
+        );
+        particle.userData.phase = (i / 7 + jetIndex * 0.13) % 1;
+        group.add(particle);
+        particles.push(particle);
+      }
+      this.group.add(group);
+      this.turbineEnergy.push({ group, outer, inner, particles, phase: jetIndex * 1.7 });
+    }
+
+    this.rearThrusters = [];
+    for (const x of [-1.35, 1.35]) {
+      const coreMaterial = new THREE.MeshBasicMaterial({
+        color: 0x33bfff,
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+      const haloMaterial = new THREE.MeshBasicMaterial({
+        color: 0x168dff,
+        transparent: true,
+        opacity: 0.12,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false
+      });
+      const core = new THREE.Mesh(new THREE.CircleGeometry(0.48, 20), coreMaterial);
+      const halo = new THREE.Mesh(new THREE.CircleGeometry(0.78, 20), haloMaterial);
+      core.position.set(x, 2.72, 7.08);
+      halo.position.set(x, 2.72, 7.055);
+      this.group.add(halo, core);
+      this.rearThrusters.push({ core, halo });
+    }
+    this.rearThrusterLight = new THREE.PointLight(0x35cfff, 0.7, 19, 2);
+    this.rearThrusterLight.position.set(0, 2.72, 7.55);
+    this.group.add(this.rearThrusterLight);
+    this.propulsionEnergyLevel = 0.24;
+    this.rearEnergyLevel = 0.18;
+  }
+
+  updatePropulsionEnergy(delta, keys, hasFuel) {
+    if (!this.turbineEnergy) return;
+    this.energyTime += delta;
+    const speedRatio = THREE.MathUtils.clamp(Math.abs(this.speed) / this.maxForwardSpeed, 0, 1);
+    const liftRatio = THREE.MathUtils.clamp(Math.abs(this.verticalVelocity) / CONFIG.verticalThrust, 0, 1);
+    const hoverTarget = hasFuel ? 0.28 + speedRatio * 0.26 + liftRatio * 0.46 : 0.05;
+    this.propulsionEnergyLevel = THREE.MathUtils.lerp(this.propulsionEnergyLevel, hoverTarget, 1 - Math.exp(-delta * 5.2));
+
+    for (const jet of this.turbineEnergy) {
+      const flutter = 0.93 + Math.sin(this.energyTime * 17 + jet.phase) * 0.07;
+      const intensity = this.propulsionEnergyLevel * flutter;
+      jet.group.scale.y = 0.62 + intensity * 0.9;
+      jet.outer.material.opacity = 0.08 + intensity * 0.2;
+      jet.inner.material.opacity = 0.16 + intensity * 0.36;
+      for (let i = 0; i < jet.particles.length; i++) {
+        const particle = jet.particles[i];
+        const travel = (particle.userData.phase + this.energyTime * (0.58 + intensity * 0.75)) % 1;
+        const spread = 0.08 + travel * 0.38;
+        particle.position.set(
+          Math.sin(this.energyTime * 9 + i * 2.3 + jet.phase) * spread,
+          -0.35 - travel * 5.1,
+          Math.cos(this.energyTime * 7 + i * 1.9 + jet.phase) * spread
+        );
+        particle.material.opacity = (0.12 + intensity * 0.34) * (1 - travel * 0.68);
+      }
+    }
+
+    const forwardThrust = keys.ArrowUp ? 1 : 0;
+    const rearTarget = hasFuel ? 0.16 + speedRatio * 0.56 + forwardThrust * 0.28 : 0.03;
+    this.rearEnergyLevel = THREE.MathUtils.lerp(this.rearEnergyLevel, rearTarget, 1 - Math.exp(-delta * (rearTarget > this.rearEnergyLevel ? 9 : 3.2)));
+    const heat = THREE.MathUtils.clamp(this.rearEnergyLevel, 0, 1);
+    for (const { core, halo } of this.rearThrusters) {
+      core.material.opacity = 0.22 + heat * 0.55;
+      core.material.color.setRGB(0.12 + heat * 0.75, 0.58 + heat * 0.42, 1);
+      core.scale.setScalar(0.88 + heat * 0.28);
+      halo.material.opacity = 0.06 + heat * 0.28;
+      halo.scale.setScalar(0.9 + heat * 0.58);
+    }
+    this.rearThrusterLight.intensity = 0.45 + heat * 5.8;
   }
 
   update(delta, keys, terrainManager, hasFuel = true) {
@@ -1206,6 +1334,7 @@ class Tank {
     this.cannon.rotation.x = this.turretPitch;
     this.missileRack.rotation.x = this.turretPitch;
     this.updateFuelTint(fuel / CONFIG.maxFuel);
+    this.updatePropulsionEnergy(delta, keys, hasFuel);
 
     const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
     const previousPosition = this.group.position.clone();
