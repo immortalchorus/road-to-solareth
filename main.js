@@ -92,7 +92,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit2", "Numpad2", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -421,6 +421,7 @@ window.addEventListener("keydown", event => {
   if (event.code === "KeyZ") input.heatSeekingHeld = true;
   if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
   if ((event.code === "Digit1" || event.code === "Numpad1") && !event.repeat && bombingScope) bombingScope.toggle();
+  if ((event.code === "Digit2" || event.code === "Numpad2") && !event.repeat && tank) tank.toggleCombatDive();
   if (event.code === "KeyM" && !event.repeat && projectiles && tank) projectiles.launchMissile(tank);
   if (event.code === "F1" && !event.repeat) setMissileRange(20, true);
   if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
@@ -828,6 +829,7 @@ class Tank {
     this.wasAltitudeClimbing = false;
     this.flightPitch = 0;
     this.flightRoll = 0;
+    this.combatDiveEnabled = false;
     this.bumpTimer = 0;
     this.beaconTime = 0;
     this.beacons = [];
@@ -1344,7 +1346,7 @@ class Tank {
     this.rearThrusterLight.intensity = 0.45 + heat * 5.8;
   }
 
-  update(delta, keys, terrainManager, hasFuel = true) {
+  update(delta, keys, terrainManager, hasFuel = true, skipWorldCollision = false) {
     const autopilotMode = Boolean(keys.Autopilot);
     const pitchMode = keys.KeyY;
     const forwardInput = hasFuel && keys.ArrowUp && !pitchMode ? 1 : 0;
@@ -1400,7 +1402,8 @@ class Tank {
       if (hasFuel && keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * steeringScale * delta;
     }
 
-    this.flightPitch = moveToward(this.flightPitch, 0, CONFIG.flightLevelSpeed * delta);
+    const targetFlightPitch = this.combatDiveEnabled ? -THREE.MathUtils.degToRad(12) : 0;
+    this.flightPitch = moveToward(this.flightPitch, targetFlightPitch, CONFIG.flightLevelSpeed * 0.72 * delta);
     const targetRoll = automaticBank ? horizontalInput * CONFIG.maxFlightRoll : 0;
     this.flightRoll = moveToward(this.flightRoll, targetRoll, CONFIG.flightLevelSpeed * delta);
     this.group.rotation.x = this.flightPitch;
@@ -1442,9 +1445,17 @@ class Tank {
       this.group.position.y = targetHoverY;
       this.verticalVelocity = Math.max(0, this.verticalVelocity * 0.18);
     }
-    if (terrainManager.resolveTankCollision(this, previousPosition)) {
+    if (!skipWorldCollision && terrainManager.resolveTankCollision(this, previousPosition)) {
       this.bumpTimer = 0.28;
     }
+  }
+
+  toggleCombatDive() {
+    this.combatDiveEnabled = !this.combatDiveEnabled;
+    hud.status.textContent = this.combatDiveEnabled
+      ? "Close-range attack attitude engaged. Nose down twelve degrees."
+      : "Close-range attack attitude released. Returning to level.";
+    statusTimer = 3;
   }
 
   getTurretWorldDirection() {
@@ -1584,6 +1595,8 @@ class BootcampDuelManager {
     this.opponent = new Tank(scene);
     this.opponent.group.visible = false;
     this.opponentColorized = false;
+    this.skinnedImportedModel = null;
+    this.baseSkinApplied = false;
     this.collisionRadius = CONFIG.tankCollisionRadius;
     this.baseHealth = CONFIG.maxHitPoints;
     this.health = this.baseHealth;
@@ -1654,6 +1667,8 @@ class BootcampDuelManager {
 
   ensureBootcampSkin() {
     if (!this.opponent) return;
+    const importedModel = this.opponent.importedModel || null;
+    if (this.baseSkinApplied && importedModel === this.skinnedImportedModel) return;
     const accent = new THREE.Color(0x6dd4ff);
     const warm = new THREE.Color(0x193548);
     this.opponent.group.traverse(child => {
@@ -1666,6 +1681,8 @@ class BootcampDuelManager {
       child.material.metalness = Math.min(1, child.material.metalness + 0.12);
       child.userData.bootcampTinted = true;
     });
+    this.baseSkinApplied = true;
+    this.skinnedImportedModel = importedModel;
     this.opponentColorized = true;
   }
 
@@ -1683,6 +1700,7 @@ class BootcampDuelManager {
     this.opponent.group.rotation.z = 0;
     this.opponent.speed = 0;
     this.opponent.verticalVelocity = 0;
+    this.opponent.combatDiveEnabled = false;
     this.opponent.altitudeHoldY = null;
     this.opponent.verticalVelocity = 0;
     this.opponent.turret.rotation.set(0, 0, 0);
@@ -1741,7 +1759,7 @@ class BootcampDuelManager {
       ControlRight: false,
       KeyZ: false
     };
-    this.opponent.update(delta, controls, this.terrain, true);
+    this.opponent.update(delta, controls, this.terrain, true, true);
 
     const localTarget = toPlayer.clone().applyQuaternion(this.opponent.group.quaternion.clone().invert());
     const targetYawLocal = Math.atan2(localTarget.x, -localTarget.z);
