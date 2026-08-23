@@ -574,6 +574,53 @@ body {
   text-shadow: 0 0 8px currentColor, 3px 3px 0 #132630;
 }
 
+#bombing-scope {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 11;
+  width: min(330px, calc(100vw - 36px));
+  border: 1px solid rgba(91, 255, 184, 0.72);
+  border-radius: 6px;
+  background: rgba(0, 14, 12, 0.88);
+  box-shadow: 0 0 24px rgba(39, 255, 169, 0.18), inset 0 0 20px rgba(31, 255, 169, 0.08);
+  color: #8effc6;
+  font: 700 10px "Segoe UI", system-ui, sans-serif;
+  pointer-events: none;
+  backdrop-filter: blur(5px);
+}
+
+.bombing-scope-header,
+.bombing-scope-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+}
+
+.bombing-scope-header {
+  border-bottom: 1px solid rgba(91, 255, 184, 0.28);
+}
+
+.bombing-scope-footer {
+  border-top: 1px solid rgba(91, 255, 184, 0.28);
+  color: rgba(142, 255, 198, 0.72);
+  font-size: 9px;
+}
+
+.bombing-scope-header b,
+.bombing-scope-footer b {
+  color: #e2fff0;
+  font-weight: 800;
+}
+
+#bombing-scope-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 15 / 11;
+}
+
 .countdown-label {
   display: block;
   margin-top: 8px;
@@ -927,6 +974,19 @@ body {
     right: 12px;
     min-width: 170px;
     padding: 8px 11px 10px;
+  }
+
+  #bombing-scope {
+    top: 180px;
+    left: 8px;
+    width: min(230px, calc(100vw - 16px));
+  }
+
+  .bombing-scope-header,
+  .bombing-scope-footer {
+    height: 19px;
+    padding: 0 6px;
+    font-size: 8px;
   }
 
   #hit-points {

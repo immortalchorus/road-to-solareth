@@ -92,7 +92,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -126,6 +126,8 @@ const hud = {
   damageFlash: document.querySelector("#damage-flash"),
   runSummary: document.querySelector("#run-summary")
 };
+const bombingScopePanel = document.querySelector("#bombing-scope");
+const bombingScopeCanvas = document.querySelector("#bombing-scope-canvas");
 const splashScreen = document.querySelector("#splash-screen");
 const playButton = document.querySelector("#play-button");
 const playLaunch = document.querySelector("#play-launch");
@@ -149,6 +151,7 @@ let finalScoreForLeaderboard = null;
 let audio = null;
 let missileRange = 55;
 let commsVolume = 0.7;
+let bombingScope = null;
 
 try {
   musicAmmoBalanceControl.value = window.localStorage.getItem("hovertank-music-ammo-balance") || "50";
@@ -417,6 +420,7 @@ window.addEventListener("keydown", event => {
   if (event.code === "ControlLeft" || event.code === "ControlRight") input.fireHeld = true;
   if (event.code === "KeyZ") input.heatSeekingHeld = true;
   if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
+  if ((event.code === "Digit1" || event.code === "Numpad1") && !event.repeat && bombingScope) bombingScope.toggle();
   if (event.code === "KeyM" && !event.repeat && projectiles && tank) projectiles.launchMissile(tank);
   if (event.code === "F1" && !event.repeat) setMissileRange(20, true);
   if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
@@ -5004,6 +5008,204 @@ class MissileTower {
   }
 }
 
+class BombingScope {
+  constructor(panel, canvasElement, terrainManager, playerTank) {
+    this.panel = panel;
+    this.canvas = canvasElement;
+    this.context = canvasElement.getContext("2d");
+    this.terrain = terrainManager;
+    this.player = playerTank;
+    this.range = 80;
+    this.visible = false;
+    this.sweepAngle = 0;
+    this.impactPoint = new THREE.Vector3();
+  }
+
+  toggle() {
+    this.visible = !this.visible;
+    this.panel.hidden = !this.visible;
+    hud.status.textContent = this.visible ? "Bombing sonar online." : "Bombing sonar dismissed.";
+    statusTimer = 2.2;
+    if (this.visible) this.render(0);
+  }
+
+  predictImpact() {
+    const origin = this.player.group.position.clone().add(new THREE.Vector3(0, -1.2, 0));
+    const forward = new THREE.Vector3(-Math.sin(this.player.group.rotation.y), 0, -Math.cos(this.player.group.rotation.y));
+    const horizontalVelocity = forward.multiplyScalar(this.player.speed);
+    let time = 0;
+    let ground = this.terrain.getHeightAt(origin.x, origin.z);
+    for (let iteration = 0; iteration < 4; iteration++) {
+      const height = Math.max(0, origin.y - ground);
+      time = (-3 + Math.sqrt(9 + 2 * CONFIG.bombGravity * height)) / CONFIG.bombGravity;
+      const x = origin.x + horizontalVelocity.x * time;
+      const z = origin.z + horizontalVelocity.z * time;
+      ground = this.terrain.getHeightAt(x, z);
+    }
+    this.impactPoint.set(origin.x + horizontalVelocity.x * time, ground, origin.z + horizontalVelocity.z * time);
+    return this.impactPoint;
+  }
+
+  collectTargets() {
+    const targets = [];
+    const add = (position, type, heading = 0) => {
+      if (position) targets.push({ position, type, heading });
+    };
+    if (enemies) {
+      for (const enemy of enemies.enemies) if (!enemy.dead) add(enemy.group.position, enemy.kind || "hostile", enemy.group.rotation.y);
+      for (const enemyTank of enemies.getGroundTanks()) add(enemyTank.group.position, "tank", enemyTank.group.rotation.y);
+      for (const escort of enemies.escortDrones) if (!escort.dead) add(escort.group.position, "escort", escort.group.rotation.y);
+    }
+    if (prisonEscapees) {
+      for (const prisoner of prisonEscapees.prisoners) if (!prisoner.dead) add(prisoner.group.position, "prisoner", prisoner.group.rotation.y);
+    }
+    if (giantTarantulas) {
+      for (const spider of giantTarantulas.spiders) {
+        if (!spider.dead && spider.worldMode === this.terrain.worldMode) add(spider.root.position, "spider", spider.root.rotation.y);
+      }
+    }
+    if (bootcampManager?.active && bootcampManager.opponent?.group.visible) {
+      add(bootcampManager.opponent.group.position, "rival", bootcampManager.opponent.group.rotation.y);
+    }
+    return targets;
+  }
+
+  worldToScope(position, center, scale, width, height) {
+    const dx = position.x - center.x;
+    const dz = position.z - center.z;
+    const yaw = this.player.group.rotation.y;
+    const localRight = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+    const localForward = -dx * Math.sin(yaw) - dz * Math.cos(yaw);
+    return { x: width * 0.5 + localRight * scale, y: height * 0.5 - localForward * scale };
+  }
+
+  drawTarget(ctx, target, point, scale) {
+    const relativeHeading = target.heading - this.player.group.rotation.y;
+    ctx.save();
+    ctx.translate(point.x, point.y);
+    ctx.rotate(-relativeHeading);
+    ctx.strokeStyle = target.type === "rival" ? "#fff083" : "#76ffb4";
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor = ctx.strokeStyle;
+    ctx.shadowBlur = 7;
+    if (target.type === "tank" || target.type === "rival") {
+      ctx.strokeRect(-7, -10, 14, 20);
+      ctx.beginPath();
+      ctx.arc(0, -1, 4.2, 0, Math.PI * 2);
+      ctx.moveTo(0, -4);
+      ctx.lineTo(0, -14);
+      ctx.stroke();
+    } else if (target.type === "spider") {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 11, 0, 0, Math.PI * 2);
+      for (const side of [-1, 1]) {
+        for (let leg = -1.5; leg <= 1.5; leg++) {
+          ctx.moveTo(side * 5, leg * 4);
+          ctx.lineTo(side * 13, leg * 7);
+        }
+      }
+      ctx.stroke();
+    } else if (target.type === "prisoner") {
+      ctx.beginPath();
+      ctx.arc(0, -4, 2.4, 0, Math.PI * 2);
+      ctx.moveTo(0, -1.5);
+      ctx.lineTo(0, 7);
+      ctx.moveTo(-4, 2);
+      ctx.lineTo(5, 2);
+      ctx.stroke();
+    } else if (target.type === "escort" || target.type === "drone") {
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(8, 7);
+      ctx.lineTo(-8, 7);
+      ctx.closePath();
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(-4, -6, 8, 12);
+      ctx.beginPath();
+      ctx.moveTo(-7, 0);
+      ctx.lineTo(7, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  render(delta) {
+    if (!this.visible || !this.context) return;
+    const ctx = this.context;
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const scale = Math.min(width, height) / (this.range * 2);
+    const center = this.predictImpact();
+    this.sweepAngle = (this.sweepAngle + delta * 1.25) % (Math.PI * 2);
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "rgba(0, 18, 13, 0.96)";
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = "rgba(77, 255, 166, 0.18)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= width; x += width / 10) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+    }
+    for (let y = 0; y <= height; y += height / 8) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+    }
+    ctx.save();
+    ctx.translate(width * 0.5, height * 0.5);
+    for (const radius of [0.25, 0.5, 0.75, 1]) {
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.min(width, height) * 0.5 * radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const sweepRadius = Math.min(width, height) * 0.5;
+    const gradient = ctx.createLinearGradient(0, 0, Math.sin(this.sweepAngle) * sweepRadius, -Math.cos(this.sweepAngle) * sweepRadius);
+    gradient.addColorStop(0, "rgba(101,255,181,0.03)");
+    gradient.addColorStop(1, "rgba(101,255,181,0.48)");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(this.sweepAngle) * sweepRadius, -Math.cos(this.sweepAngle) * sweepRadius);
+    ctx.stroke();
+    ctx.restore();
+
+    for (const target of this.collectTargets()) {
+      const point = this.worldToScope(target.position, center, scale, width, height);
+      if (point.x < -18 || point.x > width + 18 || point.y < -18 || point.y > height + 18) continue;
+      this.drawTarget(ctx, target, point, scale);
+    }
+
+    const playerPoint = this.worldToScope(this.player.group.position, center, scale, width, height);
+    ctx.strokeStyle = "rgba(111, 214, 255, 0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playerPoint.x, playerPoint.y - 8);
+    ctx.lineTo(playerPoint.x + 6, playerPoint.y + 7);
+    ctx.lineTo(playerPoint.x, playerPoint.y + 4);
+    ctx.lineTo(playerPoint.x - 6, playerPoint.y + 7);
+    ctx.closePath();
+    ctx.stroke();
+
+    const cx = width * 0.5;
+    const cy = height * 0.5;
+    ctx.strokeStyle = "#ff5a4f";
+    ctx.shadowColor = "#ff3028";
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 15, 0, Math.PI * 2);
+    ctx.moveTo(cx - 25, cy); ctx.lineTo(cx - 8, cy);
+    ctx.moveTo(cx + 8, cy); ctx.lineTo(cx + 25, cy);
+    ctx.moveTo(cx, cy - 25); ctx.lineTo(cx, cy - 8);
+    ctx.moveTo(cx, cy + 8); ctx.lineTo(cx, cy + 25);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "rgba(117,255,181,0.045)";
+    for (let y = 0; y < height; y += 5) ctx.fillRect(0, y, width, 1);
+  }
+}
+
 class ProjectileManager {
   constructor(parent) {
     this.parent = parent;
@@ -6078,6 +6280,7 @@ refuelTowers = new RefuelTowerManager(scene, terrain);
 missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
 autopilot = new AutopilotManager();
+bombingScope = new BombingScope(bombingScopePanel, bombingScopeCanvas, terrain, tank);
 
 terrain.update(tank.group.position);
 positionTankOnTerrain();
@@ -6117,6 +6320,7 @@ function animate() {
     }
     updateCamera(delta);
     updateHUD(delta);
+    bombingScope.render(delta);
     audio.update(delta, tank);
     tank.updateBeacons(audio.musicPulse);
   }

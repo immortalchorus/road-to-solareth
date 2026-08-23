@@ -104,6 +104,12 @@
       <div id="damage-numbers" aria-hidden="true"></div>
       <div id="damage-flash" aria-hidden="true"></div>
 
+      <section id="bombing-scope" hidden aria-label="Bombing targeting system">
+        <div class="bombing-scope-header"><span>BOMBING SONAR</span><b id="bombing-scope-range">80 M</b></div>
+        <canvas id="bombing-scope-canvas" width="600" height="440" aria-hidden="true"></canvas>
+        <div class="bombing-scope-footer"><span>IMPACT PREDICTION</span><b>1: CLOSE</b></div>
+      </section>
+
       <section id="run-summary" hidden>
         <div class="summary-panel">
           <div class="summary-kicker">Mission ended</div>
@@ -169,7 +175,7 @@
 
       <aside id="instructions" hidden>
         <strong>Tank Driver</strong>
-        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Hold Shift + F to freefall; release either key to hover at the current altitude. P toggles autopilot; Shift + P changes its altitude phase. Space drops bombs; M launches rack missiles. F1/F2/F3 select missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers the turret; Shift + V preserves pitch. Ctrl fires; hold Z for seeking ammo. Heavy fire calls Wingman 1 and Wingman 2 into formation. Press 5 to order them home and 7 to authorize fuel and missile resupply. Tab toggles camera height. Escape clears nearby obstacles.</span>
+        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Hold Shift + F to freefall; release either key to hover at the current altitude. P toggles autopilot; Shift + P changes its altitude phase. Space drops bombs; 1 toggles bombing sonar; M launches rack missiles. F1/F2/F3 select missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers the turret; Shift + V preserves pitch. Ctrl fires; hold Z for seeking ammo. Heavy fire calls Wingman 1 and Wingman 2 into formation. Press 5 to order them home and 7 to authorize fuel and missile resupply. Tab toggles camera height. Escape clears nearby obstacles.</span>
       </aside>
     </main>
 
