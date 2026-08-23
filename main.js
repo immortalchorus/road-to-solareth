@@ -2046,9 +2046,11 @@ function createFlatPrisonCompound(terrainManager) {
   const towerWindowGeo = new THREE.BoxGeometry(2.2, 1.5, 0.18);
   const towerPositions = [];
   const towerLines = [-200, -100, 0, 100, 200];
+  const pyramidPositions = [[-100, -100], [100, -100], [-100, 100], [100, 100]];
   for (const x of towerLines) {
     for (const z of towerLines) {
       if (x === 0 && z === 0) continue;
+      if (pyramidPositions.some(([px, pz]) => x === px && z === pz)) continue;
       towerPositions.push({ x, z });
     }
   }
@@ -2086,7 +2088,7 @@ function createFlatPrisonCompound(terrainManager) {
   windows.instanceMatrix.needsUpdate = true;
   group.add(windows);
 
-  for (const [index, position] of [[0, [-150, 0]], [1, [150, 0]], [2, [0, -150]], [3, [0, 150]]]) {
+  for (const [index, position] of pyramidPositions.entries()) {
     const pyramid = createHighTechPyramid(9100 + index);
     pyramid.userData.useChrome = true;
     pyramid.position.set(position[0], 0, position[1]);
@@ -3121,7 +3123,8 @@ class GroundEnemyTank {
   }
 
   build() {
-    const armor = new THREE.MeshStandardMaterial({ color: 0x512428, metalness: 0.78, roughness: 0.38 });
+    const armor = new THREE.MeshStandardMaterial({ color: 0xaeb4b8, metalness: 0.72, roughness: 0.4 });
+    const turretArmor = new THREE.MeshStandardMaterial({ color: 0xd6dadd, metalness: 0.7, roughness: 0.36 });
     const addBox = (size, position, material = armor, parent = this.group) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
       mesh.position.set(...position);
@@ -3132,9 +3135,9 @@ class GroundEnemyTank {
     addBox([8.8, 0.75, 2.0], [0, 0.45, -3.8], materials.darkMetal);
     addBox([8.8, 0.75, 2.0], [0, 0.45, 3.8], materials.darkMetal);
     this.turret.position.set(0, 2.1, -0.4);
-    addBox([4.2, 1.25, 4.2], [0, 0.55, 0], armor, this.turret);
+    addBox([4.2, 1.25, 4.2], [0, 0.55, 0], turretArmor, this.turret);
     this.cannonPivot.position.set(0, 0.55, -1.45);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 8.5, 12), materials.darkMetal);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 8.5, 12), turretArmor);
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, 0, -4.25);
     this.cannonPivot.add(barrel);
@@ -3143,6 +3146,36 @@ class GroundEnemyTank {
     eye.position.set(0, 1.3, -2.15);
     this.turret.add(eye);
     this.group.add(this.turret);
+  }
+
+  canOccupy(position) {
+    const padding = this.collisionRadius * 0.72;
+    for (const item of terrain.destructibles) {
+      if (!item.solid || !item.object.parent || item.collisionBox.isEmpty()) continue;
+      const box = item.collisionBox;
+      if (position.x >= box.min.x - padding && position.x <= box.max.x + padding &&
+          position.z >= box.min.z - padding && position.z <= box.max.z + padding) return false;
+    }
+    return true;
+  }
+
+  moveAroundArchitecture(direction, distance) {
+    const candidate = this.group.position.clone().addScaledVector(direction, distance);
+    if (this.canOccupy(candidate)) {
+      this.group.position.copy(candidate);
+      return direction;
+    }
+    const left = new THREE.Vector3(-direction.z, 0, direction.x);
+    const right = left.clone().negate();
+    const alternatives = this.patrolIndex % 2 ? [right, left] : [left, right];
+    for (const alternative of alternatives) {
+      candidate.copy(this.group.position).addScaledVector(alternative, distance);
+      if (this.canOccupy(candidate)) {
+        this.group.position.copy(candidate);
+        return alternative;
+      }
+    }
+    return direction.clone().negate();
   }
 
   update(delta, tankRef, manager) {
@@ -3158,9 +3191,9 @@ class GroundEnemyTank {
         toWaypoint.copy(this.patrolPath[this.pathIndex]).sub(this.group.position).setY(0);
       }
       hullDirection = toWaypoint.normalize();
-      this.group.position.addScaledVector(hullDirection, this.speed * 0.72 * delta);
+      hullDirection = this.moveAroundArchitecture(hullDirection, this.speed * 0.72 * delta);
     } else if (distance > 78 && distance < 260) {
-      this.group.position.addScaledVector(flatDirection, this.speed * delta);
+      hullDirection = this.moveAroundArchitecture(flatDirection, this.speed * delta);
     }
     this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + 1.2;
     const hullTargetYaw = Math.atan2(-hullDirection.x, -hullDirection.z);
