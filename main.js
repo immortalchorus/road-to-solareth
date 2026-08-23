@@ -140,6 +140,11 @@ const missileRangeControl = document.querySelector("#missile-range");
 const missileRangeValue = document.querySelector("#missile-range-value");
 const commsVolumeControl = document.querySelector("#comms-volume");
 const commsVolumeValue = document.querySelector("#comms-volume-value");
+const playerCallSign = document.querySelector("#player-call-sign");
+const recordScoreButton = document.querySelector("#record-score-button");
+const highScoreList = document.querySelector("#high-score-list");
+const HIGH_SCORE_STORAGE_KEY = "hovertank-high-scores-v1";
+let finalScoreForLeaderboard = null;
 let audio = null;
 let missileRange = 55;
 let commsVolume = 0.7;
@@ -448,6 +453,14 @@ splashRotorVolumeControl.addEventListener("input", () => updateRotorVolume(splas
 missileRangeControl.addEventListener("input", () => setMissileRange(Number(missileRangeControl.value)));
 commsVolumeControl.addEventListener("input", () => setCommsVolume(commsVolumeControl.value));
 document.querySelector("#restart-button").addEventListener("click", () => window.location.reload());
+recordScoreButton.addEventListener("click", recordHighScore);
+
+try {
+  playerCallSign.value = window.localStorage.getItem("hovertank-call-sign") || "";
+} catch (_) {
+  playerCallSign.value = "";
+}
+renderHighScores();
 playButton.addEventListener("click", async () => {
   playButton.disabled = true;
   playLaunch.classList.add("depositing");
@@ -2115,7 +2128,7 @@ function createFlatPrisonCompound(terrainManager) {
     haze.push({ puff, phase, angle, radius });
   }
   beaconGroup.add(beam, orb, halo, spotlight, spotlightTarget);
-  group.add(beaconGroup);
+  scene.add(beaconGroup);
   homeBaseBeacon = { group: beaconGroup, orb, halo, beam, spotlight, haze, time: 0 };
 
   const roadLines = [-150, -50, 50, 150];
@@ -2290,6 +2303,7 @@ class TerrainManager {
     if (mode === this.worldMode) return;
     this.worldMode = mode;
     skyEnvironment?.setWorldMode(mode);
+    setHomeBaseBeaconWorld(mode);
     this.compound.visible = mode === "compound";
     this.legacyWorld.visible = mode === "prison";
     if (mode === "prison") {
@@ -2324,6 +2338,7 @@ class TerrainManager {
       this.legacyWorld.add(collider);
       this.legacyWorld.userData.colliders.push(collider);
     }
+    if (giantTarantulas) giantTarantulas.spawnPrisonPopulation(this.legacyWorld);
   }
 
   createChunk(cx, cz, key) {
@@ -2663,8 +2678,11 @@ class WorldPortalManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.group = new THREE.Group();
-    this.group.position.set(-50, 15, -170);
-    this.terrain.reserveClearZone(this.group.position.x, this.group.position.z, 30);
+    this.homePosition = new THREE.Vector3(-50, 15, -170);
+    this.prisonPosition = new THREE.Vector3(0, 15, -560);
+    this.group.position.copy(this.homePosition);
+    this.terrain.reserveClearZone(this.homePosition.x, this.homePosition.z, 30);
+    this.terrain.reserveClearZone(this.prisonPosition.x, this.prisonPosition.z, 36);
     this.cooldown = 0;
     this.elapsed = 0;
     const ringMaterial = new THREE.MeshStandardMaterial({ color: 0x87949b, metalness: 0.96, roughness: 0.2, emissive: 0x102b35, emissiveIntensity: 0.8 });
@@ -2679,7 +2697,13 @@ class WorldPortalManager {
       fragmentShader: "varying vec2 vUv; uniform float time; void main(){ vec2 p=vUv-0.5; float r=length(p); float a=atan(p.y,p.x); float flow=sin(a*7.0-r*42.0+time*4.4)+sin(a*3.0+r*28.0-time*2.7); float edge=smoothstep(0.5,0.39,r); float core=0.48+0.25*flow; vec3 color=mix(vec3(0.03,0.35,0.62),vec3(0.55,0.95,1.0),core); gl_FragColor=vec4(color,edge*(0.72+core*0.24)); }"
     });
     this.energy = new THREE.Mesh(new THREE.CircleGeometry(10.65, 72), this.energyMaterial);
-    this.group.add(this.ring, innerRing, this.energy);
+    const directionRing = new THREE.Mesh(
+      new THREE.TorusGeometry(11.55, 0.24, 10, 72),
+      new THREE.MeshBasicMaterial({ color: 0xff1738, transparent: true, opacity: 0.96, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
+    );
+    directionRing.position.z = 2.55;
+    this.directionRing = directionRing;
+    this.group.add(this.ring, innerRing, this.energy, directionRing);
     for (let i = 0; i < 24; i++) {
       const angle = i / 24 * Math.PI * 2;
       const node = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), materials.facilityLightCool);
@@ -2694,17 +2718,19 @@ class WorldPortalManager {
     this.cooldown = Math.max(0, this.cooldown - delta);
     this.energyMaterial.uniforms.time.value = this.elapsed;
     this.ring.rotation.z = Math.sin(this.elapsed * 0.35) * 0.025;
+    const directionPulse = 0.5 + Math.sin(this.elapsed * 3.4) * 0.5;
+    this.directionRing.material.opacity = 0.68 + directionPulse * 0.32;
+    this.directionRing.scale.setScalar(1 + directionPulse * 0.025);
     const local = tankRef.group.position.clone().sub(this.group.position);
     const insideAperture = Math.hypot(local.x, local.y) < 9.8 && Math.abs(local.z) < 4.5;
     if (!insideAperture || this.cooldown > 0) return;
     const enteringPrison = this.terrain.worldMode === "compound";
     this.terrain.setWorldMode(enteringPrison ? "prison" : "compound");
-    if (enteringPrison) {
-      tankRef.group.position.set(0, tankRef.group.position.y, -165);
-      tankRef.group.rotation.y = 0;
-    } else {
-      tankRef.group.position.set(this.group.position.x, tankRef.group.position.y, this.group.position.z + 24);
-    }
+    const portalPosition = enteringPrison ? this.prisonPosition : this.homePosition;
+    this.group.position.copy(portalPosition);
+    this.group.position.y = this.terrain.getHeightAt(portalPosition.x, portalPosition.z) + 15;
+    tankRef.group.position.set(this.group.position.x, tankRef.group.position.y, this.group.position.z + 24);
+    tankRef.group.rotation.y = 0;
     tankRef.group.position.y = this.terrain.getHeightAt(tankRef.group.position.x, tankRef.group.position.z) + CONFIG.tankHoverHeight;
     tankRef.altitudeHoldY = tankRef.group.position.y;
     tacticalGrid.cellX = Infinity;
@@ -3075,7 +3101,7 @@ class EnemyManager {
         this.parent.remove(this.enemyTank.group);
         disposeObject(this.enemyTank.group);
         this.enemyTank = null;
-        this.enemyTankRespawn = 10;
+        this.enemyTankRespawn = 7;
       }
     }
     for (let i = this.patrolTanks.length - 1; i >= 0; i--) {
@@ -3134,7 +3160,7 @@ class EnemyManager {
   spawnEnemyTank(tankRef) {
     const angle = tankRef.group.rotation.y + Math.PI + (Math.random() - 0.5) * 1.4;
     const distance = 120 + Math.random() * 55;
-    this.enemyTank = new GroundEnemyTank();
+    this.enemyTank = new GroundEnemyTank(null, 0, Math.random() < 0.28);
     this.enemyTank.group.position.set(
       tankRef.group.position.x + Math.sin(angle) * distance,
       0,
@@ -3161,7 +3187,7 @@ class EnemyManager {
     const path = vertical
       ? [new THREE.Vector3(lane, 0, -210), new THREE.Vector3(lane, 0, 210)]
       : [new THREE.Vector3(-210, 0, lane), new THREE.Vector3(210, 0, lane)];
-    const patrol = new GroundEnemyTank(path, i);
+    const patrol = new GroundEnemyTank(path, i, i % 5 === 3);
     patrol.group.position.copy(path[i % 2]);
     patrol.group.position.y = terrain.getHeightAt(patrol.group.position.x, patrol.group.position.z) + 1.2;
     this.parent.add(patrol.group);
@@ -3376,11 +3402,12 @@ class GiantTarantulaManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.spiders = [];
+    this.prisonSpawned = false;
     const positions = [[-175, 35], [175, -35], [-35, -175], [35, 175]];
-    positions.forEach((position, index) => this.spawn(position[0], position[1], index));
+    positions.forEach((position, index) => this.spawn(position[0], position[1], index, parent, "compound", new THREE.Vector3(0, 0, 0), 205));
   }
 
-  spawn(x, z, index) {
+  spawn(x, z, index, spawnParent = this.parent, worldMode = "compound", roamCenter = new THREE.Vector3(), roamRadius = 205) {
     const root = new THREE.Group();
     const chrome = new THREE.MeshStandardMaterial({ color: 0xd8e0e3, metalness: 1, roughness: 0.08, envMapIntensity: 2.8 });
     const darkChrome = new THREE.MeshStandardMaterial({ color: 0x4c555a, metalness: 0.96, roughness: 0.2, envMapIntensity: 2.1 });
@@ -3505,7 +3532,7 @@ class GiantTarantulaManager {
     }
     root.position.set(x, this.terrain.getHeightAt(x, z), z);
     root.rotation.y = index * Math.PI * 0.5;
-    this.parent.add(root);
+    spawnParent.add(root);
     this.spiders.push({
       root,
       turret,
@@ -3516,22 +3543,38 @@ class GiantTarantulaManager {
       fireTimer: 2.5 + index * 0.8,
       phase: index * 1.7,
       heading: root.rotation.y,
-      turnTimer: 5 + index
+      turnTimer: 5 + index,
+      worldMode,
+      roamCenter: roamCenter.clone(),
+      roamRadius
     });
   }
 
+  spawnPrisonPopulation(prisonParent) {
+    if (this.prisonSpawned) return;
+    this.prisonSpawned = true;
+    const center = new THREE.Vector3(0, 0, -300);
+    const count = 22;
+    for (let index = 0; index < count; index++) {
+      const side = index % 4;
+      const along = -205 + Math.floor(index / 4) * 82;
+      const x = side === 0 ? -245 : side === 1 ? 245 : along;
+      const z = side === 2 ? -545 : side === 3 ? -55 : -300 + along * 0.72;
+      this.spawn(x, z, 100 + index, prisonParent, "prison", center, 285);
+    }
+  }
+
   update(delta, tankRef, enemyManager) {
-    if (!this.parent.visible) return;
     const time = performance.now() * 0.001;
     for (const spider of this.spiders) {
-      if (spider.dead) continue;
+      if (spider.dead || spider.worldMode !== this.terrain.worldMode) continue;
       spider.turnTimer -= delta;
       if (spider.turnTimer <= 0) {
         spider.turnTimer = 5 + seededRandom(time + spider.phase) * 7;
         spider.heading += (seededRandom(time * 3 + spider.phase) - 0.5) * 1.3;
       }
       const next = spider.root.position.clone().add(new THREE.Vector3(-Math.sin(spider.heading), 0, -Math.cos(spider.heading)).multiplyScalar(delta * 2.2));
-      if (Math.abs(next.x) < 205 && Math.abs(next.z) < 205) spider.root.position.copy(next);
+      if (Math.hypot(next.x - spider.roamCenter.x, next.z - spider.roamCenter.z) < spider.roamRadius) spider.root.position.copy(next);
       else spider.heading += Math.PI * 0.7;
       spider.root.rotation.y += wrapAngle(spider.heading - spider.root.rotation.y) * Math.min(1, delta * 1.2);
       const bodyCycle = time * 2.55 + spider.phase;
@@ -3571,7 +3614,7 @@ class GiantTarantulaManager {
 
   hitAlongSegment(start, end, radius, shot) {
     for (const spider of this.spiders) {
-      if (spider.dead) continue;
+      if (spider.dead || spider.worldMode !== this.terrain.worldMode) continue;
       const center = spider.root.position.clone().add(new THREE.Vector3(0, 7.5, 0));
       if (distanceToSegmentSquared(center, start, end) <= Math.pow(radius + 5.5, 2)) {
         this.receiveHit(spider, shot, center);
@@ -3598,7 +3641,7 @@ class GiantTarantulaManager {
 
   destroyNear(position, radius, shot) {
     for (const spider of this.spiders) {
-      if (!spider.dead && spider.root.position.distanceTo(position) <= radius + 6) {
+      if (!spider.dead && spider.worldMode === this.terrain.worldMode && spider.root.position.distanceTo(position) <= radius + 6) {
         this.receiveHit(spider, { ...shot, kind: "bomb" }, spider.root.position.clone().add(new THREE.Vector3(0, 7.5, 0)));
       }
     }
@@ -3810,7 +3853,7 @@ class WingmanManager {
 }
 
 class GroundEnemyTank {
-  constructor(patrolPath = null, patrolIndex = 0) {
+  constructor(patrolPath = null, patrolIndex = 0, missileArmor = false) {
     this.group = new THREE.Group();
     this.turret = new THREE.Group();
     this.cannonPivot = new THREE.Group();
@@ -3822,12 +3865,13 @@ class GroundEnemyTank {
     this.patrolPath = patrolPath;
     this.patrolIndex = patrolIndex;
     this.pathIndex = patrolIndex % 2;
+    this.missileArmor = missileArmor;
     this.build();
   }
 
   build() {
-    const armor = new THREE.MeshStandardMaterial({ color: 0xaeb4b8, metalness: 0.72, roughness: 0.4 });
-    const turretArmor = new THREE.MeshStandardMaterial({ color: 0xd6dadd, metalness: 0.7, roughness: 0.36 });
+    const armor = new THREE.MeshStandardMaterial({ color: this.missileArmor ? 0x8fdfff : 0xaeb4b8, emissive: this.missileArmor ? 0x123d55 : 0x000000, emissiveIntensity: this.missileArmor ? 0.55 : 0, metalness: 0.72, roughness: 0.4 });
+    const turretArmor = new THREE.MeshStandardMaterial({ color: this.missileArmor ? 0xc3f1ff : 0xd6dadd, emissive: this.missileArmor ? 0x174c64 : 0x000000, emissiveIntensity: this.missileArmor ? 0.62 : 0, metalness: 0.7, roughness: 0.36 });
     const addBox = (size, position, material = armor, parent = this.group) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
       mesh.position.set(...position);
@@ -3944,6 +3988,12 @@ class GroundEnemyTank {
 
   receiveHit(shot) {
     if (this.dead) return;
+    if (this.missileArmor && shot.kind !== "missile" && shot.kind !== "bomb") {
+      registerPlayerHit(shot, this.group.position, 0, "hit");
+      hud.status.textContent = "Light-blue reactive armor requires a bomb or missile.";
+      statusTimer = 2.5;
+      return;
+    }
     this.health -= shot.kind === "missile" ? CONFIG.enemyTankHealth : 1;
     registerPlayerHit(shot, this.group.position, 20, this.health <= 0 ? "object" : "hit");
     if (this.health <= 0) {
@@ -4280,7 +4330,7 @@ class SkyDrone {
 let refuelTowerModelPromise = null;
 
 function getCompoundSupplyPositions(type) {
-  const half = CONFIG.compoundSize * 0.5 - 5;
+  const half = CONFIG.compoundSize * 0.5 + 20;
   const perimeter = half * 8;
   const slotCount = Math.floor(perimeter / 25);
   const positions = [];
@@ -6119,6 +6169,8 @@ function calculateCompositeScore() {
 
 function showRunSummary() {
   const score = calculateCompositeScore();
+  finalScoreForLeaderboard = score;
+  recordScoreButton.disabled = false;
   const accuracy = Math.round(score.accuracyRatio * 100);
   const minutes = Math.floor(runStats.flightTime / 60);
   const seconds = Math.floor(runStats.flightTime % 60).toString().padStart(2, "0");
@@ -6152,6 +6204,57 @@ function showRunSummary() {
   document.querySelector("#stat-score").textContent = score.total.toLocaleString();
   document.querySelector("#stat-rank").textContent = score.rank;
   hud.runSummary.hidden = false;
+}
+
+function loadHighScores() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(HIGH_SCORE_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter(entry => entry && typeof entry.score === "number").slice(0, 10) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function renderHighScores() {
+  const scores = loadHighScores();
+  highScoreList.replaceChildren();
+  if (!scores.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "No recorded missions yet.";
+    highScoreList.appendChild(empty);
+    return;
+  }
+  for (const entry of scores) {
+    const item = document.createElement("li");
+    const row = document.createElement("span");
+    const name = document.createElement("strong");
+    const rank = document.createElement("em");
+    const score = document.createElement("b");
+    name.textContent = entry.callSign;
+    rank.textContent = entry.rank;
+    score.textContent = entry.score.toLocaleString();
+    row.append(name, rank, score);
+    item.appendChild(row);
+    highScoreList.appendChild(item);
+  }
+}
+
+function recordHighScore() {
+  if (!finalScoreForLeaderboard || recordScoreButton.disabled) return;
+  const callSign = playerCallSign.value.trim().replace(/[^a-z0-9 _-]/gi, "").slice(0, 16).toUpperCase() || "UNKNOWN";
+  const scores = loadHighScores();
+  scores.push({ callSign, score: finalScoreForLeaderboard.total, rank: finalScoreForLeaderboard.rank, recordedAt: Date.now() });
+  scores.sort((a, b) => b.score - a.score || a.recordedAt - b.recordedAt);
+  try {
+    window.localStorage.setItem(HIGH_SCORE_STORAGE_KEY, JSON.stringify(scores.slice(0, 10)));
+    window.localStorage.setItem("hovertank-call-sign", callSign);
+  } catch (_) {
+    hud.status.textContent = "High-score storage is unavailable in this browser.";
+    return;
+  }
+  playerCallSign.value = callSign;
+  recordScoreButton.disabled = true;
+  renderHighScores();
 }
 
 function registerUniverseTarget(object, radius, options = {}) {
@@ -6317,9 +6420,9 @@ function updateHomeBaseBeacon(delta) {
   const pulse = 0.5 + Math.sin(homeBaseBeacon.time * 2.2) * 0.5;
   homeBaseBeacon.orb.scale.setScalar(0.94 + pulse * 0.16);
   homeBaseBeacon.halo.scale.setScalar(0.9 + pulse * 0.34);
-  homeBaseBeacon.halo.material.opacity = 0.16 + pulse * 0.19;
-  homeBaseBeacon.beam.material.opacity = 0.062 + pulse * 0.031;
-  homeBaseBeacon.spotlight.intensity = 38 + pulse * 16;
+  homeBaseBeacon.halo.material.opacity = 0.19 + pulse * 0.21;
+  homeBaseBeacon.beam.material.opacity = 0.067 + pulse * 0.034;
+  homeBaseBeacon.spotlight.intensity = 42 + pulse * 18;
   for (let i = 0; i < homeBaseBeacon.haze.length; i++) {
     const particle = homeBaseBeacon.haze[i];
     const drift = homeBaseBeacon.time * (0.06 + particle.phase * 0.035);
@@ -6327,6 +6430,11 @@ function updateHomeBaseBeacon(delta) {
     particle.puff.position.z = Math.sin(particle.angle + drift) * particle.radius + Math.cos(homeBaseBeacon.time * 0.21 + i) * 2.5;
     particle.puff.material.opacity = (0.018 + (i % 4) * 0.006) * (0.72 + pulse * 0.4);
   }
+}
+
+function setHomeBaseBeaconWorld(mode) {
+  if (!homeBaseBeacon) return;
+  homeBaseBeacon.group.position.set(0, 0, mode === "prison" ? -300 : 0);
 }
 
 function createRock(seed) {

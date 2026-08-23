@@ -106,6 +106,15 @@
             <strong id="stat-score">0</strong>
             <b id="stat-rank">Recruit</b>
           </div>
+          <div class="score-entry">
+            <label for="player-call-sign">Call sign</label>
+            <input id="player-call-sign" type="text" maxlength="16" autocomplete="nickname" placeholder="PLAYER ONE">
+            <button id="record-score-button" type="button">Record score</button>
+          </div>
+          <section class="high-score-chart" aria-label="High score chart">
+            <h2>High Scores</h2>
+            <ol id="high-score-list"></ol>
+          </section>
           <dl>
             <div><dt>Drones destroyed</dt><dd id="stat-drones">0</dd></div>
             <div><dt>Enemy vehicles destroyed</dt><dd id="stat-vehicles">0</dd></div>
