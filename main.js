@@ -2591,7 +2591,8 @@ class WorldPortalManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.group = new THREE.Group();
-    this.group.position.set(50, 15, -170);
+    this.group.position.set(-50, 15, -170);
+    this.terrain.reserveClearZone(this.group.position.x, this.group.position.z, 30);
     this.cooldown = 0;
     this.elapsed = 0;
     const ringMaterial = new THREE.MeshStandardMaterial({ color: 0x87949b, metalness: 0.96, roughness: 0.2, emissive: 0x102b35, emissiveIntensity: 0.8 });
