@@ -873,6 +873,33 @@ function loadPlayerHoverTankModel() {
   return playerHoverTankModelPromise;
 }
 
+let guardTowerModelPromise = null;
+function loadGuardTowerModel() {
+  if (guardTowerModelPromise) return guardTowerModelPromise;
+  guardTowerModelPromise = new Promise((resolve, reject) => {
+    const loader = new THREE.OBJLoader();
+    loader.load("assets/models/Guard-Tower_002.obj?v=guard-tower-2", source => {
+      const sourceMesh = source.children.find(child => child.isMesh);
+      if (!sourceMesh) {
+        reject(new Error("Guard-Tower_002.obj contains no mesh"));
+        return;
+      }
+      const geometry = sourceMesh.geometry.clone();
+      geometry.computeBoundingBox();
+      const bounds = geometry.boundingBox;
+      const center = bounds.getCenter(new THREE.Vector3());
+      const height = Math.max(1, bounds.max.y - bounds.min.y);
+      const scale = 50 / height;
+      geometry.translate(-center.x, -bounds.min.y, -center.z);
+      geometry.scale(scale, scale, scale);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+      resolve(geometry);
+    }, undefined, reject);
+  });
+  return guardTowerModelPromise;
+}
+
 class Tank {
   constructor(parent) {
     this.group = new THREE.Group();
@@ -2596,8 +2623,6 @@ function createFlatPrisonCompound(terrainManager) {
     addBridge(line, false);
   }
 
-  const towerBodyGeo = new THREE.BoxGeometry(18, 42, 18);
-  const towerCabGeo = new THREE.BoxGeometry(25, 8, 25);
   const towerWindowGeo = new THREE.BoxGeometry(2.2, 1.5, 0.18);
   const towerPositions = [];
   const towerLines = [-200, -100, 0, 100, 200];
@@ -2609,14 +2634,8 @@ function createFlatPrisonCompound(terrainManager) {
       towerPositions.push({ x, z });
     }
   }
-  const bodies = new THREE.InstancedMesh(towerBodyGeo, materials.prisonConcrete, towerPositions.length);
-  const cabins = new THREE.InstancedMesh(towerCabGeo, materials.prisonPanel, towerPositions.length);
   const litWindows = [];
   towerPositions.forEach(({ x, z }, index) => {
-    matrix.makeTranslation(x, 21, z);
-    bodies.setMatrixAt(index, matrix);
-    matrix.makeTranslation(x, 45, z);
-    cabins.setMatrixAt(index, matrix);
     for (let floor = 0; floor < 8; floor++) {
       for (let column = -2; column <= 2; column++) {
         if (seededRandom(index * 937 + floor * 53 + column * 17) < 0.42) continue;
@@ -2631,9 +2650,18 @@ function createFlatPrisonCompound(terrainManager) {
     terrainManager.registerDestructible(collider, group, 15, { indestructible: true, ignoreClearZone: true, preciseHit: true });
     group.add(collider);
   });
-  bodies.instanceMatrix.needsUpdate = true;
-  cabins.instanceMatrix.needsUpdate = true;
-  group.add(bodies, cabins);
+  loadGuardTowerModel().then(geometry => {
+    const towers = new THREE.InstancedMesh(geometry, materials.prisonPanel, towerPositions.length);
+    towers.name = "GuardTower002Instances";
+    towerPositions.forEach(({ x, z }, index) => {
+      matrix.makeTranslation(x, 0, z);
+      towers.setMatrixAt(index, matrix);
+    });
+    towers.instanceMatrix.needsUpdate = true;
+    towers.castShadow = true;
+    towers.receiveShadow = true;
+    group.add(towers);
+  }).catch(error => console.error("Guard tower model failed to load", error));
   const windows = new THREE.InstancedMesh(towerWindowGeo, materials.facilityLightWarm, litWindows.length);
   litWindows.forEach(([x, y, z, rotation], index) => {
     matrix.makeRotationY(rotation);
