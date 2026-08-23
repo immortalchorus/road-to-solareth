@@ -395,6 +395,7 @@ const materials = {
   detentionConcrete: new THREE.MeshStandardMaterial({ color: 0x8a7568, metalness: 0.22, roughness: 0.82, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.055 }),
   prisonConcrete: new THREE.MeshStandardMaterial({ color: 0x4a5057, metalness: 0.55, roughness: 0.58, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.045 }),
   prisonPanel: new THREE.MeshStandardMaterial({ color: 0x2c343c, metalness: 0.84, roughness: 0.34, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.035 }),
+  guardTowerShell: new THREE.MeshStandardMaterial({ color: 0x76838c, metalness: 0.78, roughness: 0.3, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.025 }),
   prisonPipe: new THREE.MeshStandardMaterial({ color: 0x667075, metalness: 0.92, roughness: 0.23, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.025 }),
   prisonPipeDirty: new THREE.MeshStandardMaterial({ color: 0x3e4140, metalness: 0.78, roughness: 0.48, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.035 }),
   toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
@@ -557,6 +558,7 @@ playButton.addEventListener("click", async () => {
   await new Promise(resolve => window.setTimeout(resolve, 680));
   configureSessionMode(gameModeSelect ? gameModeSelect.value : "standard");
   const sessionDuration = CONFIG.sessionDuration;
+  const sessionStartedAt = performance.now();
   gameStarted = true;
   sessionTimeRemaining = sessionDuration;
   missionEndsAt = performance.now() + sessionDuration * 1000;
@@ -576,6 +578,11 @@ playButton.addEventListener("click", async () => {
   } catch (error) {
     console.warn("Audio unavailable; gameplay remains active", error);
   }
+  audio.prepareSessionDuration().then(trackDuration => {
+    if (!gameStarted || gameEnded) return;
+    missionEndsAt = sessionStartedAt + trackDuration * 1000;
+    sessionTimeRemaining = Math.max(0, (missionEndsAt - performance.now()) / 1000);
+  });
 });
 
 function drawPlayCoin() {
@@ -884,17 +891,66 @@ function loadGuardTowerModel() {
         reject(new Error("Guard-Tower_002.obj contains no mesh"));
         return;
       }
-      const geometry = sourceMesh.geometry.clone();
+      const geometry = sourceMesh.geometry.index
+        ? sourceMesh.geometry.toNonIndexed()
+        : sourceMesh.geometry.clone();
       geometry.computeBoundingBox();
       const bounds = geometry.boundingBox;
       const center = bounds.getCenter(new THREE.Vector3());
       const height = Math.max(1, bounds.max.y - bounds.min.y);
       const scale = 50 / height;
-      geometry.translate(-center.x, -bounds.min.y, -center.z);
-      geometry.scale(scale, scale, scale);
-      geometry.computeVertexNormals();
-      geometry.computeBoundingSphere();
-      resolve(geometry);
+      const sourcePosition = geometry.getAttribute("position");
+      const sourceNormal = geometry.getAttribute("normal");
+      const positionBuckets = [[], [], []];
+      const normalBuckets = [[], [], []];
+      for (let vertex = 0; vertex < sourcePosition.count; vertex += 3) {
+        const min = [Infinity, Infinity, Infinity];
+        const max = [-Infinity, -Infinity, -Infinity];
+        for (let corner = 0; corner < 3; corner++) {
+          min[0] = Math.min(min[0], sourcePosition.getX(vertex + corner));
+          min[1] = Math.min(min[1], sourcePosition.getY(vertex + corner));
+          min[2] = Math.min(min[2], sourcePosition.getZ(vertex + corner));
+          max[0] = Math.max(max[0], sourcePosition.getX(vertex + corner));
+          max[1] = Math.max(max[1], sourcePosition.getY(vertex + corner));
+          max[2] = Math.max(max[2], sourcePosition.getZ(vertex + corner));
+        }
+        const spans = max.map((value, axis) => value - min[axis]).sort((a, b) => a - b);
+        const paneFace = spans[0] < 0.02 && spans[1] > 15 && spans[1] < 19 && spans[2] > 33 && spans[2] < 39;
+        let bucket = 0;
+        if (paneFace) {
+          const paneX = Math.round((min[0] + max[0]) * 0.5);
+          const paneY = Math.round((min[1] + max[1]) * 0.5);
+          const paneZ = Math.round((min[2] + max[2]) * 0.5);
+          const lightSeed = Math.abs((paneX * 73856093) ^ (paneY * 19349663) ^ (paneZ * 83492791));
+          if ((lightSeed % 100) < 74) bucket = (lightSeed % 5) === 0 ? 2 : 1;
+        }
+        for (let corner = 0; corner < 3; corner++) {
+          positionBuckets[bucket].push(
+            (sourcePosition.getX(vertex + corner) - center.x) * scale,
+            (sourcePosition.getY(vertex + corner) - bounds.min.y) * scale,
+            (sourcePosition.getZ(vertex + corner) - center.z) * scale
+          );
+          if (sourceNormal) {
+            normalBuckets[bucket].push(
+              sourceNormal.getX(vertex + corner),
+              sourceNormal.getY(vertex + corner),
+              sourceNormal.getZ(vertex + corner)
+            );
+          }
+        }
+      }
+      const geometries = positionBuckets.map((positions, index) => {
+        const part = new THREE.BufferGeometry();
+        part.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        if (normalBuckets[index].length) {
+          part.setAttribute("normal", new THREE.Float32BufferAttribute(normalBuckets[index], 3));
+        } else {
+          part.computeVertexNormals();
+        }
+        part.computeBoundingSphere();
+        return part;
+      });
+      resolve({ shell: geometries[0], warmWindows: geometries[1], coolWindows: geometries[2] });
     }, undefined, reject);
   });
   return guardTowerModelPromise;
@@ -2653,17 +2709,24 @@ function createFlatPrisonCompound(terrainManager) {
     terrainManager.registerDestructible(collider, group, 15, { indestructible: true, ignoreClearZone: true, preciseHit: true });
     group.add(collider);
   });
-  loadGuardTowerModel().then(geometry => {
-    const towers = new THREE.InstancedMesh(geometry, materials.prisonPanel, towerPositions.length);
-    towers.name = "GuardTower002Instances";
-    towerPositions.forEach(({ x, z }, index) => {
-      matrix.makeTranslation(x, 0, z);
-      towers.setMatrixAt(index, matrix);
-    });
-    towers.instanceMatrix.needsUpdate = true;
-    towers.castShadow = true;
-    towers.receiveShadow = true;
-    group.add(towers);
+  loadGuardTowerModel().then(geometryParts => {
+    const towerBatches = [
+      [geometryParts.shell, materials.guardTowerShell, "GuardTower002Shells"],
+      [geometryParts.warmWindows, materials.facilityLightWarm, "GuardTower002WarmWindows"],
+      [geometryParts.coolWindows, materials.facilityLightCool, "GuardTower002CoolWindows"]
+    ];
+    for (const [geometry, material, name] of towerBatches) {
+      const towers = new THREE.InstancedMesh(geometry, material, towerPositions.length);
+      towers.name = name;
+      towerPositions.forEach(({ x, z }, index) => {
+        matrix.makeTranslation(x, 0, z);
+        towers.setMatrixAt(index, matrix);
+      });
+      towers.instanceMatrix.needsUpdate = true;
+      towers.castShadow = material === materials.guardTowerShell;
+      towers.receiveShadow = material === materials.guardTowerShell;
+      group.add(towers);
+    }
   }).catch(error => console.error("Guard tower model failed to load", error));
 
   for (const [index, position] of pyramidPositions.entries()) {
