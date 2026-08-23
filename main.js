@@ -322,6 +322,7 @@ let gamePaused = false;
 let sessionTimeRemaining = CONFIG.sessionDuration;
 let missionEndsAt = 0;
 let gameMode = "standard";
+let mazeCockpitActive = false;
 let bootcampManager = null;
 const runStats = {
   dronesDestroyed: 0,
@@ -396,6 +397,8 @@ const materials = {
   prisonConcrete: new THREE.MeshStandardMaterial({ color: 0x4a5057, metalness: 0.55, roughness: 0.58, map: architectureArmorTexture, bumpMap: architectureArmorTexture, bumpScale: 0.045 }),
   prisonPanel: new THREE.MeshStandardMaterial({ color: 0x2c343c, metalness: 0.84, roughness: 0.34, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.035 }),
   guardTowerShell: new THREE.MeshStandardMaterial({ color: 0x76838c, metalness: 0.78, roughness: 0.3, map: architectureVentTexture, bumpMap: architectureVentTexture, bumpScale: 0.025 }),
+  mazeShell: new THREE.MeshStandardMaterial({ color: 0x343d46, metalness: 0.88, roughness: 0.3, map: architectureVentTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.035 }),
+  mazeFloor: new THREE.MeshStandardMaterial({ color: 0x171d23, metalness: 0.92, roughness: 0.24, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.028 }),
   prisonPipe: new THREE.MeshStandardMaterial({ color: 0x667075, metalness: 0.92, roughness: 0.23, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.025 }),
   prisonPipeDirty: new THREE.MeshStandardMaterial({ color: 0x3e4140, metalness: 0.78, roughness: 0.48, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.035 }),
   toxicSmoke: new THREE.MeshBasicMaterial({ color: 0x60745d, transparent: true, opacity: 0.2, depthWrite: false }),
@@ -2751,6 +2754,128 @@ function createFlatPrisonCompound(terrainManager) {
   return group;
 }
 
+const MAZE_WORLD_CENTER = new THREE.Vector3(5000, 0, 5000);
+
+function createHexMazeWorld(terrainManager) {
+  const world = new THREE.Group();
+  world.name = "HexagonalMazeWorld";
+  world.visible = false;
+  const center = MAZE_WORLD_CENTER;
+  const addBox = (parent, size, position, material, rotationY = 0, solid = false) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+    mesh.position.set(...position);
+    mesh.rotation.y = rotationY;
+    mesh.castShadow = material === materials.mazeShell;
+    mesh.receiveShadow = true;
+    parent.add(mesh);
+    if (solid) terrainManager.registerDestructible(mesh, world, Math.hypot(size[0], size[2]) * 0.5, {
+      indestructible: true,
+      ignoreClearZone: true,
+      preciseHit: true
+    });
+    return mesh;
+  };
+
+  const chamberFloor = new THREE.Mesh(new THREE.CylinderGeometry(94, 94, 1.2, 6), materials.mazeFloor);
+  chamberFloor.position.set(center.x, -0.55, center.z);
+  chamberFloor.rotation.y = Math.PI / 6;
+  chamberFloor.receiveShadow = true;
+  world.add(chamberFloor);
+  const chamberCeiling = new THREE.Mesh(new THREE.CylinderGeometry(94, 94, 1, 6), materials.mazeShell);
+  chamberCeiling.position.set(center.x, 28, center.z);
+  chamberCeiling.rotation.y = Math.PI / 6;
+  world.add(chamberCeiling);
+
+  for (let side = 0; side < 6; side++) {
+    const angle = side * Math.PI / 3;
+    const outward = new THREE.Vector3(Math.sin(angle), 0, -Math.cos(angle));
+    const tangent = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const wallCenter = center.clone().addScaledVector(outward, 82);
+    for (const sign of [-1, 1]) {
+      const position = wallCenter.clone().addScaledVector(tangent, sign * 37);
+      addBox(world, [40, 28, 4], [position.x, 14, position.z], materials.mazeShell, angle, true);
+      for (let tier = 0; tier < 3; tier++) {
+        const trimPosition = position.clone().addScaledVector(outward, -2.3);
+        trimPosition.y = 5 + tier * 8;
+        addBox(world, [30, 0.5, 0.45], [trimPosition.x, trimPosition.y, trimPosition.z], tier === 1 ? materials.facilityLightWarm : materials.prisonPipe, angle);
+      }
+    }
+    addBox(world, [34, 5, 5], [wallCenter.x, 25.5, wallCenter.z], materials.mazeShell, angle, true);
+    const archLight = wallCenter.clone().addScaledVector(outward, -2.8);
+    addBox(world, [23, 0.6, 0.5], [archLight.x, 22.2, archLight.z], side % 2 ? materials.facilityLightWarm : materials.facilityLightCool, angle);
+    const arch = new THREE.Group();
+    arch.position.copy(wallCenter).addScaledVector(outward, -3.1);
+    arch.rotation.y = angle;
+    world.add(arch);
+    for (const sign of [-1, 1]) {
+      addBox(arch, [2.6, 14, 2.2], [sign * 16.5, 8, 0], materials.prisonPipe);
+      const shoulder = addBox(arch, [2.6, 10, 2.2], [sign * 13.8, 18, 0], materials.prisonPipe);
+      shoulder.rotation.z = sign * -0.58;
+      addBox(arch, [0.38, 12, 0.4], [sign * 14.5, 8, -1.25], side % 2 ? materials.facilityLightWarm : materials.facilityLightCool);
+    }
+    addBox(arch, [22, 2.4, 2.2], [0, 22.2, 0], materials.prisonPipe);
+  }
+
+  const routes = [
+    [[0, 82], [0, 145], [42, 145], [42, 215], [-12, 215], [-12, 285]],
+    [[0, 82], [0, 155], [-44, 155], [-44, 220], [18, 220], [18, 292]],
+    [[0, 82], [0, 138], [48, 138], [48, 200], [8, 200], [8, 276]],
+    [[0, 82], [0, 150], [-38, 150], [-38, 210], [-2, 210], [-2, 284]],
+    [[0, 82], [0, 142], [40, 142], [40, 205], [-18, 205], [-18, 278]],
+    [[0, 82], [0, 158], [-46, 158], [-46, 226], [10, 226], [10, 296]]
+  ];
+  world.userData.exitPositions = [];
+  for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+    const angle = routeIndex * Math.PI / 3;
+    const routeRoot = new THREE.Group();
+    routeRoot.position.copy(center);
+    routeRoot.rotation.y = angle;
+    world.add(routeRoot);
+    const route = routes[routeIndex];
+    for (let segmentIndex = 0; segmentIndex < route.length - 1; segmentIndex++) {
+      const [ax, az] = route[segmentIndex];
+      const [bx, bz] = route[segmentIndex + 1];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const length = Math.hypot(dx, dz);
+      const segmentAngle = Math.atan2(dx, dz);
+      const midX = (ax + bx) * 0.5;
+      const midZ = (az + bz) * 0.5;
+      addBox(routeRoot, [30, 0.8, length + 5], [midX, 0, midZ], materials.mazeFloor, segmentAngle);
+      const sideX = Math.cos(segmentAngle) * 16;
+      const sideZ = -Math.sin(segmentAngle) * 16;
+      for (const sign of [-1, 1]) {
+        addBox(routeRoot, [2.4, 25, length + 6], [midX + sideX * sign, 12.5, midZ + sideZ * sign], materials.mazeShell, segmentAngle, true);
+        const lightMaterial = (routeIndex + segmentIndex + (sign > 0 ? 1 : 0)) % 3 === 0
+          ? materials.facilityLightWarm
+          : materials.facilityLightCool;
+        addBox(routeRoot, [0.35, 0.55, Math.max(8, length - 10)], [midX + sideX * sign * 0.91, 4.2, midZ + sideZ * sign * 0.91], lightMaterial, segmentAngle);
+      }
+      for (let rib = 10; rib < length; rib += 16) {
+        const t = rib / length - 0.5;
+        addBox(routeRoot, [34, 1.3, 1.5], [midX + dx * t, 23, midZ + dz * t], routeIndex % 2 ? materials.prisonPipe : materials.prisonPipeDirty, segmentAngle);
+      }
+    }
+    const [exitX, exitZ] = route[route.length - 1];
+    const exitLocal = new THREE.Vector3(exitX, 13, exitZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+    world.userData.exitPositions.push(center.clone().add(exitLocal));
+  }
+
+  const ambient = new THREE.HemisphereLight(0x8aa6bb, 0x09080d, 0.58);
+  world.add(ambient);
+  for (let i = 0; i < 6; i++) {
+    const angle = i * Math.PI / 3;
+    const light = new THREE.PointLight(i % 2 ? 0xff7b3b : 0x63d9ff, 5.5, 95, 2);
+    light.position.set(center.x + Math.sin(angle) * 58, 16, center.z - Math.cos(angle) * 58);
+    world.add(light);
+  }
+  world.updateMatrixWorld(true);
+  for (const item of terrainManager.destructibles) {
+    if (item.chunk === world) item.object.userData.refreshCollisionBounds?.();
+  }
+  return world;
+}
+
 class TerrainManager {
   constructor(parent) {
     this.parent = parent;
@@ -2763,6 +2888,11 @@ class TerrainManager {
     this.compound = createFlatPrisonCompound(this);
     this.parent.add(this.compound);
     this.compoundDestructibles = [...this.destructibles];
+    this.destructibles = [];
+    this.mazeWorld = createHexMazeWorld(this);
+    this.parent.add(this.mazeWorld);
+    this.mazeDestructibles = [...this.destructibles];
+    this.destructibles = [...this.compoundDestructibles];
     this.legacyWorld = new THREE.Group();
     this.legacyWorld.visible = false;
     this.legacyWorldBuilt = false;
@@ -2778,7 +2908,7 @@ class TerrainManager {
   }
 
   update(position) {
-    if (this.worldMode === "compound") return;
+    if (this.worldMode !== "prison") return;
     const cx = Math.floor(position.x / this.size);
     const cz = Math.floor(position.z / this.size);
     const wanted = new Set();
@@ -2808,6 +2938,16 @@ class TerrainManager {
     setHomeBaseBeaconWorld(mode);
     this.compound.visible = mode === "compound";
     this.legacyWorld.visible = mode === "prison";
+    this.mazeWorld.visible = mode === "maze";
+    if (mode === "maze") {
+      for (const chunk of this.chunks.values()) {
+        this.parent.remove(chunk);
+        disposeObject(chunk);
+      }
+      this.chunks.clear();
+      this.destructibles = [...this.mazeDestructibles];
+      return;
+    }
     if (mode === "prison") {
       this.radius = 1;
       this.destructibles = [];
@@ -3002,6 +3142,7 @@ class TerrainManager {
         item.collisionBox.min.add(chunk.position);
         item.collisionBox.max.add(chunk.position);
       }
+      item.collisionBox.getCenter(item.position);
     };
     object.userData.refreshCollisionBounds();
     this.destructibles.push(item);
@@ -3156,6 +3297,7 @@ class TerrainManager {
   }
 
   getHeightAt(x, z) {
+    if (this.worldMode === "maze") return 0;
     if (this.worldMode === "compound") return Math.hypot(x, z) <= 50 ? 1 : 0;
     const waves = Math.sin(x * 0.018) * 2.8 + Math.cos(z * 0.021) * 2.3 + Math.sin((x + z) * 0.009) * 4.4;
     const rough = (valueNoise(x * 0.035, z * 0.035) - 0.5) * 8.5;
@@ -3243,6 +3385,120 @@ class WorldPortalManager {
     for (const tower of [...refuelTowers.towers, ...missileTowers.towers]) tower.group.visible = compoundVisible;
     hud.status.textContent = enteringPrison ? "Dimensional transit complete. Archived prison city acquired." : "Home compound restored. Helipad approach authorized.";
     statusTimer = 5;
+  }
+}
+
+class PurpleMazePortalManager {
+  constructor(parent, terrainManager) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.elapsed = 0;
+    this.cooldown = 0;
+    this.returnWorld = "compound";
+    this.energyMaterials = [];
+    this.entryPosition = new THREE.Vector3(170, 15, -170);
+    this.terrain.reserveClearZone(this.entryPosition.x, this.entryPosition.z, 30);
+    this.entryPortal = this.createPortal();
+    this.entryPortal.position.copy(this.entryPosition);
+    this.parent.add(this.entryPortal);
+    this.mazePortals = [];
+    const arrival = this.createPortal();
+    arrival.position.set(MAZE_WORLD_CENTER.x, 13, MAZE_WORLD_CENTER.z + 48);
+    arrival.rotation.y = Math.PI;
+    this.parent.add(arrival);
+    this.mazePortals.push(arrival);
+    for (const position of this.terrain.mazeWorld.userData.exitPositions) {
+      const portal = this.createPortal();
+      portal.position.copy(position);
+      portal.lookAt(MAZE_WORLD_CENTER.x, position.y, MAZE_WORLD_CENTER.z);
+      this.parent.add(portal);
+      this.mazePortals.push(portal);
+    }
+    this.updateVisibility();
+  }
+
+  createPortal() {
+    const group = new THREE.Group();
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(11.5, 1.8, 16, 64),
+      new THREE.MeshStandardMaterial({ color: 0x706b78, metalness: 0.96, roughness: 0.18, emissive: 0x44155b, emissiveIntensity: 1.15 })
+    );
+    const energyMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: { time: { value: 0 } },
+      vertexShader: "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+      fragmentShader: "varying vec2 vUv; uniform float time; void main(){ vec2 p=vUv-0.5; float r=length(p); float a=atan(p.y,p.x); float flow=sin(a*8.0-r*48.0+time*5.0)+sin(a*3.0+r*31.0-time*3.2); float edge=smoothstep(0.5,0.38,r); float pulse=0.58+0.22*sin(time*2.3+r*35.0); vec3 c=mix(vec3(0.24,0.01,0.42),vec3(0.92,0.28,1.0),0.52+flow*0.18); gl_FragColor=vec4(c,edge*(pulse+0.22)); }"
+    });
+    const energy = new THREE.Mesh(new THREE.CircleGeometry(9.8, 64), energyMaterial);
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(10.1, 0.32, 10, 64),
+      new THREE.MeshBasicMaterial({ color: 0xd33cff, transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false })
+    );
+    const light = new THREE.PointLight(0xc52cff, 8, 70, 2);
+    light.position.z = 3;
+    group.add(ring, energy, halo, light);
+    this.energyMaterials.push(energyMaterial);
+    return group;
+  }
+
+  setCockpitOverride(enabled) {
+    mazeCockpitActive = enabled;
+    const cockpitVisible = enabled || gameMode === "cockpit";
+    document.body.classList.toggle("cockpit-mode", cockpitVisible);
+    cockpitOverlay.hidden = !cockpitVisible;
+    cockpitWeaponRig.visible = cockpitVisible;
+    tank.setCockpitVisibility(cockpitVisible);
+  }
+
+  updateVisibility() {
+    const inMaze = this.terrain.worldMode === "maze";
+    this.entryPortal.visible = !inMaze && this.terrain.worldMode === "compound";
+    for (const portal of this.mazePortals) portal.visible = inMaze;
+  }
+
+  isInside(portal, position) {
+    portal.updateMatrixWorld(true);
+    const local = portal.worldToLocal(position.clone());
+    return Math.hypot(local.x, local.y) < 8.8 && Math.abs(local.z) < 4.5;
+  }
+
+  update(delta, tankRef) {
+    this.elapsed += delta;
+    this.cooldown = Math.max(0, this.cooldown - delta);
+    for (const material of this.energyMaterials) material.uniforms.time.value = this.elapsed;
+    this.updateVisibility();
+    if (this.cooldown > 0) return;
+    if (this.terrain.worldMode !== "maze" && this.entryPortal.visible && this.isInside(this.entryPortal, tankRef.group.position)) {
+      this.returnWorld = this.terrain.worldMode;
+      this.terrain.setWorldMode("maze");
+      this.setCockpitOverride(true);
+      tankRef.group.position.set(MAZE_WORLD_CENTER.x, CONFIG.tankHoverHeight, MAZE_WORLD_CENTER.z + 18);
+      tankRef.group.rotation.y = 0;
+      tankRef.speed = 0;
+      tankRef.altitudeHoldY = tankRef.group.position.y;
+      this.cooldown = 3;
+      tacticalGrid.cellX = Infinity;
+      tacticalGrid.cellZ = Infinity;
+      hud.status.textContent = "Purple transit complete. Six maze routes acquired.";
+      statusTimer = 5;
+      return;
+    }
+    if (this.terrain.worldMode === "maze") {
+      const exit = this.mazePortals.find(portal => this.isInside(portal, tankRef.group.position));
+      if (!exit) return;
+      this.terrain.setWorldMode(this.returnWorld);
+      this.setCockpitOverride(false);
+      tankRef.group.position.set(this.entryPosition.x, CONFIG.tankHoverHeight, this.entryPosition.z + 25);
+      tankRef.group.rotation.y = 0;
+      tankRef.speed = 0;
+      tankRef.altitudeHoldY = tankRef.group.position.y;
+      this.cooldown = 3;
+      hud.status.textContent = "Maze transit complete. Outdoor mission restored.";
+      statusTimer = 5;
+    }
   }
 }
 
@@ -6530,6 +6786,7 @@ terrain = new TerrainManager(scene);
 tank = new Tank(scene);
 tacticalGrid = new TacticalGrid(scene, terrain);
 worldPortal = new WorldPortalManager(scene, terrain);
+purpleMazePortal = new PurpleMazePortalManager(scene, terrain);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 bootcampManager = new BootcampDuelManager(scene, terrain, tank, enemies);
@@ -6557,11 +6814,17 @@ function animate() {
     updateFuel(delta);
     const controls = autopilot.update(delta, tank, terrain, input);
     tank.update(delta, controls, terrain, fuel > 0);
+    if (terrain.worldMode === "maze" && tank.group.position.y > 17) {
+      tank.group.position.y = 17;
+      tank.verticalVelocity = Math.min(0, tank.verticalVelocity);
+      tank.altitudeHoldY = Math.min(17, tank.altitudeHoldY ?? 17);
+    }
     const moved = tank.group.position.distanceTo(previous);
     distanceTravelled += moved;
     const normalHoverY = terrain.getHeightAt(tank.group.position.x, tank.group.position.z) + CONFIG.tankHoverHeight;
     if (tank.group.position.y > normalHoverY + 1) runStats.flightTime += delta;
     worldPortal.update(delta, tank);
+    purpleMazePortal.update(delta, tank);
     terrain.update(tank.group.position);
     tacticalGrid.update(delta, tank);
     if (isDogfightMode() && bootcampManager) {
@@ -6632,7 +6895,7 @@ function toggleCameraMode() {
 }
 
 function updateCamera(delta) {
-  if (gameMode === "cockpit") {
+  if (gameMode === "cockpit" || mazeCockpitActive) {
     tank.group.updateMatrixWorld(true);
     const cockpitPosition = tank.group.localToWorld(new THREE.Vector3(0, 5.62, -5.15));
     const cockpitLook = tank.group.localToWorld(new THREE.Vector3(0, 4.92, -120));
@@ -6694,7 +6957,7 @@ function updateHUD(delta) {
   hud.missiles.textContent = tank.getMissileCount();
   hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
-  if (gameMode === "cockpit") {
+  if (gameMode === "cockpit" || mazeCockpitActive) {
     const groundAltitude = terrain.getHeightAt(tank.group.position.x, tank.group.position.z);
     cockpitReadouts.armor.textContent = String(Math.max(0, Math.ceil(hitPoints))).padStart(3, "0");
     cockpitReadouts.speed.textContent = String(Math.round(Math.abs(tank.speed) * 2.4)).padStart(3, "0");
