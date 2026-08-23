@@ -384,6 +384,7 @@ const droneOrbs = [];
 const prisonBreachEffects = [];
 const toxicSmokeEffects = [];
 const radioTowerEffects = [];
+let homeBaseBeacon = null;
 let beaconTime = 0;
 let toxicSmokeTime = 0;
 
@@ -2078,6 +2079,45 @@ function createFlatPrisonCompound(terrainManager) {
   padLights.instanceMatrix.needsUpdate = true;
   group.add(padLights);
 
+  const beaconGroup = new THREE.Group();
+  const orbMaterial = new THREE.MeshBasicMaterial({ color: 0xff1838, transparent: true, opacity: 0.96, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const haloMaterial = new THREE.MeshBasicMaterial({ color: 0xff0828, transparent: true, opacity: 0.24, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(4.2, 24, 16), orbMaterial);
+  orb.position.y = 145;
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(7.8, 18, 12), haloMaterial);
+  halo.position.copy(orb.position);
+  const beamMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff1735,
+    transparent: true,
+    opacity: 0.075,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false
+  });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 43, 140, 40, 1, true), beamMaterial);
+  beam.position.y = 72;
+  const spotlightTarget = new THREE.Object3D();
+  spotlightTarget.position.set(0, 0, 0);
+  const spotlight = new THREE.SpotLight(0xff1635, 46, 220, THREE.MathUtils.degToRad(19), 0.72, 1.45);
+  spotlight.position.copy(orb.position);
+  spotlight.target = spotlightTarget;
+  const haze = [];
+  for (let i = 0; i < 18; i++) {
+    const puffMaterial = new THREE.MeshBasicMaterial({ color: i % 3 ? 0xff2342 : 0xff8797, transparent: true, opacity: 0.022 + (i % 4) * 0.007, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 7), puffMaterial);
+    const phase = seededRandom(18000 + i * 37);
+    const radius = 5 + phase * 29;
+    const angle = seededRandom(18100 + i * 41) * Math.PI * 2;
+    puff.position.set(Math.cos(angle) * radius, 8 + phase * 128, Math.sin(angle) * radius);
+    puff.scale.set(5 + phase * 8, 10 + phase * 18, 5 + phase * 8);
+    beaconGroup.add(puff);
+    haze.push({ puff, phase, angle, radius });
+  }
+  beaconGroup.add(beam, orb, halo, spotlight, spotlightTarget);
+  group.add(beaconGroup);
+  homeBaseBeacon = { group: beaconGroup, orb, halo, beam, spotlight, haze, time: 0 };
+
   const roadLines = [-150, -50, 50, 150];
   for (const line of roadLines) {
     const roadX = new THREE.Mesh(new THREE.BoxGeometry(size, 0.14, 15), materials.road);
@@ -3653,7 +3693,7 @@ class WingmanUnit {
     } else if (manager.assistTimer > 0) {
       this.state = "assist";
       const side = this.index ? 1 : -1;
-      const formationOffset = new THREE.Vector3(side * 14, 4, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.group.rotation.y);
+      const formationOffset = new THREE.Vector3(side * 23, 5, 13).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.group.rotation.y);
       destination = player.group.position.clone().add(formationOffset);
     } else {
       this.state = "patrol";
@@ -5612,6 +5652,7 @@ function animate() {
     updatePrisonBreachEffects(delta);
     updateToxicSmoke(delta);
     updateRadioTowers(delta);
+    updateHomeBaseBeacon(delta);
   }
 
   renderer.render(scene, camera);
@@ -6267,6 +6308,24 @@ function updateRadioTowers(delta) {
     effect.core.scale.setScalar(0.82 + pulse * 0.72);
     effect.halo.scale.setScalar(0.8 + pulse * 1.15);
     effect.halo.material.opacity = 0.24 + pulse * 0.66;
+  }
+}
+
+function updateHomeBaseBeacon(delta) {
+  if (!homeBaseBeacon || !homeBaseBeacon.group.visible) return;
+  homeBaseBeacon.time += delta;
+  const pulse = 0.5 + Math.sin(homeBaseBeacon.time * 2.2) * 0.5;
+  homeBaseBeacon.orb.scale.setScalar(0.94 + pulse * 0.16);
+  homeBaseBeacon.halo.scale.setScalar(0.9 + pulse * 0.34);
+  homeBaseBeacon.halo.material.opacity = 0.16 + pulse * 0.19;
+  homeBaseBeacon.beam.material.opacity = 0.062 + pulse * 0.031;
+  homeBaseBeacon.spotlight.intensity = 38 + pulse * 16;
+  for (let i = 0; i < homeBaseBeacon.haze.length; i++) {
+    const particle = homeBaseBeacon.haze[i];
+    const drift = homeBaseBeacon.time * (0.06 + particle.phase * 0.035);
+    particle.puff.position.x = Math.cos(particle.angle + drift) * particle.radius + Math.sin(homeBaseBeacon.time * 0.25 + i) * 2.5;
+    particle.puff.position.z = Math.sin(particle.angle + drift) * particle.radius + Math.cos(homeBaseBeacon.time * 0.21 + i) * 2.5;
+    particle.puff.material.opacity = (0.018 + (i % 4) * 0.006) * (0.72 + pulse * 0.4);
   }
 }
 
