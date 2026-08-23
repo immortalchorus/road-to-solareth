@@ -136,6 +136,7 @@ const rotorVolumeControl = document.querySelector("#rotor-volume");
 const rotorVolumeValue = document.querySelector("#rotor-volume-value");
 const splashRotorVolumeControl = document.querySelector("#splash-rotor-volume");
 const splashRotorVolumeValue = document.querySelector("#splash-rotor-volume-value");
+const gameModeSelect = document.querySelector("#game-mode");
 const missileRangeControl = document.querySelector("#missile-range");
 const missileRangeValue = document.querySelector("#missile-range-value");
 const commsVolumeControl = document.querySelector("#comms-volume");
@@ -266,10 +267,14 @@ let gameStarted = false;
 let gamePaused = false;
 let sessionTimeRemaining = CONFIG.sessionDuration;
 let missionEndsAt = 0;
+let gameMode = "standard";
+let bootcampManager = null;
 const runStats = {
   dronesDestroyed: 0,
   enemyVehiclesDestroyed: 0,
   prisonersStopped: 0,
+  bootcampTunnels: 0,
+  bootcampOpponentsDefeated: 0,
   shotsFired: 0,
   missilesFired: 0,
   missileHits: 0,
@@ -343,6 +348,8 @@ const materials = {
   radioSphere: new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 1, depthWrite: false }),
   surveillanceChrome: new THREE.MeshStandardMaterial({ color: 0xbac7cd, metalness: 1, roughness: 0.14, envMapIntensity: 1.8 }),
   playerChrome: new THREE.MeshStandardMaterial({ color: 0xe7f1f5, metalness: 1, roughness: 0.055, envMapIntensity: 2.8 }),
+  wingmanChrome: new THREE.MeshStandardMaterial({ color: 0xdee8ed, metalness: 1, roughness: 0.1, envMapIntensity: 2.6 }),
+  wingmanTrim: new THREE.MeshStandardMaterial({ color: 0xa6b0be, metalness: 0.96, roughness: 0.38, envMapIntensity: 1.9 }),
   playerTurbine: new THREE.MeshStandardMaterial({ color: 0x3b4244, metalness: 0.76, roughness: 0.52, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.04 }),
   facilityLightWarm: new THREE.MeshStandardMaterial({ color: 0xffbd72, emissive: 0xff7428, emissiveIntensity: 3.15, metalness: 0.55, roughness: 0.3 }),
   facilityLightCool: new THREE.MeshStandardMaterial({ color: 0x8ee8ff, emissive: 0x2aa8ff, emissiveIntensity: 3.35, metalness: 0.62, roughness: 0.24 }),
@@ -461,10 +468,27 @@ try {
   playerCallSign.value = "";
 }
 renderHighScores();
+
+function configureSessionMode(selectedMode) {
+  gameMode = selectedMode === "bootcamp" ? "bootcamp" : "standard";
+  if (wingmen) {
+    for (const wingman of wingmen.units) wingman.group.visible = gameMode !== "bootcamp";
+  }
+  if (!bootcampManager) return;
+  if (gameMode === "bootcamp") {
+    bootcampManager.activate();
+    bootcampManager.tunnelRadius = 14;
+    if (!bootcampManager.opponent || !bootcampManager.opponent.group.visible) bootcampManager.respawnOpponent();
+  } else {
+    bootcampManager.deactivate();
+  }
+}
+
 playButton.addEventListener("click", async () => {
   playButton.disabled = true;
   playLaunch.classList.add("depositing");
   await new Promise(resolve => window.setTimeout(resolve, 680));
+  configureSessionMode(gameModeSelect ? gameModeSelect.value : "standard");
   const sessionDuration = CONFIG.sessionDuration;
   gameStarted = true;
   sessionTimeRemaining = sessionDuration;
@@ -474,7 +498,9 @@ playButton.addEventListener("click", async () => {
   splashScreen.hidden = true;
   splashScreen.remove();
   clock.getDelta();
-  hud.status.textContent = `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
+  hud.status.textContent = gameMode === "bootcamp"
+    ? `${audio.currentTrack.title} signal acquired. Dogfight Bootcamp active.`
+    : `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
   try {
     audio.armAudio();
@@ -1542,6 +1568,295 @@ class Tank {
       });
     }
     return shots;
+  }
+}
+
+class BootcampDuelManager {
+  constructor(scene, terrainManager, playerTank, enemyManager) {
+    this.scene = scene;
+    this.terrain = terrainManager;
+    this.player = playerTank;
+    this.enemyManager = enemyManager;
+    this.opponent = new Tank(scene);
+    this.opponent.group.visible = false;
+    this.opponentColorized = false;
+    this.collisionRadius = CONFIG.tankCollisionRadius;
+    this.baseHealth = CONFIG.maxHitPoints;
+    this.health = this.baseHealth;
+    this.active = false;
+    this.state = "ready";
+    this.fireTimer = 1.9 + Math.random() * 1.2;
+    this.maxRange = 320;
+    this.preferredRange = 130;
+    this.attackArc = THREE.MathUtils.degToRad(12);
+    this.respawnTimer = 0;
+    this.nextTunnelReset = 60;
+    this.tunnelLife = 0;
+    this.tunnelActive = false;
+    this.tunnelRadius = 14;
+    this.playerInTunnel = false;
+    this.tunnelMarker = null;
+    this.tunnelCenter = new THREE.Vector3();
+    this.tunnelNormal = new THREE.Vector3(0, 1, 0);
+    this.createTunnelMarker();
+  }
+
+  activate() {
+    this.active = true;
+    this.respawnTimer = 0;
+    this.nextTunnelReset = 60;
+    this.tunnelLife = 0;
+    this.tunnelActive = false;
+    this.playerInTunnel = false;
+    this.state = "fighting";
+    this.respawnOpponent();
+  }
+
+  deactivate() {
+    this.active = false;
+    this.hideTunnel();
+    if (this.opponent && this.opponent.group) this.opponent.group.visible = false;
+  }
+
+  update(delta) {
+    if (!this.active) return;
+    this.ensureBootcampSkin();
+    if (this.respawnTimer > 0) {
+      this.respawnTimer -= delta;
+      if (this.respawnTimer <= 0) this.respawnOpponent();
+      return;
+    }
+
+    this.applyOpponentAI(delta);
+    this.updateTunnel(delta);
+    if (this.health <= 0) {
+      this.health = 0;
+      this.handleDefeat();
+      return;
+    }
+
+    if (this.tunnelActive) {
+      this.tunnelLife -= delta;
+      this.updateTunnelVisual(delta);
+      this.checkTunnelPass();
+      if (this.tunnelLife <= 0) {
+        this.hideTunnel();
+      }
+    } else if (this.nextTunnelReset > 0) {
+      this.nextTunnelReset -= delta;
+      if (this.nextTunnelReset <= 0) this.spawnTunnel();
+    }
+  }
+
+  ensureBootcampSkin() {
+    if (!this.opponent) return;
+    const accent = new THREE.Color(0x6dd4ff);
+    const warm = new THREE.Color(0x193548);
+    this.opponent.group.traverse(child => {
+      if (!child.isMesh || !child.material || !child.material.color || child.userData.bootcampTinted) return;
+      if (child.material.color.getHex() === 0x000000) return;
+      child.material = child.material.clone();
+      child.material.color.lerp(accent, 0.72);
+      if (child.material.emissive) child.material.emissive.lerp(warm, 0.72);
+      child.material.roughness = Math.max(0.04, child.material.roughness - 0.22);
+      child.material.metalness = Math.min(1, child.material.metalness + 0.12);
+      child.userData.bootcampTinted = true;
+    });
+    this.opponentColorized = true;
+  }
+
+  spawnOpponent() {
+    const forward = new THREE.Vector3(-Math.sin(this.player.group.rotation.y), 0, -Math.cos(this.player.group.rotation.y));
+    const distance = 170 + Math.random() * 45;
+    const lateral = (Math.random() - 0.5) * 30;
+    const spawn = this.player.group.position.clone().addScaledVector(forward, -distance);
+    spawn.x += forward.z * lateral;
+    spawn.z -= forward.x * lateral;
+    const ground = this.terrain.getHeightAt(spawn.x, spawn.z);
+    this.opponent.group.position.set(spawn.x, ground + CONFIG.tankHoverHeight, spawn.z);
+    this.opponent.group.rotation.y = Math.atan2(-forward.x, -forward.z) + (Math.random() - 0.5) * 0.3;
+    this.opponent.group.rotation.x = 0;
+    this.opponent.group.rotation.z = 0;
+    this.opponent.speed = 0;
+    this.opponent.verticalVelocity = 0;
+    this.opponent.altitudeHoldY = null;
+    this.opponent.verticalVelocity = 0;
+    this.opponent.turret.rotation.set(0, 0, 0);
+    this.opponent.cannon.rotation.set(0, 0, 0);
+    this.opponent.missileRack.rotation.set(0, 0, 0);
+    this.opponent.turretPitch = 0;
+    this.opponent.missileLaunchIndex = 0;
+    this.opponent.reloadMissiles();
+    this.health = this.baseHealth;
+    this.opponent.group.visible = true;
+  }
+
+  respawnOpponent() {
+    this.state = "fighting";
+    this.fireTimer = 1.8 + Math.random() * 0.9;
+    this.spawnOpponent();
+  }
+
+  handleDefeat() {
+    if (this.state === "destroyed") return;
+    this.state = "destroyed";
+    runStats.bootcampOpponentsDefeated++;
+    const center = this.opponent.group.position.clone();
+    createExplosion(center, { radius: 4, growth: 35, life: 0.95, color: 0xff3f2a, opacity: 0.75 });
+    this.opponent.group.visible = false;
+    hud.status.textContent = "Enemy hovertank destroyed. Continue toward the next bootcamp cycle.";
+    statusTimer = 3.6;
+    this.respawnTimer = 3.8;
+    if (!this.tunnelActive) this.nextTunnelReset = Math.max(this.nextTunnelReset, 20);
+  }
+
+  applyOpponentAI(delta) {
+    if (!this.opponent || !this.player) return;
+    const toPlayer = this.player.group.position.clone().sub(this.opponent.group.position);
+    const flat = new THREE.Vector3(toPlayer.x, 0, toPlayer.z);
+    const distance = flat.length();
+    if (distance > 0.001) flat.normalize();
+    const targetYaw = Math.atan2(-toPlayer.x, -toPlayer.z);
+    const yawDelta = wrapAngle(targetYaw - this.opponent.group.rotation.y);
+    const turnLeft = yawDelta > 0.03;
+    const turnRight = yawDelta < -0.03;
+    const forward = distance > this.preferredRange + 20;
+    const reverse = distance < this.preferredRange - 16 || distance < 55;
+    const controls = {
+      Autopilot: false,
+      ArrowUp: forward,
+      ArrowDown: reverse,
+      ArrowLeft: turnLeft,
+      ArrowRight: turnRight,
+      ShiftLeft: false,
+      ShiftRight: false,
+      KeyF: false,
+      KeyY: false,
+      KeyV: false,
+      ControlLeft: false,
+      ControlRight: false,
+      KeyZ: false
+    };
+    this.opponent.update(delta, controls, this.terrain, true);
+
+    const localTarget = toPlayer.clone().applyQuaternion(this.opponent.group.quaternion.clone().invert());
+    const targetYawLocal = Math.atan2(localTarget.x, -localTarget.z);
+    const targetPitch = THREE.MathUtils.clamp(
+      Math.atan2(localTarget.y + 0.9, Math.max(0.2, -localTarget.z)),
+      -THREE.MathUtils.degToRad(10),
+      THREE.MathUtils.degToRad(24)
+    );
+    const turretYaw = wrapAngle(targetYawLocal);
+    const yawError = wrapAngle(turretYaw - this.opponent.turret.rotation.y);
+    this.opponent.turret.rotation.y += yawError * Math.min(1, delta * 3.8);
+    const pitchError = targetPitch - this.opponent.cannon.rotation.x;
+    this.opponent.cannon.rotation.x = moveToward(this.opponent.cannon.rotation.x, targetPitch, delta * 1.6);
+    this.opponent.turretPitch = this.opponent.cannon.rotation.x;
+    this.opponent.missileRack.rotation.x = this.opponent.cannon.rotation.x;
+
+    this.fireTimer -= delta;
+    if (this.fireTimer <= 0 && Math.abs(yawError) < this.attackArc && distance < this.maxRange) {
+      const muzzle = this.opponent.getMuzzleWorldPosition();
+      const direction = this.opponent.getTurretWorldDirection();
+      this.enemyManager.fireEnemyShell(muzzle, direction);
+      this.fireTimer = 1.9 + Math.random() * 0.95;
+    }
+  }
+
+  checkPlayerHit(start, end, radius, shot) {
+    if (!this.opponent || !this.opponent.group.visible || this.state !== "fighting") return false;
+    const impactRadius = this.collisionRadius + radius;
+    if (distanceToSegmentSquared(this.opponent.group.position, start, end) > impactRadius * impactRadius) return false;
+    const damage = shot.kind === "missile" ? 90 : shot.kind === "bomb" ? 130 : 10;
+    this.takeDamage(damage, shot);
+    return true;
+  }
+
+  takeDamage(amount, shot) {
+    this.health = Math.max(0, this.health - amount);
+    const position = this.opponent.group.position.clone();
+    registerPlayerHit(shot, position, amount, "object");
+    createImpactSparks(position, shot.direction || new THREE.Vector3(0, 1, 0));
+    if (this.health <= 0) {
+      this.handleDefeat();
+    }
+  }
+
+  createTunnelMarker() {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(this.tunnelRadius, 0.45, 12, 56),
+      new THREE.MeshStandardMaterial({ color: 0x8ff4ff, emissive: 0x2ce7ff, emissiveIntensity: 1.9 })
+    );
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(this.tunnelRadius * 0.84, 0.09, 8, 34),
+      new THREE.MeshBasicMaterial({ color: 0xfff7df, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending })
+    );
+    this.tunnelPortal = new THREE.Group();
+    this.tunnelPortal.add(ring, rim);
+    this.tunnelPortal.visible = false;
+    this.scene.add(this.tunnelPortal);
+  }
+
+  spawnTunnel() {
+    const forward = new THREE.Vector3(-Math.sin(this.player.group.rotation.y), 0, -Math.cos(this.player.group.rotation.y));
+    const left = new THREE.Vector3(forward.z, 0, -forward.x);
+    const playerPos = this.player.group.position;
+    const playerAhead = playerPos.clone().addScaledVector(forward, 95 + Math.random() * 55);
+    playerAhead.addScaledVector(left, (Math.random() - 0.5) * 55);
+    playerAhead.y = this.terrain.getHeightAt(playerAhead.x, playerAhead.z) + CONFIG.tankHoverHeight + 1 + Math.random() * 2.8;
+    this.tunnelCenter.copy(playerAhead);
+    this.tunnelNormal.set(0, 1, 0);
+    this.tunnelPortal.position.copy(this.tunnelCenter);
+    this.tunnelPortal.rotation.y = this.player.group.rotation.y + (Math.random() - 0.5) * 0.8;
+    this.tunnelPortal.visible = true;
+    this.tunnelLife = 22;
+    this.tunnelActive = true;
+    this.playerInTunnel = false;
+  }
+
+  hideTunnel() {
+    this.tunnelLife = 0;
+    this.tunnelActive = false;
+    this.playerInTunnel = false;
+    this.nextTunnelReset = Math.max(18, this.nextTunnelReset);
+    if (this.tunnelPortal) this.tunnelPortal.visible = false;
+  }
+
+  updateTunnelVisual(delta) {
+    if (!this.tunnelPortal || !this.tunnelPortal.visible) return;
+    const ring = this.tunnelPortal.children[0];
+    const rim = this.tunnelPortal.children[1];
+    const pulse = 0.12 + Math.sin(performance.now() * 0.0012) * 0.06;
+    ring.scale.setScalar(1 + pulse * 0.08);
+    rim.scale.setScalar(1 + (1 - pulse) * 0.05);
+  }
+
+  checkTunnelPass() {
+    if (!this.tunnelPortal || !this.tunnelPortal.visible) return;
+    const playerY = this.player.group.position.y;
+    const distance = this.player.group.position.distanceTo(this.tunnelCenter);
+    const inside = distance <= this.tunnelRadius && Math.abs(playerY - this.tunnelCenter.y) <= 8;
+    if (!this.playerInTunnel && inside) {
+      this.handleTunnelPass();
+      return;
+    }
+    this.playerInTunnel = inside;
+  }
+
+  handleTunnelPass() {
+    this.playerInTunnel = true;
+    this.nextTunnelReset = 60;
+    this.hideTunnel();
+    runStats.bootcampTunnels++;
+    if (typeof resupplyTank === "function") resupplyTank();
+    this.opponent.reloadMissiles();
+    if (this.state !== "destroyed" && this.health > 0) this.opponent.reloadMissiles();
+    const currentHealth = this.health;
+    this.health = this.baseHealth;
+    if (this.opponent) this.respawnOpponent();
+    this.health = this.baseHealth;
+    hud.status.textContent = `Tunnel complete. Bootcamp systems reset (${Math.round(currentHealth)}) and resupply locked in.`;
+    statusTimer = 3.2;
   }
 }
 
@@ -3664,33 +3979,114 @@ class WingmanUnit {
     this.velocity = new THREE.Vector3();
     this.fireTimer = 0.5 + index * 0.2;
     this.collisionRadius = 2.25;
+    this.rearEnergyLevel = 0.18;
     this.supplyQueue = [];
     this.patrolPhase = index * Math.PI;
     this.build();
+    this.group.scale.setScalar(0.46);
     const startAngle = index ? -0.72 : 0.72;
     this.group.position.set(Math.sin(startAngle) * 38, 5.5, Math.cos(startAngle) * 38);
     parent.add(this.group);
   }
 
   build() {
-    for (const original of this.playerTank.legacyVisuals) {
-      const clone = original.clone(true);
-      clone.traverse(child => {
-        child.visible = true;
-        if (child.isMesh) {
-          child.material = child.material.clone();
-          child.castShadow = false;
-        }
-      });
-      this.group.add(clone);
+    if (!this.constructor.sharedWingmanAssets) {
+      this.constructor.sharedWingmanAssets = {
+        body: new THREE.BoxGeometry(6.0, 1.0, 8.8),
+        belly: new THREE.BoxGeometry(6.0, 0.36, 8.85),
+        pod: new THREE.BoxGeometry(1.55, 1.0, 2.95),
+        prow: new THREE.BoxGeometry(2.35, 0.4, 1.4),
+        tail: new THREE.CylinderGeometry(0.62, 0.8, 1.2, 8),
+        wing: new THREE.BoxGeometry(2.05, 0.22, 1.4),
+        turret: new THREE.BoxGeometry(1.55, 0.7, 1.55),
+        barrel: new THREE.CylinderGeometry(0.16, 0.18, 4.35, 8),
+        wheel: new THREE.CylinderGeometry(0.36, 0.36, 0.28, 8),
+        rearCoreMaterial: new THREE.MeshBasicMaterial({
+          color: 0x33bfff,
+          transparent: true,
+          opacity: 0.22,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          toneMapped: false
+        }),
+        rearHaloMaterial: new THREE.MeshBasicMaterial({
+          color: 0x168dff,
+          transparent: true,
+          opacity: 0.11,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          toneMapped: false
+        })
+      };
     }
-    this.group.scale.setScalar(0.46);
+
+    const assets = this.constructor.sharedWingmanAssets;
+    const chrome = materials.wingmanChrome;
+    const trim = materials.wingmanTrim;
+    const addPart = (geometry, material, position, scale = 1, rotation = [0, 0, 0]) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.rotation.set(...rotation);
+      if (typeof scale === "number") {
+        mesh.scale.setScalar(scale);
+      } else {
+        mesh.scale.set(...scale);
+      }
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      this.group.add(mesh);
+      return mesh;
+    };
+
+    addPart(assets.body, chrome, [0, 2.4, 0.45]);
+    addPart(assets.belly, trim, [0, 1.75, -0.15]);
+    for (const x of [-3.15, 3.15]) {
+      addPart(assets.pod, trim, [x, 2.95, -1.2]);
+      addPart(assets.wing, chrome, [x, 2.58, 1.35]);
+    }
+    addPart(assets.pod, chrome, [0, 2.9, -4.3]);
+    addPart(assets.wing, chrome, [-2.58, 2.58, -3.3]);
+    addPart(assets.wing, chrome, [2.58, 2.58, -3.3]);
+    addPart(assets.wing, chrome, [0, 2.58, 0.35], 1.42);
+    addPart(assets.prow, trim, [0, 3.05, -4.55]);
+    addPart(assets.tail, trim, [0, 3.0, 4.8], [1, 1, 1.18]);
+    addPart(assets.wing, trim, [0, 3.05, 3.9], [1.1, 0, 0]);
+
+    const cannonBase = addPart(assets.turret, chrome, [0, 2.95, -0.4]);
+    const cannon = new THREE.Mesh(assets.barrel, trim);
+    cannon.position.set(0, 0.38, -2.35);
+    cannon.rotation.x = Math.PI / 2;
+    cannon.castShadow = false;
+    cannon.receiveShadow = false;
+    cannonBase.add(cannon);
+    this.group.add(cannonBase);
+
+    for (const x of [-3.15, 3.15]) {
+      addPart(assets.wheel, trim, [x, 1.36, 1.92]);
+      addPart(assets.wheel, trim, [x, 1.36, -3.42]);
+    }
+
+    this.rearThrusters = [];
+    for (const x of [-1.05, 1.05]) {
+      const core = new THREE.Mesh(new THREE.CircleGeometry(0.31, 12), assets.rearCoreMaterial);
+      const halo = new THREE.Mesh(new THREE.CircleGeometry(0.57, 12), assets.rearHaloMaterial);
+      core.position.set(x, 2.7, 4.85);
+      halo.position.set(x, 2.7, 4.84);
+      core.rotation.x = Math.PI * 0.5;
+      halo.rotation.x = Math.PI * 0.5;
+      const engineLight = new THREE.PointLight(0x35cfff, 0.45, 14, 2);
+      engineLight.position.set(x, 2.7, 5.2);
+      engineLight.castShadow = false;
+      this.group.add(core, halo, engineLight);
+      this.rearThrusters.push({ core, halo, engineLight });
+    }
+
     const beaconMaterial = new THREE.MeshBasicMaterial({ color: this.index ? 0x6effa8 : 0x65dfff, transparent: true, opacity: 0.95 });
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 7), beaconMaterial);
     beacon.position.set(0, 4.5, 0.4);
     this.group.add(beacon);
     this.muzzle = new THREE.Object3D();
-    this.muzzle.position.set(0, 2.25, -11.5);
+    this.muzzle.position.set(0, 3.52, -5.55);
     this.group.add(this.muzzle);
   }
 
@@ -3718,6 +4114,19 @@ class WingmanUnit {
     this.fuel = Math.max(0, this.fuel - delta * 0.6);
     this.fireTimer -= delta;
     const player = this.playerTank;
+    const thrustPulse = manager.assistTimer > 0 ? 1 : 0;
+    const thrustRatio = Math.min(1, this.velocity.length() / 48);
+    const thrustTarget = Math.min(1, 0.16 + thrustRatio * 0.74 + thrustPulse * 0.06);
+    this.rearEnergyLevel = THREE.MathUtils.lerp(this.rearEnergyLevel, thrustTarget, 1 - Math.exp(-delta * 6.5));
+    const glow = 0.9 + Math.sin(performance.now() * 0.002 + this.patrolPhase) * 0.1;
+    const heat = THREE.MathUtils.clamp(this.rearEnergyLevel * glow, 0, 1);
+    for (const thruster of this.rearThrusters) {
+      thruster.core.material.opacity = 0.22 + heat * 0.55;
+      thruster.core.scale.setScalar(0.86 + heat * 0.34);
+      thruster.halo.material.opacity = 0.06 + heat * 0.3;
+      thruster.halo.scale.setScalar(0.92 + heat * 0.52);
+      thruster.engineLight.intensity = 0.32 + heat * 2.4;
+    }
     let destination;
     let targetPrisoner = null;
 
@@ -4603,7 +5012,7 @@ class ProjectileManager {
     this.bombCooldown = 0;
   }
 
-  update(delta, keys, tankRef, enemyManager, skyDroneManager) {
+  update(delta, keys, tankRef, enemyManager, skyDroneManager, bootcampManager = null) {
     this.cooldown -= delta;
     this.bombCooldown -= delta;
     if (keys.fireHeld && this.cooldown <= 0) {
@@ -4768,6 +5177,15 @@ class ProjectileManager {
         shot.life = -1;
         if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
         else audio.playExplosion();
+      }
+
+      if (shot.life > 0 && bootcampManager && bootcampManager.active) {
+        if (bootcampManager.checkPlayerHit(shot.previousPosition, shot.mesh.position, collisionRadius, shot)) {
+          if (shot.kind === "missile") {
+            this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
+          }
+          shot.life = -1;
+        }
       }
 
       if (shot.life <= 0) {
@@ -5650,6 +6068,7 @@ tacticalGrid = new TacticalGrid(scene, terrain);
 worldPortal = new WorldPortalManager(scene, terrain);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
+bootcampManager = new BootcampDuelManager(scene, terrain, tank, enemies);
 prisonEscapees = new PrisonEscapeManager(scene, enemies);
 wingmen = new WingmanManager(scene, terrain, tank);
 skyDrones = new SkyDroneManager(scene);
@@ -5679,15 +6098,23 @@ function animate() {
     worldPortal.update(delta, tank);
     terrain.update(tank.group.position);
     tacticalGrid.update(delta, tank);
-    enemies.update(delta, tank);
-    prisonEscapees.update(delta, tank);
-    skyDrones.update(delta, tank);
-    surveillanceFleet.update(delta, tank);
-    giantTarantulas.update(delta, tank, enemies);
-    wingmen.update(delta);
-    refuelTowers.update(delta, tank);
-    missileTowers.update(delta, tank);
-    projectiles.update(delta, input, tank, enemies, skyDrones);
+    if (gameMode === "bootcamp" && bootcampManager) {
+      bootcampManager.update(delta);
+      enemies.updateHostileShots(delta, tank);
+      refuelTowers.update(delta, tank);
+      missileTowers.update(delta, tank);
+      projectiles.update(delta, input, tank, enemies, skyDrones, bootcampManager);
+    } else {
+      enemies.update(delta, tank);
+      prisonEscapees.update(delta, tank);
+      skyDrones.update(delta, tank);
+      surveillanceFleet.update(delta, tank);
+      giantTarantulas.update(delta, tank, enemies);
+      wingmen.update(delta);
+      refuelTowers.update(delta, tank);
+      missileTowers.update(delta, tank);
+      projectiles.update(delta, input, tank, enemies, skyDrones);
+    }
     updateCamera(delta);
     updateHUD(delta);
     audio.update(delta, tank);
@@ -6122,6 +6549,7 @@ function endRun(summaryDelay = 0) {
   gameEnded = true;
   input.fireHeld = false;
   tank.speed = 0;
+  if (bootcampManager) bootcampManager.deactivate();
   audio.silenceRotor();
   audio.stopMusic();
   if (summaryDelay > 0) {
@@ -6132,6 +6560,7 @@ function endRun(summaryDelay = 0) {
 }
 
 function calculateCompositeScore() {
+  const isBootcamp = gameMode === "bootcamp";
   const accuracyRatio = runStats.shotsFired > 0
     ? Math.min(1, runStats.shotsHit / runStats.shotsFired)
     : 0;
@@ -6143,16 +6572,17 @@ function calculateCompositeScore() {
     runStats.missileHits * 125 +
     runStats.ricochetKills * 250 +
     runStats.prisonersStopped * 150 +
-    runStats.spidersDestroyed * 750;
+    runStats.spidersDestroyed * 750 +
+    (isBootcamp ? runStats.bootcampOpponentsDefeated * 2500 + runStats.bootcampTunnels * 900 : 0);
   const adjustedCombat = Math.round(combatBase * accuracyMultiplier);
   const flightScore = Math.round(runStats.flightTime * 10);
   const distanceScore = Math.round(distanceTravelled * 5);
   const rangeBonus = Math.round(Math.min(runStats.longestShot, 300) * 3);
   const armorBonus = hitPoints * 20;
   const resupplyBonus = runStats.resupplies * 200;
-  const parkedInArena = terrain.worldMode === "compound" && hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
+  const parkedInArena = !isBootcamp && terrain.worldMode === "compound" && hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
   const arenaBonus = parkedInArena ? 10000 : 0;
-  const wingmanSurvivors = wingmen ? wingmen.units.filter(unit => !unit.dead).length : 0;
+  const wingmanSurvivors = !isBootcamp && wingmen ? wingmen.units.filter(unit => !unit.dead).length : 0;
   const wingmanBonus = wingmanSurvivors * 5000;
   const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus + arenaBonus + wingmanBonus;
   const missedShots = Math.max(0, runStats.shotsFired - runStats.shotsHit);
@@ -6178,6 +6608,10 @@ function showRunSummary() {
   document.querySelector("#stat-vehicles").textContent = runStats.enemyVehiclesDestroyed;
   document.querySelector("#stat-prisoners").textContent = runStats.prisonersStopped;
   document.querySelector("#stat-spiders").textContent = runStats.spidersDestroyed;
+  const bootcampOpponentStat = document.querySelector("#stat-bootcamp-opponents");
+  const bootcampTunnelStat = document.querySelector("#stat-bootcamp-tunnels");
+  if (bootcampOpponentStat) bootcampOpponentStat.textContent = runStats.bootcampOpponentsDefeated.toString();
+  if (bootcampTunnelStat) bootcampTunnelStat.textContent = runStats.bootcampTunnels.toString();
   const wingman1 = wingmen.units[0];
   const wingman2 = wingmen.units[1];
   document.querySelector("#stat-wingman-1").textContent = wingman1.dead ? "DESTROYED" : `${Math.ceil(wingman1.health)} / ${CONFIG.wingmanMaxHitPoints}`;

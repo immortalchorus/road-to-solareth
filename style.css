@@ -141,11 +141,41 @@ body {
 
 #splash-settings-stack {
   display: grid;
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-rows: repeat(4, 1fr);
   grid-column: 3;
   grid-row: 1;
   gap: 6px;
   min-width: 0;
+}
+
+#game-mode-panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3px;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid rgba(169, 230, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(11, 17, 22, 0.86);
+  color: #d8f8ff;
+  font: 700 15px "Segoe UI", system-ui, sans-serif;
+  backdrop-filter: blur(7px);
+}
+
+#game-mode-panel > span {
+  color: #ffffff;
+  text-align: center;
+}
+
+#game-mode {
+  width: 100%;
+  background-color: #0c0f13;
+  color: #e2feff;
+  border: 1px solid rgba(143, 243, 255, 0.58);
+  border-radius: 5px;
+  padding: 5px 7px;
+  font: 700 12px "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
 }
 
 #splash-rotor-volume-panel {
@@ -751,6 +781,22 @@ body {
   .splash-instructions span {
     display: none;
   }
+
+  #game-mode-panel {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 7px 8px;
+    font-size: 11px;
+  }
+
+  #game-mode-panel > span {
+    font-size: 10px;
+  }
+
+  #game-mode {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
 }
 
 @media (max-width: 620px) {
@@ -803,6 +849,18 @@ body {
 
   #music-ammo-balance-value {
     font-size: 10px;
+  }
+
+  #game-mode-panel {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 5px 6px;
+    font-size: 8px;
+  }
+
+  #game-mode {
+    padding: 4px;
+    font-size: 9px;
   }
 
   #splash-rotor-volume-panel {

@@ -41,6 +41,13 @@
             <output id="music-ammo-balance-value" for="music-ammo-balance">50% / 50%</output>
           </label>
           <div id="splash-settings-stack">
+            <label id="game-mode-panel" for="game-mode">
+              <span>Game mode</span>
+              <select id="game-mode">
+                <option value="standard">Standard mission</option>
+                <option value="bootcamp">Dogfight Bootcamp</option>
+              </select>
+            </label>
             <label id="missile-range-panel" for="missile-range">
               <span>Missile Range</span>
               <input id="missile-range" type="range" min="1" max="100" value="55" step="1">
@@ -119,6 +126,8 @@
             <div><dt>Drones destroyed</dt><dd id="stat-drones">0</dd></div>
             <div><dt>Enemy vehicles destroyed</dt><dd id="stat-vehicles">0</dd></div>
             <div><dt>Prisoners stopped</dt><dd id="stat-prisoners">0</dd></div>
+            <div><dt>Bootcamp tunnels cleared</dt><dd id="stat-bootcamp-tunnels">0</dd></div>
+            <div><dt>Bootcamp opponents destroyed</dt><dd id="stat-bootcamp-opponents">0</dd></div>
             <div><dt>Robotic tarantulas destroyed</dt><dd id="stat-spiders">0</dd></div>
             <div><dt>Wingman 1</dt><dd id="stat-wingman-1">150 / 150</dd></div>
             <div><dt>Wingman 2</dt><dd id="stat-wingman-2">150 / 150</dd></div>
