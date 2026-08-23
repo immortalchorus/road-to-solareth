@@ -3288,36 +3288,58 @@ class GiantTarantulaManager {
 
   spawn(x, z, index) {
     const root = new THREE.Group();
-    const shell = new THREE.MeshStandardMaterial({ color: 0x241814, metalness: 0.08, roughness: 0.9 });
-    const hair = new THREE.MeshStandardMaterial({ color: 0x473026, metalness: 0.04, roughness: 1 });
-    const abdomen = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), hair);
-    abdomen.scale.set(4.7, 3.6, 5.6);
-    abdomen.position.set(0, 8.4, 2.9);
-    const thorax = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), shell);
-    thorax.scale.set(3.8, 2.5, 3.9);
-    thorax.position.set(0, 8.0, -2.5);
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xd8e0e3, metalness: 1, roughness: 0.08, envMapIntensity: 2.8 });
+    const darkChrome = new THREE.MeshStandardMaterial({ color: 0x4c555a, metalness: 0.96, roughness: 0.2, envMapIntensity: 2.1 });
+    const mechanism = new THREE.MeshStandardMaterial({ color: 0x080b0d, metalness: 0.88, roughness: 0.3 });
+    const sensorMaterial = new THREE.MeshStandardMaterial({ color: 0x4b0000, emissive: 0xff1c0a, emissiveIntensity: 3.5, metalness: 0.5, roughness: 0.16 });
+    const abdomen = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), chrome);
+    abdomen.scale.set(4.5, 3.35, 5.1);
+    abdomen.position.set(0, 7.8, 2.8);
+    const thorax = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 14), darkChrome);
+    thorax.scale.set(3.7, 2.35, 3.8);
+    thorax.position.set(0, 7.45, -2.4);
     root.add(abdomen, thorax);
-    const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.2, roughness: 0.08 });
+
+    const dorsalSeam = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 8.2), mechanism);
+    dorsalSeam.position.set(0, 11.12, 2.75);
+    root.add(dorsalSeam);
+    for (const zBand of [-0.1, 2.2, 4.5, 6.65]) {
+      const band = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.13, 7, 22, Math.PI), darkChrome);
+      band.scale.set(1.23, 1, 1);
+      band.rotation.x = Math.PI * 0.5;
+      band.rotation.z = Math.PI * 0.5;
+      band.position.set(0, 8.05, zBand);
+      root.add(band);
+    }
+    for (const side of [-1, 1]) {
+      for (let cableIndex = 0; cableIndex < 3; cableIndex++) {
+        const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3.2, 7), mechanism);
+        cable.position.set(side * (0.65 + cableIndex * 0.3), 7.1 + cableIndex * 0.14, 0.05);
+        cable.rotation.x = Math.PI * 0.46;
+        root.add(cable);
+      }
+    }
+    const eyeMaterial = sensorMaterial;
     const eyeLayout = [[-0.72, 0.5], [-0.24, 0.68], [0.24, 0.68], [0.72, 0.5], [-0.52, 0.05], [-0.17, 0.18], [0.17, 0.18], [0.52, 0.05]];
     for (const [eyeX, eyeY] of eyeLayout) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 7), eyeMaterial);
-      eye.position.set(eyeX, 8.7 + eyeY, -6.08);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), eyeMaterial);
+      eye.position.set(eyeX, 8.15 + eyeY, -5.98);
       root.add(eye);
     }
     for (const side of [-1, 1]) {
-      const fang = new THREE.Mesh(new THREE.ConeGeometry(0.38, 2.1, 10), new THREE.MeshStandardMaterial({ color: 0x17100d, roughness: 0.55 }));
-      fang.position.set(side * 1.15, 6.55, -6.0);
+      const fang = new THREE.Mesh(new THREE.ConeGeometry(0.38, 2.35, 12), chrome);
+      fang.position.set(side * 1.05, 5.95, -5.9);
       fang.rotation.x = Math.PI * 0.18;
       root.add(fang);
-      const palp = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.48, 3.8, 9), hair);
-      palp.position.set(side * 2.15, 6.8, -5.2);
+      const palp = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.52, 3.8, 10), darkChrome);
+      palp.position.set(side * 2.15, 6.25, -5.2);
       palp.rotation.z = side * 0.45;
       palp.rotation.x = -0.45;
       root.add(palp);
     }
     for (const side of [-1, 1]) {
-      const spinneret = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.4, 9), shell);
-      spinneret.position.set(side * 0.65, 7.4, 8.25);
+      const spinneret = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.4, 10), darkChrome);
+      spinneret.position.set(side * 0.65, 6.95, 7.9);
       spinneret.rotation.x = Math.PI * 0.5;
       root.add(spinneret);
     }
@@ -3325,30 +3347,41 @@ class GiantTarantulaManager {
     for (const side of [-1, 1]) {
       for (let legIndex = 0; legIndex < 4; legIndex++) {
         const hip = new THREE.Group();
-        hip.position.set(side * 2.6, 8.0, -4.5 + legIndex * 2.85);
+        hip.position.set(side * 2.6, 7.45, -4.5 + legIndex * 2.85);
         hip.rotation.y = side * (0.16 + Math.abs(legIndex - 1.5) * 0.2);
-        const coxa = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.7, 5.2, 10), hair);
+        const coxa = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.72, 5.2, 12), darkChrome);
         coxa.rotation.z = Math.PI * 0.5;
         coxa.position.x = side * 2.6;
         hip.add(coxa);
         const knee = new THREE.Group();
         knee.position.x = side * 5.15;
         knee.rotation.z = side * 0.48;
-        const kneeJoint = new THREE.Mesh(new THREE.SphereGeometry(0.72, 10, 7), hair);
-        knee.add(kneeJoint);
-        const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.58, 4.8, 10), hair);
+        const kneeJoint = new THREE.Mesh(new THREE.SphereGeometry(0.78, 14, 9), mechanism);
+        const kneeCollar = new THREE.Mesh(new THREE.TorusGeometry(0.79, 0.16, 7, 14), chrome);
+        kneeCollar.rotation.x = Math.PI * 0.5;
+        knee.add(kneeJoint, kneeCollar);
+        const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.62, 4.8, 12), chrome);
         femur.position.y = -2.4;
         knee.add(femur);
+        for (const offset of [-0.42, 0.42]) {
+          const actuator = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 3.7, 7), mechanism);
+          actuator.position.set(offset, -2.35, 0.25);
+          knee.add(actuator);
+        }
         const ankle = new THREE.Group();
         ankle.position.y = -4.7;
         ankle.rotation.z = side * -0.28;
-        const ankleJoint = new THREE.Mesh(new THREE.SphereGeometry(0.48, 9, 6), shell);
-        const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.35, 4.4, 9), shell);
+        const ankleJoint = new THREE.Mesh(new THREE.SphereGeometry(0.52, 12, 8), mechanism);
+        const ankleCollar = new THREE.Mesh(new THREE.TorusGeometry(0.53, 0.11, 6, 12), chrome);
+        ankleCollar.rotation.x = Math.PI * 0.5;
+        const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.38, 4.15, 10), darkChrome);
         tibia.position.y = -2.2;
-        const foot = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), shell);
-        foot.scale.set(1, 0.55, 1.7);
-        foot.position.set(0, -4.35, -0.28);
-        ankle.add(ankleJoint, tibia, foot);
+        const shinPlate = new THREE.Mesh(new THREE.BoxGeometry(0.58, 3.05, 0.36), chrome);
+        shinPlate.position.set(0, -2.05, -0.2);
+        const foot = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.8, 9), chrome);
+        foot.position.set(0, -4.55, -0.42);
+        foot.rotation.x = -0.28;
+        ankle.add(ankleJoint, ankleCollar, tibia, shinPlate, foot);
         knee.add(ankle);
         hip.add(knee);
         root.add(hip);
