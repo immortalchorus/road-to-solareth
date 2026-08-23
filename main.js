@@ -3386,7 +3386,15 @@ class GiantTarantulaManager {
         knee.add(ankle);
         hip.add(knee);
         root.add(hip);
-        legs.push({ hip, knee, ankle, side, legIndex, phase: (legIndex % 2) * Math.PI + (side > 0 ? Math.PI : 0) });
+        legs.push({
+          hip,
+          knee,
+          ankle,
+          side,
+          legIndex,
+          baseYaw: side * (0.16 + Math.abs(legIndex - 1.5) * 0.2),
+          phase: (legIndex % 2) * Math.PI + (side > 0 ? Math.PI : 0)
+        });
       }
     }
     root.position.set(x, this.terrain.getHeightAt(x, z), z);
@@ -3407,12 +3415,19 @@ class GiantTarantulaManager {
       if (Math.abs(next.x) < 205 && Math.abs(next.z) < 205) spider.root.position.copy(next);
       else spider.heading += Math.PI * 0.7;
       spider.root.rotation.y += wrapAngle(spider.heading - spider.root.rotation.y) * Math.min(1, delta * 1.2);
-      spider.root.position.y = this.terrain.getHeightAt(spider.root.position.x, spider.root.position.z) + Math.sin(time * 2.2 + spider.phase) * 0.12;
+      const bodyCycle = time * 2.55 + spider.phase;
+      spider.root.position.y = this.terrain.getHeightAt(spider.root.position.x, spider.root.position.z) + Math.sin(bodyCycle * 2) * 0.055;
+      spider.root.rotation.x = Math.cos(bodyCycle * 2) * 0.006;
+      spider.root.rotation.z = Math.sin(bodyCycle) * 0.012;
       for (const leg of spider.legs) {
-        const gait = Math.sin(time * 3.2 + leg.phase + spider.phase);
-        leg.hip.rotation.y = leg.side * (0.16 + Math.abs(leg.legIndex - 1.5) * 0.2) + gait * 0.12;
-        leg.knee.rotation.z = leg.side * (0.48 + Math.max(0, gait) * 0.1);
-        leg.ankle.rotation.z = leg.side * (-0.28 + Math.min(0, gait) * 0.08);
+        const cycle = bodyCycle + leg.phase;
+        const stride = Math.sin(cycle);
+        const recovery = Math.pow(Math.max(0, Math.cos(cycle)), 1.65);
+        leg.hip.rotation.y = leg.baseYaw + stride * 0.2;
+        leg.hip.rotation.x = (leg.legIndex - 1.5) * 0.012 + recovery * 0.055;
+        leg.knee.position.y = recovery * 0.52;
+        leg.knee.rotation.z = leg.side * (0.48 - recovery * 0.14 + Math.max(0, -stride) * 0.025);
+        leg.ankle.rotation.z = leg.side * (-0.28 + recovery * 0.22);
       }
     }
   }
