@@ -730,6 +730,7 @@ class Tank {
     this.turretPitch = 0;
     this.verticalVelocity = 0;
     this.altitudeHoldY = null;
+    this.altitudeSettleTimer = 0;
     this.wasAltitudeClimbing = false;
     this.flightPitch = 0;
     this.flightRoll = 0;
@@ -1012,16 +1013,17 @@ class Tank {
     if (!hasFuel) this.altitudeHoldY = null;
     if (altitudeLower) {
       this.altitudeHoldY = null;
+      this.altitudeSettleTimer = 0;
       hud.status.textContent = "Lift released. Freefall engaged.";
       statusTimer = 1.2;
     } else if (altitudeClimb) {
       this.altitudeHoldY = null;
+      this.altitudeSettleTimer = 0;
       this.verticalVelocity += CONFIG.verticalThrust * delta;
       hud.status.textContent = "Vertical thrusters flare beneath the hull.";
       statusTimer = 3;
     } else if (this.wasAltitudeClimbing || this.wasAltitudeLowering) {
       this.holdCurrentAltitude();
-      this.verticalVelocity = 0;
     }
     this.wasAltitudeClimbing = altitudeClimb;
     this.wasAltitudeLowering = altitudeLower;
@@ -1057,7 +1059,13 @@ class Tank {
     if (this.altitudeHoldY !== null) {
       const heldY = Math.max(this.altitudeHoldY, targetHoverY);
       const altitudeError = heldY - this.group.position.y;
-      this.verticalVelocity = moveToward(this.verticalVelocity, altitudeError * 4.5, CONFIG.hoverGravity * 1.7 * delta);
+      if (this.altitudeSettleTimer > 0) {
+        const settleAcceleration = altitudeError * 18 - this.verticalVelocity * 7;
+        this.verticalVelocity += settleAcceleration * delta;
+        this.altitudeSettleTimer = Math.max(0, this.altitudeSettleTimer - delta);
+      } else {
+        this.verticalVelocity = moveToward(this.verticalVelocity, altitudeError * 4.5, CONFIG.hoverGravity * 1.7 * delta);
+      }
     } else {
       this.verticalVelocity -= CONFIG.hoverGravity * delta;
     }
@@ -1155,7 +1163,8 @@ class Tank {
     const terrainHoverY = terrain.getHeightAt(this.group.position.x, this.group.position.z) + CONFIG.tankHoverHeight;
     if (this.group.position.y > terrainHoverY + 0.35) {
       this.altitudeHoldY = this.group.position.y;
-      this.verticalVelocity = 0;
+      this.verticalVelocity = THREE.MathUtils.clamp(this.verticalVelocity, -0.72, 0.72);
+      this.altitudeSettleTimer = 0.9;
       hud.status.textContent = "Altitude hold engaged.";
       statusTimer = 3;
     }
@@ -4381,14 +4390,18 @@ function updateCamera(delta) {
   const cameraDistance = profile.distance * (narrowViewport ? 1.35 : 1);
   const cameraHeight = profile.height + (narrowViewport ? 2.5 : 0);
   const behind = new THREE.Vector3(Math.sin(tank.group.rotation.y), 0, Math.cos(tank.group.rotation.y));
-  const target = tank.group.position.clone().add(new THREE.Vector3(0, cameraHeight, 0)).addScaledVector(behind, cameraDistance);
+  const cameraTankPosition = tank.group.position.clone();
+  if (tank.altitudeSettleTimer > 0 && tank.altitudeHoldY !== null) {
+    cameraTankPosition.y = tank.altitudeHoldY;
+  }
+  const target = cameraTankPosition.clone().add(new THREE.Vector3(0, cameraHeight, 0)).addScaledVector(behind, cameraDistance);
   const chaseBlend = 1 - Math.pow(profile.settle, delta);
   camera.position.x = THREE.MathUtils.lerp(camera.position.x, target.x, chaseBlend);
   camera.position.y = target.y;
   camera.position.z = THREE.MathUtils.lerp(camera.position.z, target.z, chaseBlend);
   camera.fov = THREE.MathUtils.lerp(camera.fov, profile.fov, 1 - Math.pow(0.025, delta));
   camera.updateProjectionMatrix();
-  const look = tank.group.position.clone().add(new THREE.Vector3(0, profile.lookHeight, 0));
+  const look = cameraTankPosition.clone().add(new THREE.Vector3(0, profile.lookHeight, 0));
   camera.lookAt(look);
 }
 
