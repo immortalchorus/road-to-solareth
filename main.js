@@ -2478,7 +2478,7 @@ class TacticalGrid {
     this.terrain = terrainManager;
     this.spacing = 25;
     this.radius = 350;
-    this.enabled = false;
+    this.enabled = true;
     this.cellX = Infinity;
     this.cellZ = Infinity;
     this.sweepRadius = 0;
