@@ -367,6 +367,7 @@ let prisonEscapees;
 let surveillanceFleet;
 let giantTarantulas;
 let worldPortal;
+let skyEnvironment;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -557,18 +558,29 @@ function createSky() {
   );
   scene.add(vault);
 
-  const panorama = new THREE.TextureLoader().load("assets/twilight-environment-2048.jpg?v=twilight-environment-3", loaded => {
+  let activeMode = "compound";
+  const environmentMaps = {};
+  const loader = new THREE.TextureLoader();
+  const configurePanorama = texture => {
+    texture.encoding = THREE.sRGBEncoding;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return texture;
+  };
+  const loadPanorama = (path, mode) => configurePanorama(loader.load(path, loaded => {
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromEquirectangular(loaded).texture;
+    environmentMaps[mode] = pmrem.fromEquirectangular(loaded).texture;
+    if (activeMode === mode) scene.environment = environmentMaps[mode];
     pmrem.dispose();
-  });
-  panorama.encoding = THREE.sRGBEncoding;
-  panorama.wrapS = THREE.RepeatWrapping;
-  panorama.minFilter = THREE.LinearMipmapLinearFilter;
-  panorama.magFilter = THREE.LinearFilter;
-  panorama.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  }));
+  const panoramas = {
+    compound: loadPanorama("assets/twilight-environment-2048.jpg?v=twilight-environment-3", "compound"),
+    prison: loadPanorama("assets/mountain-panorama.png?v=original-prison-panorama-1", "prison")
+  };
   const skyMat = new THREE.MeshBasicMaterial({
-    map: panorama,
+    map: panoramas.compound,
     color: 0xc9b59e,
     side: THREE.BackSide,
     depthWrite: false,
@@ -581,6 +593,16 @@ function createSky() {
 
   createCloudBand(-360, 72, -520, 260);
   createCloudBand(180, 64, -650, 330);
+
+  return {
+    setWorldMode(mode) {
+      activeMode = mode === "prison" ? "prison" : "compound";
+      skyMat.map = panoramas[activeMode];
+      skyMat.color.setHex(activeMode === "prison" ? 0xffffff : 0xc9b59e);
+      skyMat.needsUpdate = true;
+      if (environmentMaps[activeMode]) scene.environment = environmentMaps[activeMode];
+    }
+  };
 }
 
 function createDroneOrb(x, y, z, radius, ringed) {
@@ -2218,6 +2240,7 @@ class TerrainManager {
   setWorldMode(mode) {
     if (mode === this.worldMode) return;
     this.worldMode = mode;
+    skyEnvironment?.setWorldMode(mode);
     this.compound.visible = mode === "compound";
     this.legacyWorld.visible = mode === "prison";
     if (mode === "prison") {
@@ -5174,7 +5197,7 @@ class AudioManager {
 }
 
 initLights();
-createSky();
+skyEnvironment = createSky();
 
 terrain = new TerrainManager(scene);
 tank = new Tank(scene);
