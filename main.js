@@ -3395,8 +3395,9 @@ class PurpleMazePortalManager {
     this.elapsed = 0;
     this.cooldown = 0;
     this.returnWorld = "compound";
+    this.previousTankPosition = null;
     this.energyMaterials = [];
-    this.entryPosition = new THREE.Vector3(170, 15, -170);
+    this.entryPosition = new THREE.Vector3(170, 13, -170);
     this.terrain.reserveClearZone(this.entryPosition.x, this.entryPosition.z, 30);
     this.entryPortal = this.createPortal();
     this.entryPortal.position.copy(this.entryPosition);
@@ -3410,6 +3411,7 @@ class PurpleMazePortalManager {
     for (const position of this.terrain.mazeWorld.userData.exitPositions) {
       const portal = this.createPortal();
       portal.position.copy(position);
+      portal.position.y = 13;
       portal.lookAt(MAZE_WORLD_CENTER.x, position.y, MAZE_WORLD_CENTER.z);
       this.parent.add(portal);
       this.mazePortals.push(portal);
@@ -3459,10 +3461,17 @@ class PurpleMazePortalManager {
     for (const portal of this.mazePortals) portal.visible = inMaze;
   }
 
-  isInside(portal, position) {
+  crossesPortal(portal, previousPosition, currentPosition) {
     portal.updateMatrixWorld(true);
-    const local = portal.worldToLocal(position.clone());
-    return Math.hypot(local.x, local.y) < 8.8 && Math.abs(local.z) < 4.5;
+    const previous = portal.worldToLocal(previousPosition.clone());
+    const current = portal.worldToLocal(currentPosition.clone());
+    if (Math.hypot(current.x, current.y) < 10.2 && Math.abs(current.z) < 7.5) return true;
+    const denominator = previous.z - current.z;
+    if (Math.abs(denominator) < 0.0001 || previous.z * current.z > 0) return false;
+    const along = THREE.MathUtils.clamp(previous.z / denominator, 0, 1);
+    const crossingX = THREE.MathUtils.lerp(previous.x, current.x, along);
+    const crossingY = THREE.MathUtils.lerp(previous.y, current.y, along);
+    return Math.hypot(crossingX, crossingY) < 10.2;
   }
 
   update(delta, tankRef) {
@@ -3470,8 +3479,11 @@ class PurpleMazePortalManager {
     this.cooldown = Math.max(0, this.cooldown - delta);
     for (const material of this.energyMaterials) material.uniforms.time.value = this.elapsed;
     this.updateVisibility();
+    const currentPosition = tankRef.group.position.clone();
+    const previousPosition = this.previousTankPosition || currentPosition;
+    this.previousTankPosition = currentPosition;
     if (this.cooldown > 0) return;
-    if (this.terrain.worldMode !== "maze" && this.entryPortal.visible && this.isInside(this.entryPortal, tankRef.group.position)) {
+    if (this.terrain.worldMode !== "maze" && this.entryPortal.visible && this.crossesPortal(this.entryPortal, previousPosition, currentPosition)) {
       this.returnWorld = this.terrain.worldMode;
       this.terrain.setWorldMode("maze");
       this.setCockpitOverride(true);
@@ -3479,6 +3491,7 @@ class PurpleMazePortalManager {
       tankRef.group.rotation.y = 0;
       tankRef.speed = 0;
       tankRef.altitudeHoldY = tankRef.group.position.y;
+      this.previousTankPosition = tankRef.group.position.clone();
       this.cooldown = 3;
       tacticalGrid.cellX = Infinity;
       tacticalGrid.cellZ = Infinity;
@@ -3487,7 +3500,7 @@ class PurpleMazePortalManager {
       return;
     }
     if (this.terrain.worldMode === "maze") {
-      const exit = this.mazePortals.find(portal => this.isInside(portal, tankRef.group.position));
+      const exit = this.mazePortals.find(portal => this.crossesPortal(portal, previousPosition, currentPosition));
       if (!exit) return;
       this.terrain.setWorldMode(this.returnWorld);
       this.setCockpitOverride(false);
@@ -3495,6 +3508,7 @@ class PurpleMazePortalManager {
       tankRef.group.rotation.y = 0;
       tankRef.speed = 0;
       tankRef.altitudeHoldY = tankRef.group.position.y;
+      this.previousTankPosition = tankRef.group.position.clone();
       this.cooldown = 3;
       hud.status.textContent = "Maze transit complete. Outdoor mission restored.";
       statusTimer = 5;
