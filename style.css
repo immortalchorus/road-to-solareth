@@ -571,6 +571,22 @@ body {
   white-space: nowrap;
 }
 
+#wingman-1-status,
+#wingman-2-status {
+  display: block;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(107, 238, 255, 0.16);
+  color: #9deeff;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+#wingman-2-status {
+  color: #9dffc1;
+}
+
 #bottom-right-controls {
   position: fixed;
   right: 18px;

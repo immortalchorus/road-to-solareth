@@ -56,6 +56,9 @@ const CONFIG = {
   enemyTankProjectileSpeed: 58,
   prisonPatrolTankCount: 16,
   prisonEscapeeCount: 48,
+  giantTarantulaHealth: 12,
+  giantTarantulaDamage: 5,
+  wingmanMaxHitPoints: 150,
   escortDroneCount: 4,
   escortDroneAmmo: 10,
   escortDroneDamage: 2,
@@ -89,7 +92,7 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -108,6 +111,8 @@ const hud = {
   missionCountdown: document.querySelector("#mission-countdown"),
   coordinates: document.querySelector("#coordinates"),
   baseRange: document.querySelector("#base-range"),
+  wingman1: document.querySelector("#wingman-1-status"),
+  wingman2: document.querySelector("#wingman-2-status"),
   sessionTime: document.querySelector("#session-time"),
   autopilotStatus: document.querySelector("#autopilot-status"),
   status: document.querySelector("#status"),
@@ -269,7 +274,8 @@ const runStats = {
   objectsDestroyed: 0,
   resupplies: 0,
   collisions: 0,
-  flightTime: 0
+  flightTime: 0,
+  spidersDestroyed: 0
 };
 
 const textureLoader = new THREE.TextureLoader();
@@ -368,6 +374,7 @@ let surveillanceFleet;
 let giantTarantulas;
 let worldPortal;
 let skyEnvironment;
+let wingmen;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -407,6 +414,8 @@ window.addEventListener("keydown", event => {
     else autopilot.toggle();
   }
   if (event.code === "KeyV" && !event.repeat && tank) tank.centerTurret(Boolean(input.ShiftLeft || input.ShiftRight));
+  if (event.code === "Digit5" && !event.repeat && wingmen) wingmen.orderReturnToBase();
+  if (event.code === "Digit7" && !event.repeat && wingmen) wingmen.orderResupply();
   if (event.code === "Tab" && !event.repeat) toggleCameraMode();
   if (event.code === "KeyF" && (input.ShiftLeft || input.ShiftRight) && tank) tank.releaseAltitudeHold();
   if (event.code === "Escape") emergencyClearAroundTank();
@@ -3157,6 +3166,17 @@ class EnemyManager {
     audio.playEnemyFire();
   }
 
+  fireSpiderShot(position, direction) {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 10, 7),
+      new THREE.MeshBasicMaterial({ color: 0xff234f })
+    );
+    mesh.position.copy(position);
+    this.parent.add(mesh);
+    this.hostileShots.push({ mesh, velocity: direction.multiplyScalar(72), life: 5, damage: CONFIG.giantTarantulaDamage, radius: 0.65 });
+    audio.playEnemyFire();
+  }
+
   updateHostileShots(delta, tankRef) {
     for (let i = this.hostileShots.length - 1; i >= 0; i--) {
       const shell = this.hostileShots[i];
@@ -3168,6 +3188,16 @@ class EnemyManager {
         damagePlayer(shell.damage);
         createExplosion(shell.mesh.position, { radius: shell.damage > 2 ? 0.7 : 0.35, growth: 11, life: 0.32, color: shell.damage > 2 ? 0xff2418 : 0x63efff, coreColor: 0xfff1d0 });
         shell.life = -1;
+      }
+      if (shell.life > 0 && wingmen) {
+        for (const wingman of wingmen.units) {
+          if (!wingman.dead && shell.mesh.position.distanceTo(wingman.group.position) <= wingman.collisionRadius + shell.radius) {
+            wingman.receiveDamage(shell.damage);
+            createExplosion(shell.mesh.position, { radius: 0.45, growth: 10, life: 0.3, color: 0xff4428, coreColor: 0xfff1d0 });
+            shell.life = -1;
+            break;
+          }
+        }
       }
       if (shell.life <= 0) {
         this.parent.remove(shell.mesh);
@@ -3367,6 +3397,19 @@ class GiantTarantulaManager {
       spinneret.rotation.x = Math.PI * 0.5;
       root.add(spinneret);
     }
+    const turret = new THREE.Group();
+    turret.position.set(0, 11.15, -1.25);
+    const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.5, 0.7, 14), mechanism);
+    const turretShell = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 9), darkChrome);
+    turretShell.scale.set(1.35, 0.7, 1.7);
+    turretShell.position.y = 0.55;
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 4.2, 10), chrome);
+    barrel.rotation.x = Math.PI * 0.5;
+    barrel.position.set(0, 0.55, -2.5);
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.55, -4.65);
+    turret.add(turretBase, turretShell, barrel, muzzle);
+    root.add(turret);
     const legs = [];
     for (const side of [-1, 1]) {
       for (let legIndex = 0; legIndex < 4; legIndex++) {
@@ -3423,12 +3466,25 @@ class GiantTarantulaManager {
     root.position.set(x, this.terrain.getHeightAt(x, z), z);
     root.rotation.y = index * Math.PI * 0.5;
     this.parent.add(root);
-    this.spiders.push({ root, legs, phase: index * 1.7, heading: root.rotation.y, turnTimer: 5 + index });
+    this.spiders.push({
+      root,
+      turret,
+      muzzle,
+      legs,
+      health: CONFIG.giantTarantulaHealth,
+      dead: false,
+      fireTimer: 2.5 + index * 0.8,
+      phase: index * 1.7,
+      heading: root.rotation.y,
+      turnTimer: 5 + index
+    });
   }
 
-  update(delta) {
+  update(delta, tankRef, enemyManager) {
+    if (!this.parent.visible) return;
     const time = performance.now() * 0.001;
     for (const spider of this.spiders) {
+      if (spider.dead) continue;
       spider.turnTimer -= delta;
       if (spider.turnTimer <= 0) {
         spider.turnTimer = 5 + seededRandom(time + spider.phase) * 7;
@@ -3442,6 +3498,24 @@ class GiantTarantulaManager {
       spider.root.position.y = this.terrain.getHeightAt(spider.root.position.x, spider.root.position.z) + Math.sin(bodyCycle * 2) * 0.055;
       spider.root.rotation.x = Math.cos(bodyCycle * 2) * 0.006;
       spider.root.rotation.z = Math.sin(bodyCycle) * 0.012;
+      const turretPosition = spider.turret.getWorldPosition(new THREE.Vector3());
+      const possibleTargets = [{ group: tankRef.group, offsetY: 1.5 }];
+      if (wingmen) {
+        for (const unit of wingmen.units) if (!unit.dead) possibleTargets.push({ group: unit.group, offsetY: 1.8 });
+      }
+      const selectedTarget = possibleTargets.sort((a, b) => a.group.position.distanceToSquared(turretPosition) - b.group.position.distanceToSquared(turretPosition))[0];
+      const target = selectedTarget.group.position.clone().add(new THREE.Vector3(0, selectedTarget.offsetY, 0));
+      const toTank = target.sub(turretPosition);
+      const distanceToTank = toTank.length();
+      const localAim = toTank.clone().applyQuaternion(spider.root.getWorldQuaternion(new THREE.Quaternion()).invert());
+      spider.turret.rotation.y = Math.atan2(-localAim.x, -localAim.z);
+      spider.turret.rotation.x = THREE.MathUtils.clamp(Math.atan2(localAim.y, Math.hypot(localAim.x, localAim.z)), -0.28, 0.48);
+      spider.fireTimer -= delta;
+      if (distanceToTank < 280 && spider.fireTimer <= 0) {
+        spider.fireTimer = 4.5 + Math.random() * 1.8;
+        const muzzle = spider.muzzle.getWorldPosition(new THREE.Vector3());
+        enemyManager.fireSpiderShot(muzzle, selectedTarget.group.position.clone().add(new THREE.Vector3(0, selectedTarget.offsetY, 0)).sub(muzzle).normalize());
+      }
       for (const leg of spider.legs) {
         const cycle = bodyCycle + leg.phase;
         const stride = Math.sin(cycle);
@@ -3453,6 +3527,245 @@ class GiantTarantulaManager {
         leg.ankle.rotation.z = leg.side * (-0.28 + recovery * 0.22);
       }
     }
+  }
+
+  hitAlongSegment(start, end, radius, shot) {
+    for (const spider of this.spiders) {
+      if (spider.dead) continue;
+      const center = spider.root.position.clone().add(new THREE.Vector3(0, 7.5, 0));
+      if (distanceToSegmentSquared(center, start, end) <= Math.pow(radius + 5.5, 2)) {
+        this.receiveHit(spider, shot, center);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  receiveHit(spider, shot, position) {
+    if (!spider || spider.dead) return false;
+    spider.health -= shot.kind === "missile" || shot.kind === "bomb" ? CONFIG.giantTarantulaHealth : 1;
+    if (!shot.noPlayerStats) registerPlayerHit(shot, position, 100, "spider");
+    if (spider.health > 0) return true;
+    spider.dead = true;
+    spider.root.visible = false;
+    destroyedEnemies++;
+    runStats.spidersDestroyed++;
+    createExplosion(position, { radius: 3.8, growth: 34, life: 1, color: 0xff361b, coreColor: 0xeaffff });
+    createBombShockwaves(spider.root.position.clone());
+    audio.playExplosion();
+    return true;
+  }
+
+  destroyNear(position, radius, shot) {
+    for (const spider of this.spiders) {
+      if (!spider.dead && spider.root.position.distanceTo(position) <= radius + 6) {
+        this.receiveHit(spider, { ...shot, kind: "bomb" }, spider.root.position.clone().add(new THREE.Vector3(0, 7.5, 0)));
+      }
+    }
+  }
+}
+
+class WingmanUnit {
+  constructor(parent, terrainManager, playerTank, index) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.playerTank = playerTank;
+    this.index = index;
+    this.name = `Wingman ${index + 1}`;
+    this.group = new THREE.Group();
+    this.health = CONFIG.wingmanMaxHitPoints;
+    this.fuel = CONFIG.maxFuel;
+    this.missiles = 4;
+    this.dead = false;
+    this.state = "patrol";
+    this.velocity = new THREE.Vector3();
+    this.fireTimer = 0.5 + index * 0.2;
+    this.collisionRadius = 4.5;
+    this.supplyQueue = [];
+    this.patrolPhase = index * Math.PI;
+    this.build();
+    const startAngle = index ? -0.72 : 0.72;
+    this.group.position.set(Math.sin(startAngle) * 38, 5.5, Math.cos(startAngle) * 38);
+    parent.add(this.group);
+  }
+
+  build() {
+    for (const original of this.playerTank.legacyVisuals) {
+      const clone = original.clone(true);
+      clone.traverse(child => {
+        child.visible = true;
+        if (child.isMesh) {
+          child.material = child.material.clone();
+          child.castShadow = false;
+        }
+      });
+      this.group.add(clone);
+    }
+    this.group.scale.setScalar(0.92);
+    const beaconMaterial = new THREE.MeshBasicMaterial({ color: this.index ? 0x6effa8 : 0x65dfff, transparent: true, opacity: 0.95 });
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 7), beaconMaterial);
+    beacon.position.set(0, 4.5, 0.4);
+    this.group.add(beacon);
+    this.muzzle = new THREE.Object3D();
+    this.muzzle.position.set(0, 2.25, -11.5);
+    this.group.add(this.muzzle);
+  }
+
+  receiveDamage(amount) {
+    if (this.dead) return;
+    this.health = Math.max(0, this.health - amount);
+    if (this.health > 0) return;
+    this.dead = true;
+    this.group.visible = false;
+    createExplosion(this.group.position.clone().add(new THREE.Vector3(0, 2.5, 0)), { radius: 3.5, growth: 34, life: 1.1, color: 0xff2812, coreColor: 0xeaffff });
+    createBombShockwaves(this.group.position.clone());
+    audio.playExplosion();
+    hud.status.textContent = `${this.name} has been destroyed.`;
+    statusTimer = 4;
+  }
+
+  setSupplyQueue(queue) {
+    if (this.dead || queue.length === 0) return;
+    this.supplyQueue = queue;
+    this.state = "resupply";
+  }
+
+  update(delta, manager) {
+    if (this.dead) return;
+    this.fuel = Math.max(0, this.fuel - delta * 0.6);
+    this.fireTimer -= delta;
+    const player = this.playerTank;
+    let destination;
+    let targetPrisoner = null;
+
+    if (this.state === "return") {
+      const angle = this.index ? -0.78 : 0.78;
+      destination = new THREE.Vector3(Math.sin(angle) * 45, this.terrain.getHeightAt(Math.sin(angle) * 45, Math.cos(angle) * 45) + 3.2, Math.cos(angle) * 45);
+    } else if (this.state === "resupply" && this.supplyQueue.length) {
+      destination = this.supplyQueue[0].position.clone().add(new THREE.Vector3(0, 8, 0));
+      if (this.group.position.distanceTo(destination) < 7) {
+        const stop = this.supplyQueue.shift();
+        if (stop.type === "fuel") this.fuel = CONFIG.maxFuel;
+        if (stop.type === "missile") this.missiles = 4;
+        audio.playResupplyClick();
+        if (!this.supplyQueue.length) this.state = "patrol";
+      }
+    } else if (manager.assistTimer > 0) {
+      this.state = "assist";
+      const side = this.index ? 1 : -1;
+      const formationOffset = new THREE.Vector3(side * 14, 4, 8).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.group.rotation.y);
+      destination = player.group.position.clone().add(formationOffset);
+    } else {
+      this.state = "patrol";
+      targetPrisoner = manager.getNearestPrisoner(this.group.position, 260);
+      if (targetPrisoner) {
+        destination = targetPrisoner.group.position.clone().add(new THREE.Vector3(this.index ? 18 : -18, 18, 24));
+      } else {
+        const angle = performance.now() * 0.00018 + this.patrolPhase;
+        destination = new THREE.Vector3(Math.cos(angle) * 155, 24, Math.sin(angle) * 155);
+      }
+    }
+
+    const toDestination = destination.clone().sub(this.group.position);
+    const distance = toDestination.length();
+    const desiredSpeed = this.state === "return" && distance < 12 ? 10 : 48;
+    const desiredVelocity = distance > 0.1 ? toDestination.normalize().multiplyScalar(Math.min(desiredSpeed, distance * 2.1)) : new THREE.Vector3();
+    this.velocity.lerp(desiredVelocity, 1 - Math.exp(-delta * 2.5));
+    if (this.fuel <= 0) this.velocity.multiplyScalar(0.97);
+    this.group.position.addScaledVector(this.velocity, delta);
+    if (this.velocity.lengthSq() > 1) {
+      const desiredHeading = Math.atan2(-this.velocity.x, -this.velocity.z);
+      this.group.rotation.y += wrapAngle(desiredHeading - this.group.rotation.y) * Math.min(1, delta * 3.2);
+    }
+
+    if (this.fireTimer <= 0 && this.state === "assist" && manager.playerFireTimer > 0) {
+      const playerShot = player.getCannonShots()[0];
+      if (playerShot) this.fire(playerShot.direction);
+    } else if (this.fireTimer <= 0 && targetPrisoner && this.group.position.distanceTo(targetPrisoner.group.position) < 220) {
+      const muzzle = this.muzzle.getWorldPosition(new THREE.Vector3());
+      this.fire(targetPrisoner.group.position.clone().add(new THREE.Vector3(0, 2, 0)).sub(muzzle).normalize());
+    }
+  }
+
+  fire(direction) {
+    const muzzle = this.muzzle.getWorldPosition(new THREE.Vector3());
+    projectiles.fireAuxiliary(muzzle, direction, this.name);
+    this.fireTimer = 0.38 + this.index * 0.06;
+  }
+}
+
+class WingmanManager {
+  constructor(parent, terrainManager, playerTank) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.playerTank = playerTank;
+    this.assistTimer = 0;
+    this.playerFireTimer = 0;
+    this.firePressure = 0;
+    this.units = [new WingmanUnit(parent, terrainManager, playerTank, 0), new WingmanUnit(parent, terrainManager, playerTank, 1)];
+  }
+
+  notePlayerFire() {
+    this.playerFireTimer = 0.32;
+    this.firePressure = Math.min(8, this.firePressure + 0.32);
+    if (this.firePressure >= 2.2) this.assistTimer = 10;
+  }
+
+  getNearestPrisoner(position, range) {
+    let closest = null;
+    let best = range * range;
+    for (const prisoner of prisonEscapees.prisoners) {
+      if (prisoner.dead) continue;
+      const distance = prisoner.group.position.distanceToSquared(position);
+      if (distance < best) {
+        best = distance;
+        closest = prisoner;
+      }
+    }
+    return closest;
+  }
+
+  orderReturnToBase() {
+    for (const unit of this.units) if (!unit.dead) {
+      unit.state = "return";
+      unit.supplyQueue.length = 0;
+    }
+    this.assistTimer = 0;
+    hud.status.textContent = "Wingmen ordered home. Landing at the helipad perimeter.";
+    statusTimer = 4;
+  }
+
+  orderResupply() {
+    let dispatched = 0;
+    for (const unit of this.units) {
+      if (unit.dead) continue;
+      const queue = [];
+      if (unit.fuel < CONFIG.maxFuel - 1) {
+        const tower = this.findNearestTower(unit.group.position, refuelTowers.towers);
+        if (tower) queue.push({ type: "fuel", position: tower.group.position.clone() });
+      }
+      if (unit.missiles < 4) {
+        const tower = this.findNearestTower(queue.length ? queue[0].position : unit.group.position, missileTowers.towers);
+        if (tower) queue.push({ type: "missile", position: tower.group.position.clone() });
+      }
+      if (queue.length) {
+        unit.setSupplyQueue(queue);
+        dispatched++;
+      }
+    }
+    hud.status.textContent = dispatched ? "Wingmen cleared for fuel and missile resupply." : "Wingmen report fuel and missile batteries sufficient.";
+    statusTimer = 4;
+  }
+
+  findNearestTower(position, towers) {
+    return towers.filter(tower => tower.group.parent && !tower.consumed).sort((a, b) => a.group.position.distanceToSquared(position) - b.group.position.distanceToSquared(position))[0] || null;
+  }
+
+  update(delta) {
+    this.playerFireTimer = Math.max(0, this.playerFireTimer - delta);
+    this.assistTimer = Math.max(0, this.assistTimer - delta);
+    this.firePressure = Math.max(0, this.firePressure - delta * 0.72);
+    for (const unit of this.units) unit.update(delta, this);
   }
 }
 
@@ -4287,6 +4600,11 @@ class ProjectileManager {
         shot.life = -1;
       }
 
+      if (shot.life > 0 && giantTarantulas.hitAlongSegment(shot.previousPosition, shot.mesh.position, collisionRadius, shot)) {
+        if (shot.kind === "missile") this.detonateMissile(shot.mesh.position, enemyManager, skyDroneManager, shot);
+        shot.life = -1;
+      }
+
       if (shot.life > 0) {
         for (const enemy of enemyManager.enemies) {
           const hitRadius = enemy.collisionRadius + collisionRadius;
@@ -4399,7 +4717,42 @@ class ProjectileManager {
     });
     runStats.shotsFired++;
     ammo = Math.max(0, ammo - 1);
+    if (wingmen) wingmen.notePlayerFire();
     if (playSound) audio.playFire();
+  }
+
+  fireAuxiliary(position, direction, owner) {
+    if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 7), new THREE.MeshBasicMaterial({ color: 0x65e8ff }));
+    mesh.position.copy(position);
+    const trail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.22, 1.8, 7),
+      new THREE.MeshBasicMaterial({ color: 0x83f4ff, transparent: true, opacity: 0.34 })
+    );
+    const normalized = direction.clone().normalize();
+    trail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normalized);
+    trail.position.copy(position).addScaledVector(normalized, -1.1);
+    group.add(mesh, trail);
+    this.parent.add(group);
+    this.projectiles.push({
+      group,
+      mesh,
+      trail,
+      direction: normalized,
+      quaternion: trail.quaternion.clone(),
+      velocity: normalized.clone().multiplyScalar(112),
+      homingTarget: null,
+      bounces: 0,
+      life: 2.4,
+      previousPosition: position.clone(),
+      collisionStartPending: true,
+      origin: position.clone(),
+      radius: 0.38,
+      noPlayerStats: true,
+      owner
+    });
+    audio.playDroneFire();
   }
 
   launchMissile(tankRef) {
@@ -4514,6 +4867,7 @@ class ProjectileManager {
     destroyedByBlast += destroyUniverseNear(position, 42);
     const blastShot = { kind: "bomb", origin: position.clone(), direction: new THREE.Vector3(0, 1, 0), bounces: 0 };
     prisonEscapees.destroyNear(position, 24, blastShot);
+    giantTarantulas.destroyNear(position, 24, blastShot);
     for (const enemy of enemyManager.enemies) {
       if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + 24) {
         enemy.destroy();
@@ -4543,6 +4897,7 @@ class ProjectileManager {
     destroyedByBlast += destroyUniverseNear(position, 18);
     const blastShot = sourceShot || { kind: "missile", origin: position.clone(), direction: new THREE.Vector3(0, 0, -1), bounces: 0 };
     prisonEscapees.destroyNear(position, blastRadius, blastShot);
+    giantTarantulas.destroyNear(position, blastRadius, blastShot);
     for (const enemy of enemyManager.enemies) {
       if (!enemy.dead && enemy.group.position.distanceTo(position) <= enemy.collisionRadius + blastRadius) {
         registerPlayerHit(blastShot, enemy.group.position, 100, "object");
@@ -5206,6 +5561,7 @@ worldPortal = new WorldPortalManager(scene, terrain);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 prisonEscapees = new PrisonEscapeManager(scene, enemies);
+wingmen = new WingmanManager(scene, terrain, tank);
 skyDrones = new SkyDroneManager(scene);
 surveillanceFleet = new SurveillanceFleet(scene, terrain);
 giantTarantulas = new GiantTarantulaManager(terrain.compound, terrain);
@@ -5237,7 +5593,8 @@ function animate() {
     prisonEscapees.update(delta, tank);
     skyDrones.update(delta, tank);
     surveillanceFleet.update(delta, tank);
-    giantTarantulas.update(delta);
+    giantTarantulas.update(delta, tank, enemies);
+    wingmen.update(delta);
     refuelTowers.update(delta, tank);
     missileTowers.update(delta, tank);
     projectiles.update(delta, input, tank, enemies, skyDrones);
@@ -5339,6 +5696,11 @@ function updateHUD(delta) {
   hud.missiles.textContent = tank.getMissileCount();
   hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
+  if (hud.wingman1 && wingmen) {
+    const formatWingman = unit => unit.dead ? "DESTROYED" : `${Math.ceil(unit.health)} HP | ${unit.state.toUpperCase()}`;
+    hud.wingman1.textContent = `WINGMAN 1  ${formatWingman(wingmen.units[0])}`;
+    hud.wingman2.textContent = `WINGMAN 2  ${formatWingman(wingmen.units[1])}`;
+  }
   statusTimer -= delta;
   if (statusTimer <= 0) {
     currentStatus = (currentStatus + 1) % poeticStatuses.length;
@@ -5524,6 +5886,7 @@ function createBombShockwaves(position) {
 }
 
 function registerPlayerHit(shot, position, damage, targetType) {
+  if (shot.noPlayerStats) return;
   const isBullet = shot.kind !== "bomb";
   if (isBullet && !shot.statsHitRegistered) {
     shot.statsHitRegistered = true;
@@ -5688,7 +6051,8 @@ function calculateCompositeScore() {
     runStats.objectsDestroyed * 75 +
     runStats.missileHits * 125 +
     runStats.ricochetKills * 250 +
-    runStats.prisonersStopped * 150;
+    runStats.prisonersStopped * 150 +
+    runStats.spidersDestroyed * 750;
   const adjustedCombat = Math.round(combatBase * accuracyMultiplier);
   const flightScore = Math.round(runStats.flightTime * 10);
   const distanceScore = Math.round(distanceTravelled * 5);
@@ -5697,7 +6061,9 @@ function calculateCompositeScore() {
   const resupplyBonus = runStats.resupplies * 200;
   const parkedInArena = terrain.worldMode === "compound" && hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
   const arenaBonus = parkedInArena ? 10000 : 0;
-  const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus + arenaBonus;
+  const wingmanSurvivors = wingmen ? wingmen.units.filter(unit => !unit.dead).length : 0;
+  const wingmanBonus = wingmanSurvivors * 5000;
+  const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus + arenaBonus + wingmanBonus;
   const missedShots = Math.max(0, runStats.shotsFired - runStats.shotsHit);
   const missedMissiles = Math.max(0, runStats.missilesFired - runStats.missileHits);
   const penalties = missedShots * 2 + missedMissiles * 25 + runStats.collisions * 50;
@@ -5707,7 +6073,7 @@ function calculateCompositeScore() {
       : total >= 25000 ? "Warden"
         : total >= 10000 ? "Enforcer"
           : "Recruit";
-  return { accuracyRatio, accuracyMultiplier, adjustedCombat, fieldScore, arenaBonus, penalties, total, rank };
+  return { accuracyRatio, accuracyMultiplier, adjustedCombat, fieldScore, arenaBonus, wingmanBonus, penalties, total, rank };
 }
 
 function showRunSummary() {
@@ -5718,6 +6084,12 @@ function showRunSummary() {
   document.querySelector("#stat-drones").textContent = runStats.dronesDestroyed;
   document.querySelector("#stat-vehicles").textContent = runStats.enemyVehiclesDestroyed;
   document.querySelector("#stat-prisoners").textContent = runStats.prisonersStopped;
+  document.querySelector("#stat-spiders").textContent = runStats.spidersDestroyed;
+  const wingman1 = wingmen.units[0];
+  const wingman2 = wingmen.units[1];
+  document.querySelector("#stat-wingman-1").textContent = wingman1.dead ? "DESTROYED" : `${Math.ceil(wingman1.health)} / ${CONFIG.wingmanMaxHitPoints}`;
+  document.querySelector("#stat-wingman-2").textContent = wingman2.dead ? "DESTROYED" : `${Math.ceil(wingman2.health)} / ${CONFIG.wingmanMaxHitPoints}`;
+  document.querySelector("#stat-wingman-bonus").textContent = score.wingmanBonus > 0 ? `+${score.wingmanBonus.toLocaleString()}` : "0";
   document.querySelector("#stat-missiles-fired").textContent = runStats.missilesFired;
   document.querySelector("#stat-missile-hits").textContent = runStats.missileHits;
   document.querySelector("#stat-accuracy").textContent = `${accuracy}%`;

@@ -29,6 +29,8 @@
             <div><kbd>V</kbd><span>Center turret</span></div>
             <div><kbd>Shift + V</kbd><span>Center yaw only</span></div>
             <div><kbd>Tab</kbd><span>Camera height</span></div>
+            <div><kbd>5</kbd><span>Wingmen return</span></div>
+            <div><kbd>7</kbd><span>Wingmen resupply</span></div>
             <div><kbd>Esc</kbd><span>Clear nearby obstacles</span></div>
           </section>
           <label id="music-ammo-balance-panel" for="music-ammo-balance">
@@ -86,6 +88,8 @@
         <span class="coordinates-label">POSITION / BASE</span>
         <span id="coordinates">N 0000 | E 0000</span>
         <span id="base-range">BASE 0 m</span>
+        <span id="wingman-1-status">WINGMAN 1  150 HP | PATROL</span>
+        <span id="wingman-2-status">WINGMAN 2  150 HP | PATROL</span>
       </section>
 
       <div id="crosshair" aria-hidden="true"><i></i><b></b></div>
@@ -106,6 +110,10 @@
             <div><dt>Drones destroyed</dt><dd id="stat-drones">0</dd></div>
             <div><dt>Enemy vehicles destroyed</dt><dd id="stat-vehicles">0</dd></div>
             <div><dt>Prisoners stopped</dt><dd id="stat-prisoners">0</dd></div>
+            <div><dt>Robotic tarantulas destroyed</dt><dd id="stat-spiders">0</dd></div>
+            <div><dt>Wingman 1</dt><dd id="stat-wingman-1">150 / 150</dd></div>
+            <div><dt>Wingman 2</dt><dd id="stat-wingman-2">150 / 150</dd></div>
+            <div><dt>Wingmen survival bonus</dt><dd id="stat-wingman-bonus">+10,000</dd></div>
             <div><dt>Missiles fired</dt><dd id="stat-missiles-fired">0</dd></div>
             <div><dt>Missile hits</dt><dd id="stat-missile-hits">0</dd></div>
             <div><dt>Accuracy</dt><dd id="stat-accuracy">0%</dd></div>
@@ -143,7 +151,7 @@
 
       <aside id="instructions" hidden>
         <strong>Tank Driver</strong>
-        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Hold Shift + F to freefall; release either key to hover at the current altitude. P toggles autopilot; Shift + P changes its altitude phase. Space drops bombs; M launches rack missiles. F1/F2/F3 select short, medium, or long missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers yaw and pitch; Shift + V centers yaw while preserving pitch. Ctrl fires. Hold Z while firing for drone-seeking ammo. Red towers reload missiles. Tab toggles camera height. Escape clears nearby obstacles.</span>
+        <span>Arrow keys drive; diagonal steering banks the tank automatically. Hold F to climb; release F to hold altitude. Hold Shift + F to freefall; release either key to hover at the current altitude. P toggles autopilot; Shift + P changes its altitude phase. Space drops bombs; M launches rack missiles. F1/F2/F3 select missile range; G toggles the tactical grid. Shift + Left/Right yaws turret. Y + Up/Down elevates cannon. V centers the turret; Shift + V preserves pitch. Ctrl fires; hold Z for seeking ammo. Heavy fire calls Wingman 1 and Wingman 2 into formation. Press 5 to order them home and 7 to authorize fuel and missile resupply. Tab toggles camera height. Escape clears nearby obstacles.</span>
       </aside>
     </main>
 
