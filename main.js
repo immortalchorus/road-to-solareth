@@ -89,6 +89,44 @@ scene.background = new THREE.Color(0x030504);
 scene.fog = new THREE.FogExp2(0x17110d, 0.0049);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 2600);
+scene.add(camera);
+
+const cockpitWeaponRig = new THREE.Group();
+cockpitWeaponRig.visible = false;
+const cockpitGunMaterial = new THREE.MeshStandardMaterial({
+  color: 0x8f989d,
+  metalness: 0.92,
+  roughness: 0.2
+});
+const cockpitGunDarkMaterial = new THREE.MeshStandardMaterial({
+  color: 0x20272b,
+  metalness: 0.86,
+  roughness: 0.3
+});
+function createCockpitCannon(x, y, z, radius, length) {
+  const cannon = new THREE.Group();
+  cannon.position.set(x, y, z);
+  const barrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.82, radius, length, 16),
+    cockpitGunMaterial
+  );
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = -length * 0.5;
+  cannon.add(barrel);
+  const collar = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 1.18, radius * 1.18, radius * 1.15, 16),
+    cockpitGunDarkMaterial
+  );
+  collar.rotation.x = Math.PI / 2;
+  collar.position.z = -0.18;
+  cannon.add(collar);
+  return cannon;
+}
+cockpitWeaponRig.add(createCockpitCannon(-0.72, -0.82, -0.7, 0.13, 2.6));
+cockpitWeaponRig.add(createCockpitCannon(0.72, -0.82, -0.7, 0.13, 2.6));
+const cockpitCenterCannon = createCockpitCannon(0, -0.57, -0.85, 0.15, 3.15);
+cockpitWeaponRig.add(cockpitCenterCannon);
+camera.add(cockpitWeaponRig);
 const clock = new THREE.Clock();
 
 const input = {};
@@ -498,6 +536,7 @@ function configureSessionMode(selectedMode) {
   document.body.classList.toggle("cockpit-mode", cockpitMode);
   cockpitOverlay.hidden = !cockpitMode;
   if (cockpitBombingScope) cockpitBombingScope.visible = cockpitMode;
+  cockpitWeaponRig.visible = cockpitMode;
   tank.setCockpitVisibility(cockpitMode);
   if (wingmen) {
     for (const wingman of wingmen.units) wingman.group.visible = !dogfightMode;
@@ -1252,23 +1291,7 @@ class Tank {
 
   applyCockpitVisibility() {
     if (!this.importedModel) return;
-    const cockpitCannons = new Set([
-      "Cylinder", "Cylinder3", "Cylinder4", "Cylinder5", "Cylinder2001",
-      "Cylinder001", "Cylinder3001", "Cylinder4001", "Cylinder5001", "Cylinder2002",
-      "Cylinder8", "Cylinder7", "Cylinder3002", "Cylinder4002", "Cylinder5002", "Cylinder6"
-    ]);
-    this.importedModel.traverse(child => {
-      if (!child.isMesh) return;
-      if (this.cockpitViewEnabled) {
-        if (child.userData.cockpitPreviousVisible === undefined) {
-          child.userData.cockpitPreviousVisible = child.visible;
-        }
-        child.visible = cockpitCannons.has(child.name);
-      } else if (child.userData.cockpitPreviousVisible !== undefined) {
-        child.visible = child.userData.cockpitPreviousVisible;
-        delete child.userData.cockpitPreviousVisible;
-      }
-    });
+    this.importedModel.visible = !this.cockpitViewEnabled;
   }
 
   installPropulsionEnergy(turbineCenters, modelScale, modelOffsetY) {
@@ -6496,6 +6519,7 @@ function updateCamera(delta) {
     camera.fov = THREE.MathUtils.lerp(camera.fov, 74, 1 - Math.pow(0.01, delta));
     camera.updateProjectionMatrix();
     camera.lookAt(cockpitLook);
+    cockpitCenterCannon.rotation.set(tank.turretPitch, tank.turret.rotation.y, 0, "YXZ");
     return;
   }
   const profile = cameraProfiles[cameraMode];
