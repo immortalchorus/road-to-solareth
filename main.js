@@ -1166,7 +1166,7 @@ class Tank {
     this.group.rotation.z = this.flightRoll;
 
     const frontAlignment = 1 - THREE.MathUtils.clamp(Math.abs(this.turret.rotation.y) / THREE.MathUtils.degToRad(24), 0, 1);
-    const minimumPitch = THREE.MathUtils.lerp(-0.3, -THREE.MathUtils.degToRad(8), frontAlignment);
+    const minimumPitch = THREE.MathUtils.lerp(-0.3, -THREE.MathUtils.degToRad(12), frontAlignment);
     this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, minimumPitch, 0.72);
     this.cannon.rotation.x = this.turretPitch;
     this.missileRack.rotation.x = this.turretPitch;
@@ -3913,6 +3913,7 @@ class AudioManager {
     this.started = true;
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") await ctx.resume();
+    this.prepareBeatEnvelope();
     this.music.currentTime = 0;
     this.setMusicAmmoBalance(this.musicAmmoBalance);
     await this.music.play().catch(() => {
