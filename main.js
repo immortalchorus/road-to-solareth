@@ -4477,6 +4477,10 @@ class GroundEnemyTank {
     this.patrolIndex = patrolIndex;
     this.pathIndex = patrolIndex % 2;
     this.missileArmor = missileArmor;
+    this.stuckTimer = 0;
+    this.recoveryTimer = 0;
+    this.recoveryTurn = patrolIndex % 2 ? 1 : -1;
+    this.recoveryAttempts = 0;
     this.build();
   }
 
@@ -4554,16 +4558,30 @@ class GroundEnemyTank {
         return alternative;
       }
     }
-    return direction.clone().negate();
+    const reverse = direction.clone().negate();
+    candidate.copy(this.group.position).addScaledVector(reverse, distance * 0.85);
+    if (this.canOccupy(candidate)) this.group.position.copy(candidate);
+    return reverse;
   }
 
   update(delta, tankRef, manager) {
     this.resolveArchitectureOverlap();
+    const movementStart = this.group.position.clone();
     const toPlayer = tankRef.group.position.clone().sub(this.group.position);
     const distance = toPlayer.length();
     const flatDirection = toPlayer.clone().setY(0).normalize();
     let hullDirection = flatDirection;
-    if (this.patrolPath) {
+    let movementRequested = false;
+    if (this.recoveryTimer > 0) {
+      this.recoveryTimer = Math.max(0, this.recoveryTimer - delta);
+      const forward = new THREE.Vector3(-Math.sin(this.group.rotation.y), 0, -Math.cos(this.group.rotation.y));
+      const right = new THREE.Vector3(-forward.z, 0, forward.x);
+      const reverseEscape = forward.clone().negate().addScaledVector(right, this.recoveryTurn * 0.62).normalize();
+      const steeringHeading = forward.clone().addScaledVector(right, this.recoveryTurn * 0.34).normalize();
+      this.moveAroundArchitecture(reverseEscape, this.speed * 1.18 * delta);
+      hullDirection = steeringHeading;
+      movementRequested = true;
+    } else if (this.patrolPath) {
       const waypoint = this.patrolPath[this.pathIndex];
       const toWaypoint = waypoint.clone().sub(this.group.position).setY(0);
       if (toWaypoint.length() < 16) {
@@ -4572,8 +4590,25 @@ class GroundEnemyTank {
       }
       hullDirection = toWaypoint.normalize();
       hullDirection = this.moveAroundArchitecture(hullDirection, this.speed * 0.72 * delta);
+      movementRequested = true;
     } else if (distance > 78 && distance < 260) {
       hullDirection = this.moveAroundArchitecture(flatDirection, this.speed * delta);
+      movementRequested = true;
+    }
+    const movement = this.group.position.distanceTo(movementStart);
+    if (movementRequested && movement < this.speed * delta * 0.12) {
+      this.stuckTimer += delta;
+      if (this.stuckTimer >= 0.62) {
+        this.recoveryAttempts++;
+        this.recoveryTurn = this.recoveryAttempts % 2
+          ? (Math.random() < 0.5 ? -1 : 1)
+          : -this.recoveryTurn;
+        this.recoveryTimer = 1.25 + Math.random() * 0.75;
+        this.stuckTimer = 0;
+      }
+    } else if (movement > this.speed * delta * 0.3) {
+      this.stuckTimer = Math.max(0, this.stuckTimer - delta * 3);
+      if (this.recoveryTimer <= 0) this.recoveryAttempts = 0;
     }
     this.group.position.y = terrain.getHeightAt(this.group.position.x, this.group.position.z) + 1.2;
     const hullTargetYaw = Math.atan2(-hullDirection.x, -hullDirection.z);
