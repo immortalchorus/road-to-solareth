@@ -128,6 +128,17 @@ const hud = {
 };
 const bombingScopePanel = document.querySelector("#bombing-scope");
 const bombingScopeCanvas = document.querySelector("#bombing-scope-canvas");
+const cockpitOverlay = document.querySelector("#cockpit-overlay");
+const cockpitSonarCanvas = document.querySelector("#cockpit-sonar-canvas");
+const cockpitReadouts = {
+  armor: document.querySelector("#cockpit-armor"),
+  speed: document.querySelector("#cockpit-speed"),
+  altitude: document.querySelector("#cockpit-altitude"),
+  ammo: document.querySelector("#cockpit-ammo"),
+  missiles: document.querySelector("#cockpit-missiles"),
+  rival: document.querySelector("#cockpit-rival"),
+  warning: document.querySelector("#cockpit-warning")
+};
 const splashScreen = document.querySelector("#splash-screen");
 const playButton = document.querySelector("#play-button");
 const playLaunch = document.querySelector("#play-launch");
@@ -152,6 +163,8 @@ let audio = null;
 let missileRange = 55;
 let commsVolume = 0.7;
 let bombingScope = null;
+let cockpitBombingScope = null;
+let cockpitAlertTimer = 0;
 
 try {
   musicAmmoBalanceControl.value = window.localStorage.getItem("hovertank-music-ammo-balance") || "50";
@@ -474,13 +487,22 @@ try {
 }
 renderHighScores();
 
+function isDogfightMode() {
+  return gameMode === "bootcamp" || gameMode === "cockpit";
+}
+
 function configureSessionMode(selectedMode) {
-  gameMode = selectedMode === "bootcamp" ? "bootcamp" : "standard";
+  gameMode = selectedMode === "cockpit" ? "cockpit" : selectedMode === "bootcamp" ? "bootcamp" : "standard";
+  const dogfightMode = isDogfightMode();
+  const cockpitMode = gameMode === "cockpit";
+  document.body.classList.toggle("cockpit-mode", cockpitMode);
+  cockpitOverlay.hidden = !cockpitMode;
+  if (cockpitBombingScope) cockpitBombingScope.visible = cockpitMode;
   if (wingmen) {
-    for (const wingman of wingmen.units) wingman.group.visible = gameMode !== "bootcamp";
+    for (const wingman of wingmen.units) wingman.group.visible = !dogfightMode;
   }
   if (!bootcampManager) return;
-  if (gameMode === "bootcamp") {
+  if (dogfightMode) {
     bootcampManager.activate();
     bootcampManager.tunnelRadius = 14;
     if (!bootcampManager.opponent || !bootcampManager.opponent.group.visible) bootcampManager.respawnOpponent();
@@ -503,8 +525,8 @@ playButton.addEventListener("click", async () => {
   splashScreen.hidden = true;
   splashScreen.remove();
   clock.getDelta();
-  hud.status.textContent = gameMode === "bootcamp"
-    ? `${audio.currentTrack.title} signal acquired. Dogfight Bootcamp active.`
+  hud.status.textContent = isDogfightMode()
+    ? `${audio.currentTrack.title} signal acquired. ${gameMode === "cockpit" ? "Cockpit Dogfight" : "Dogfight Bootcamp"} active.`
     : `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
   try {
@@ -3418,6 +3440,7 @@ class EnemyManager {
     this.patrolSpawnTimer = 0.75;
     this.hostileShots = [];
     this.escortDrones = [];
+    this.rearAlertCooldown = 0;
   }
 
   update(delta, tankRef) {
@@ -3586,10 +3609,24 @@ class EnemyManager {
   }
 
   updateHostileShots(delta, tankRef) {
+    this.rearAlertCooldown = Math.max(0, this.rearAlertCooldown - delta);
     for (let i = this.hostileShots.length - 1; i >= 0; i--) {
       const shell = this.hostileShots[i];
       shell.life -= delta;
       shell.mesh.position.addScaledVector(shell.velocity, delta);
+      if (gameMode === "cockpit" && shell.life > 0 && this.rearAlertCooldown <= 0) {
+        const toShell = shell.mesh.position.clone().sub(tankRef.group.position);
+        const distance = toShell.length();
+        if (distance > 8 && distance < 135) {
+          const forward = new THREE.Vector3(-Math.sin(tankRef.group.rotation.y), 0, -Math.cos(tankRef.group.rotation.y));
+          const behind = toShell.dot(forward) < -distance * 0.28;
+          const approaching = shell.velocity.dot(toShell.clone().negate().normalize()) > 12;
+          if (behind && approaching) {
+            this.rearAlertCooldown = 7;
+            triggerCockpitRedAlert();
+          }
+        }
+      }
       const ground = terrain.getHeightAt(shell.mesh.position.x, shell.mesh.position.z);
       if (shell.mesh.position.y <= ground + 0.35) shell.life = -1;
       if (shell.life > 0 && shell.mesh.position.distanceTo(tankRef.group.position) <= CONFIG.tankCollisionRadius + shell.radius) {
@@ -5917,6 +5954,35 @@ class AudioManager {
     window.setTimeout(() => window.speechSynthesis.speak(utterance), 500);
   }
 
+  speakRedAlert() {
+    if (this.muted || this.commsVolume <= 0 || !("speechSynthesis" in window)) return;
+    const ctx = this.ensureContext();
+    if (ctx && this.master) {
+      const now = ctx.currentTime;
+      for (const delay of [0, 0.11, 0.22]) {
+        const tone = ctx.createOscillator();
+        const gain = ctx.createGain();
+        tone.type = "sawtooth";
+        tone.frequency.value = 690;
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.085 * this.commsVolume, now + delay + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.08);
+        tone.connect(gain).connect(this.master);
+        tone.start(now + delay);
+        tone.stop(now + delay + 0.09);
+      }
+    }
+    const utterance = new SpeechSynthesisUtterance("Red Alert. Attack from the rear.");
+    const voices = window.speechSynthesis.getVoices();
+    utterance.voice = voices.find(voice => /^en/i.test(voice.lang) && /mark|david|guy|microsoft|google/i.test(voice.name)) || voices.find(voice => /^en/i.test(voice.lang));
+    utterance.lang = "en-US";
+    utterance.volume = this.commsVolume;
+    utterance.rate = 0.82;
+    utterance.pitch = 0.5;
+    window.speechSynthesis.cancel();
+    window.setTimeout(() => window.speechSynthesis.speak(utterance), 280);
+  }
+
   update(delta, tankRef) {
     if (!this.started) return;
     this.updateMusicPulse(delta);
@@ -6304,6 +6370,7 @@ missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
 autopilot = new AutopilotManager();
 bombingScope = new BombingScope(bombingScopePanel, bombingScopeCanvas, terrain, tank);
+cockpitBombingScope = new BombingScope(cockpitOverlay, cockpitSonarCanvas, terrain, tank);
 
 terrain.update(tank.group.position);
 positionTankOnTerrain();
@@ -6324,7 +6391,7 @@ function animate() {
     worldPortal.update(delta, tank);
     terrain.update(tank.group.position);
     tacticalGrid.update(delta, tank);
-    if (gameMode === "bootcamp" && bootcampManager) {
+    if (isDogfightMode() && bootcampManager) {
       bootcampManager.update(delta);
       enemies.updateHostileShots(delta, tank);
       refuelTowers.update(delta, tank);
@@ -6344,9 +6411,11 @@ function animate() {
     updateCamera(delta);
     updateHUD(delta);
     bombingScope.render(delta);
+    cockpitBombingScope.render(delta);
     audio.update(delta, tank);
     tank.updateBeacons(audio.musicPulse);
   }
+
   if (!gamePaused) {
     updateExplosions(delta);
     updateShockwaves(delta);
@@ -6390,6 +6459,16 @@ function toggleCameraMode() {
 }
 
 function updateCamera(delta) {
+  if (gameMode === "cockpit") {
+    tank.group.updateMatrixWorld(true);
+    const cockpitPosition = tank.group.localToWorld(new THREE.Vector3(0, 6.15, -1.7));
+    const cockpitLook = tank.group.localToWorld(new THREE.Vector3(0, 5.25, -120));
+    camera.position.copy(cockpitPosition);
+    camera.fov = THREE.MathUtils.lerp(camera.fov, 74, 1 - Math.pow(0.01, delta));
+    camera.updateProjectionMatrix();
+    camera.lookAt(cockpitLook);
+    return;
+  }
   const profile = cameraProfiles[cameraMode];
   const narrowViewport = window.innerWidth <= 620;
   const cameraDistance = profile.distance * (narrowViewport ? 1.35 : 1);
@@ -6441,6 +6520,20 @@ function updateHUD(delta) {
   hud.missiles.textContent = tank.getMissileCount();
   hud.hitPoints.textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   hud.hitPoints.style.color = hitPoints <= 30 ? "#ff6658" : "#d8f8ff";
+  if (gameMode === "cockpit") {
+    const groundAltitude = terrain.getHeightAt(tank.group.position.x, tank.group.position.z);
+    cockpitReadouts.armor.textContent = String(Math.max(0, Math.ceil(hitPoints))).padStart(3, "0");
+    cockpitReadouts.speed.textContent = String(Math.round(Math.abs(tank.speed) * 2.4)).padStart(3, "0");
+    cockpitReadouts.altitude.textContent = String(Math.max(0, Math.round(tank.group.position.y - groundAltitude))).padStart(3, "0");
+    cockpitReadouts.ammo.textContent = String(ammo).padStart(4, "0");
+    cockpitReadouts.missiles.textContent = String(tank.getMissileCount());
+    cockpitReadouts.rival.textContent = String(Math.max(0, Math.ceil(bootcampManager?.health || 0))).padStart(3, "0");
+    cockpitAlertTimer = Math.max(0, cockpitAlertTimer - delta);
+    if (cockpitAlertTimer <= 0) {
+      cockpitOverlay.classList.remove("red-alert");
+      cockpitReadouts.warning.textContent = hitPoints < 50 ? "DAMAGE CRITICAL" : "SYSTEM NOMINAL";
+    }
+  }
   if (hud.wingman1 && wingmen) {
     const formatWingman = unit => unit.dead ? "DESTROYED" : `${Math.ceil(unit.health)} HP | ${unit.state.toUpperCase()}`;
     hud.wingman1.textContent = `WINGMAN 1  ${formatWingman(wingmen.units[0])}`;
@@ -6473,6 +6566,16 @@ function updateFuel(delta) {
     hud.status.textContent = "Fuel exhausted. Movement systems offline.";
     statusTimer = 4;
   }
+}
+
+function triggerCockpitRedAlert() {
+  if (gameMode !== "cockpit") return;
+  cockpitAlertTimer = 2.4;
+  cockpitOverlay.classList.add("red-alert");
+  cockpitReadouts.warning.textContent = "REAR THREAT";
+  hud.status.textContent = "RED ALERT: hostile fire approaching from the rear.";
+  statusTimer = 3;
+  audio.speakRedAlert();
 }
 
 function resupplyTank() {
@@ -6787,7 +6890,7 @@ function endRun(summaryDelay = 0) {
 }
 
 function calculateCompositeScore() {
-  const isBootcamp = gameMode === "bootcamp";
+  const isBootcamp = isDogfightMode();
   const accuracyRatio = runStats.shotsFired > 0
     ? Math.min(1, runStats.shotsHit / runStats.shotsFired)
     : 0;
