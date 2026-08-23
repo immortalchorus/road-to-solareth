@@ -1717,6 +1717,7 @@ class BootcampDuelManager {
     this.tunnelMarker = null;
     this.tunnelCenter = new THREE.Vector3();
     this.tunnelNormal = new THREE.Vector3(0, 1, 0);
+    this.flightClock = Math.random() * Math.PI * 2;
     this.createTunnelMarker();
   }
 
@@ -1770,15 +1771,17 @@ class BootcampDuelManager {
     if (!this.opponent) return;
     const importedModel = this.opponent.importedModel || null;
     if (this.baseSkinApplied && importedModel === this.skinnedImportedModel) return;
-    const accent = new THREE.Color(0x6dd4ff);
-    const warm = new THREE.Color(0x193548);
+    const accent = new THREE.Color(0xf000ff);
+    const glow = new THREE.Color(0x9d00ff);
     this.opponent.group.traverse(child => {
       if (!child.isMesh || !child.material || !child.material.color || child.userData.bootcampTinted) return;
-      if (child.material.color.getHex() === 0x000000) return;
       child.material = child.material.clone();
-      child.material.color.lerp(accent, 0.72);
-      if (child.material.emissive) child.material.emissive.lerp(warm, 0.72);
-      child.material.roughness = Math.max(0.04, child.material.roughness - 0.22);
+      child.material.color.lerp(accent, 0.88);
+      if (child.material.emissive) {
+        child.material.emissive.copy(glow);
+        child.material.emissiveIntensity = Math.max(2.2, child.material.emissiveIntensity || 0);
+      }
+      child.material.roughness = Math.max(0.06, child.material.roughness - 0.18);
       child.material.metalness = Math.min(1, child.material.metalness + 0.12);
       child.userData.bootcampTinted = true;
     });
@@ -1795,7 +1798,7 @@ class BootcampDuelManager {
     spawn.x += forward.z * lateral;
     spawn.z -= forward.x * lateral;
     const ground = this.terrain.getHeightAt(spawn.x, spawn.z);
-    this.opponent.group.position.set(spawn.x, ground + CONFIG.tankHoverHeight, spawn.z);
+    this.opponent.group.position.set(spawn.x, ground + CONFIG.tankHoverHeight + 18, spawn.z);
     this.opponent.group.rotation.y = Math.atan2(-forward.x, -forward.z) + (Math.random() - 0.5) * 0.3;
     this.opponent.group.rotation.x = 0;
     this.opponent.group.rotation.z = 0;
@@ -1845,15 +1848,26 @@ class BootcampDuelManager {
     const turnRight = yawDelta < -0.03;
     const forward = distance > this.preferredRange + 20;
     const reverse = distance < this.preferredRange - 16 || distance < 55;
+    this.flightClock += delta;
+    const opponentGround = this.terrain.getHeightAt(this.opponent.group.position.x, this.opponent.group.position.z);
+    const playerGround = this.terrain.getHeightAt(this.player.group.position.x, this.player.group.position.z);
+    const playerClearance = Math.max(0, this.player.group.position.y - playerGround - CONFIG.tankHoverHeight);
+    const targetClearance = THREE.MathUtils.clamp(
+      playerClearance + 12 + Math.sin(this.flightClock * 0.62) * 14,
+      10,
+      58
+    );
+    const altitudeError = opponentGround + CONFIG.tankHoverHeight + targetClearance - this.opponent.group.position.y;
+    const adjustAltitude = Math.abs(altitudeError) > 2.5;
     const controls = {
       Autopilot: false,
       ArrowUp: forward,
       ArrowDown: reverse,
       ArrowLeft: turnLeft,
       ArrowRight: turnRight,
-      ShiftLeft: false,
+      ShiftLeft: adjustAltitude && altitudeError < 0,
       ShiftRight: false,
-      KeyF: false,
+      KeyF: adjustAltitude,
       KeyY: false,
       KeyV: false,
       ControlLeft: false,
@@ -2623,7 +2637,6 @@ function createFlatPrisonCompound(terrainManager) {
     addBridge(line, false);
   }
 
-  const towerWindowGeo = new THREE.BoxGeometry(2.2, 1.5, 0.18);
   const towerPositions = [];
   const towerLines = [-200, -100, 0, 100, 200];
   const pyramidPositions = [[-100, -100], [100, -100], [-100, 100], [100, 100]];
@@ -2634,17 +2647,7 @@ function createFlatPrisonCompound(terrainManager) {
       towerPositions.push({ x, z });
     }
   }
-  const litWindows = [];
   towerPositions.forEach(({ x, z }, index) => {
-    for (let floor = 0; floor < 8; floor++) {
-      for (let column = -2; column <= 2; column++) {
-        if (seededRandom(index * 937 + floor * 53 + column * 17) < 0.42) continue;
-        const offset = column * 3.1;
-        const y = 6 + floor * 4.1;
-        litWindows.push([x + offset, y, z - 9.1, 0], [x + offset, y, z + 9.1, Math.PI]);
-        litWindows.push([x - 9.1, y, z + offset, Math.PI * 0.5], [x + 9.1, y, z + offset, -Math.PI * 0.5]);
-      }
-    }
     const collider = new THREE.Mesh(new THREE.BoxGeometry(20, 50, 20), materials.collisionInvisible);
     collider.position.set(x, 25, z);
     terrainManager.registerDestructible(collider, group, 15, { indestructible: true, ignoreClearZone: true, preciseHit: true });
@@ -2662,14 +2665,6 @@ function createFlatPrisonCompound(terrainManager) {
     towers.receiveShadow = true;
     group.add(towers);
   }).catch(error => console.error("Guard tower model failed to load", error));
-  const windows = new THREE.InstancedMesh(towerWindowGeo, materials.facilityLightWarm, litWindows.length);
-  litWindows.forEach(([x, y, z, rotation], index) => {
-    matrix.makeRotationY(rotation);
-    matrix.setPosition(x, y, z);
-    windows.setMatrixAt(index, matrix);
-  });
-  windows.instanceMatrix.needsUpdate = true;
-  group.add(windows);
 
   for (const [index, position] of pyramidPositions.entries()) {
     const pyramid = createHighTechPyramid(9100 + index);
