@@ -1212,14 +1212,14 @@ class Tank {
   addBeacon(parent, position, visualScale = 1) {
     const light = new THREE.Mesh(
       new THREE.SphereGeometry(0.3, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1 })
+      new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1, toneMapped: false, blending: THREE.AdditiveBlending })
     );
     light.position.copy(position);
     light.scale.setScalar(visualScale);
     parent.add(light);
     const halo = new THREE.Mesh(
       new THREE.SphereGeometry(0.72, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff3824, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending })
+      new THREE.MeshBasicMaterial({ color: 0xff3824, transparent: true, opacity: 0.5, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })
     );
     halo.position.copy(position);
     halo.scale.setScalar(visualScale);
@@ -1231,14 +1231,15 @@ class Tank {
   }
 
   updateBeacons(musicPulse) {
-    const beat = Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 1.18);
+    const beat = THREE.MathUtils.clamp(Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 0.58) * 1.35, 0, 1);
     for (const { light, halo, cast, visualScale = 1 } of this.beacons) {
-      light.material.opacity = 0.38 + beat * 0.62;
-      light.material.color.setRGB(1, 0.08 + beat * 0.72, 0.04 + beat * 0.28);
-      light.scale.setScalar((1 + beat * 0.82) * visualScale);
-      halo.material.opacity = 0.1 + beat * 0.82;
-      halo.scale.setScalar((0.82 + beat * 1.62) * visualScale);
-      cast.intensity = 0.35 + beat * 5.8;
+      light.material.opacity = 0.72 + beat * 0.28;
+      light.material.color.setRGB(1, 0.08 + beat * 0.92, 0.03 + beat * 0.68);
+      light.scale.setScalar((1.18 + beat * 1.25) * visualScale);
+      halo.material.opacity = 0.24 + beat * 0.76;
+      halo.material.color.setRGB(1, 0.05 + beat * 0.55, 0.02 + beat * 0.18);
+      halo.scale.setScalar((1.08 + beat * 2.55) * visualScale);
+      cast.intensity = 1.25 + beat * 11.5;
     }
   }
 
