@@ -1235,10 +1235,10 @@ class Tank {
     for (const { light, halo, cast, visualScale = 1 } of this.beacons) {
       light.material.opacity = 0.72 + beat * 0.28;
       light.material.color.setRGB(1, 0.08 + beat * 0.92, 0.03 + beat * 0.68);
-      light.scale.setScalar((1.18 + beat * 1.25) * visualScale);
+      light.scale.setScalar((1.18 + beat * 0.625) * visualScale);
       halo.material.opacity = 0.24 + beat * 0.76;
       halo.material.color.setRGB(1, 0.05 + beat * 0.55, 0.02 + beat * 0.18);
-      halo.scale.setScalar((1.08 + beat * 2.55) * visualScale);
+      halo.scale.setScalar((1.08 + beat * 1.275) * visualScale);
       cast.intensity = 1.25 + beat * 11.5;
     }
   }
