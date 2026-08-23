@@ -6461,8 +6461,8 @@ function toggleCameraMode() {
 function updateCamera(delta) {
   if (gameMode === "cockpit") {
     tank.group.updateMatrixWorld(true);
-    const cockpitPosition = tank.group.localToWorld(new THREE.Vector3(0, 6.15, -1.7));
-    const cockpitLook = tank.group.localToWorld(new THREE.Vector3(0, 5.25, -120));
+    const cockpitPosition = tank.group.localToWorld(new THREE.Vector3(0, 5.62, -5.15));
+    const cockpitLook = tank.group.localToWorld(new THREE.Vector3(0, 4.92, -120));
     camera.position.copy(cockpitPosition);
     camera.fov = THREE.MathUtils.lerp(camera.fov, 74, 1 - Math.pow(0.01, delta));
     camera.updateProjectionMatrix();
