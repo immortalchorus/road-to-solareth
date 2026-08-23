@@ -1645,7 +1645,6 @@ class BootcampDuelManager {
     }
 
     this.applyOpponentAI(delta);
-    this.updateTunnel(delta);
     if (this.health <= 0) {
       this.health = 0;
       this.handleDefeat();
@@ -2510,6 +2509,11 @@ function createFlatPrisonCompound(terrainManager) {
       const support = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 3.3, 21, 12), materials.prisonConcrete);
       support.position.set(alongX ? along : line, 10.5, alongX ? line : along);
       group.add(support);
+      terrainManager.registerDestructible(support, group, 3.5, {
+        indestructible: true,
+        ignoreClearZone: true,
+        preciseHit: true
+      });
     }
   };
   for (const line of bridgeLines) {
