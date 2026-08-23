@@ -3580,7 +3580,7 @@ class WingmanUnit {
     this.state = "patrol";
     this.velocity = new THREE.Vector3();
     this.fireTimer = 0.5 + index * 0.2;
-    this.collisionRadius = 4.5;
+    this.collisionRadius = 2.25;
     this.supplyQueue = [];
     this.patrolPhase = index * Math.PI;
     this.build();
@@ -3601,7 +3601,7 @@ class WingmanUnit {
       });
       this.group.add(clone);
     }
-    this.group.scale.setScalar(0.92);
+    this.group.scale.setScalar(0.46);
     const beaconMaterial = new THREE.MeshBasicMaterial({ color: this.index ? 0x6effa8 : 0x65dfff, transparent: true, opacity: 0.95 });
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 7), beaconMaterial);
     beacon.position.set(0, 4.5, 0.4);
