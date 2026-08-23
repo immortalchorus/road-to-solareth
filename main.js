@@ -2792,28 +2792,28 @@ function createHexMazeWorld(terrainManager) {
     const tangent = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
     const wallCenter = center.clone().addScaledVector(outward, 82);
     for (const sign of [-1, 1]) {
-      const position = wallCenter.clone().addScaledVector(tangent, sign * 37);
-      addBox(world, [40, 28, 4], [position.x, 14, position.z], materials.mazeShell, angle, true);
+      const position = wallCenter.clone().addScaledVector(tangent, sign * 42);
+      addBox(world, [32, 28, 4], [position.x, 14, position.z], materials.mazeShell, angle, true);
       for (let tier = 0; tier < 3; tier++) {
         const trimPosition = position.clone().addScaledVector(outward, -2.3);
         trimPosition.y = 5 + tier * 8;
-        addBox(world, [30, 0.5, 0.45], [trimPosition.x, trimPosition.y, trimPosition.z], tier === 1 ? materials.facilityLightWarm : materials.prisonPipe, angle);
+        addBox(world, [24, 0.5, 0.45], [trimPosition.x, trimPosition.y, trimPosition.z], tier === 1 ? materials.facilityLightWarm : materials.prisonPipe, angle);
       }
     }
-    addBox(world, [34, 5, 5], [wallCenter.x, 25.5, wallCenter.z], materials.mazeShell, angle, true);
+    addBox(world, [52, 5, 5], [wallCenter.x, 25.5, wallCenter.z], materials.mazeShell, angle, true);
     const archLight = wallCenter.clone().addScaledVector(outward, -2.8);
-    addBox(world, [23, 0.6, 0.5], [archLight.x, 22.2, archLight.z], side % 2 ? materials.facilityLightWarm : materials.facilityLightCool, angle);
+    addBox(world, [36, 0.6, 0.5], [archLight.x, 22.2, archLight.z], side % 2 ? materials.facilityLightWarm : materials.facilityLightCool, angle);
     const arch = new THREE.Group();
     arch.position.copy(wallCenter).addScaledVector(outward, -3.1);
     arch.rotation.y = angle;
     world.add(arch);
     for (const sign of [-1, 1]) {
-      addBox(arch, [2.6, 14, 2.2], [sign * 16.5, 8, 0], materials.prisonPipe);
-      const shoulder = addBox(arch, [2.6, 10, 2.2], [sign * 13.8, 18, 0], materials.prisonPipe);
+      addBox(arch, [2.6, 14, 2.2], [sign * 25, 8, 0], materials.prisonPipe);
+      const shoulder = addBox(arch, [2.6, 10, 2.2], [sign * 21.5, 18, 0], materials.prisonPipe);
       shoulder.rotation.z = sign * -0.58;
-      addBox(arch, [0.38, 12, 0.4], [sign * 14.5, 8, -1.25], side % 2 ? materials.facilityLightWarm : materials.facilityLightCool);
+      addBox(arch, [0.38, 12, 0.4], [sign * 23, 8, -1.25], side % 2 ? materials.facilityLightWarm : materials.facilityLightCool);
     }
-    addBox(arch, [22, 2.4, 2.2], [0, 22.2, 0], materials.prisonPipe);
+    addBox(arch, [35, 2.4, 2.2], [0, 22.2, 0], materials.prisonPipe);
   }
 
   const routes = [
@@ -2841,9 +2841,9 @@ function createHexMazeWorld(terrainManager) {
       const segmentAngle = Math.atan2(dx, dz);
       const midX = (ax + bx) * 0.5;
       const midZ = (az + bz) * 0.5;
-      addBox(routeRoot, [30, 0.8, length + 5], [midX, 0, midZ], materials.mazeFloor, segmentAngle);
-      const sideX = Math.cos(segmentAngle) * 16;
-      const sideZ = -Math.sin(segmentAngle) * 16;
+      addBox(routeRoot, [45, 0.8, length + 5], [midX, 0, midZ], materials.mazeFloor, segmentAngle);
+      const sideX = Math.cos(segmentAngle) * 23.5;
+      const sideZ = -Math.sin(segmentAngle) * 23.5;
       for (const sign of [-1, 1]) {
         addBox(routeRoot, [2.4, 25, length + 6], [midX + sideX * sign, 12.5, midZ + sideZ * sign], materials.mazeShell, segmentAngle, true);
         const lightMaterial = (routeIndex + segmentIndex + (sign > 0 ? 1 : 0)) % 3 === 0
@@ -2853,7 +2853,7 @@ function createHexMazeWorld(terrainManager) {
       }
       for (let rib = 10; rib < length; rib += 16) {
         const t = rib / length - 0.5;
-        addBox(routeRoot, [34, 1.3, 1.5], [midX + dx * t, 23, midZ + dz * t], routeIndex % 2 ? materials.prisonPipe : materials.prisonPipeDirty, segmentAngle);
+        addBox(routeRoot, [49, 1.3, 1.5], [midX + dx * t, 23, midZ + dz * t], routeIndex % 2 ? materials.prisonPipe : materials.prisonPipeDirty, segmentAngle);
       }
     }
     const [exitX, exitZ] = route[route.length - 1];
