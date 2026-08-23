@@ -365,6 +365,8 @@ let tacticalGrid;
 let autopilot;
 let prisonEscapees;
 let surveillanceFleet;
+let giantTarantulas;
+let worldPortal;
 const explosionEffects = [];
 const shockwaveEffects = [];
 const impactEffects = [];
@@ -1627,7 +1629,7 @@ class SurveillanceFleet {
     return true;
   }
 
-  update(delta) {
+  update(delta, tankRef) {
     this.elapsed += delta;
     if (this.source && this.droids.length < this.targetCount) {
       this.spawnTimer -= delta;
@@ -1638,8 +1640,33 @@ class SurveillanceFleet {
     }
     for (const droid of this.droids) {
       const travel = droid.speed * droid.direction * delta;
-      if (droid.horizontal) droid.root.position.x += travel;
-      else droid.root.position.z += travel;
+      const candidate = droid.root.position.clone();
+      if (droid.horizontal) candidate.x += travel;
+      else candidate.z += travel;
+      let obstacleTop = -Infinity;
+      for (const item of this.terrain.destructibles) {
+        if (!item.solid || !item.object.parent || item.collisionBox.isEmpty()) continue;
+        const box = item.collisionBox;
+        if (candidate.x > box.min.x - 7 && candidate.x < box.max.x + 7 &&
+            candidate.z > box.min.z - 7 && candidate.z < box.max.z + 7) {
+          obstacleTop = Math.max(obstacleTop, box.max.y);
+        }
+      }
+      if (obstacleTop > droid.root.position.y - 8) {
+        droid.direction *= -1;
+        droid.root.rotation.y += Math.PI;
+        droid.evadeAltitude = Math.max(droid.evadeAltitude || 0, obstacleTop + 18);
+      } else {
+        droid.root.position.x = candidate.x;
+        droid.root.position.z = candidate.z;
+      }
+      const toDroid = droid.root.position.clone().sub(tankRef.group.position).setY(0);
+      if (toDroid.lengthSq() < 48 * 48) {
+        if (toDroid.lengthSq() < 0.01) toDroid.set(1, 0, 0);
+        toDroid.normalize();
+        droid.root.position.addScaledVector(toDroid, delta * 42);
+        droid.evadeAltitude = Math.max(droid.evadeAltitude || 0, tankRef.group.position.y + 28);
+      }
       const routePosition = droid.horizontal ? droid.root.position.x : droid.root.position.z;
       if (Math.abs(routePosition) > 215) {
         droid.direction *= -1;
@@ -1647,7 +1674,9 @@ class SurveillanceFleet {
       }
       const clearance = 32 + (0.5 + Math.sin(this.elapsed * 0.16 + droid.altitudePhase) * 0.5) * 58;
       const ground = this.terrain.getHeightAt(droid.root.position.x, droid.root.position.z);
-      droid.root.position.y = ground + clearance + Math.sin(this.elapsed * 1.15 + droid.phase) * 1.4;
+      const cruiseY = ground + clearance + Math.sin(this.elapsed * 1.15 + droid.phase) * 1.4;
+      droid.root.position.y = THREE.MathUtils.lerp(droid.root.position.y, Math.max(cruiseY, droid.evadeAltitude || 0), Math.min(1, delta * 4));
+      droid.evadeAltitude = Math.max(0, (droid.evadeAltitude || 0) - delta * 8);
       if (droid.panel) droid.panel.rotation.y = this.elapsed * 1.44 + droid.phase;
       const pulse = 0.5 + Math.sin(this.elapsed * 4.6 + droid.phase) * 0.5;
       const flash = Math.sin(this.elapsed * 1.35 + droid.phase) > 0.82 ? 1 : 0.42;
@@ -1946,6 +1975,32 @@ function createSupplyArena() {
   return group;
 }
 
+function createPerimeterSmokeStack(seed) {
+  const group = new THREE.Group();
+  const height = 58 + seededRandom(seed) * 28;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(12, 16, 12, 16), materials.prisonConcrete);
+  base.position.y = 6;
+  const stack = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 9, height, 18), materials.prisonPipeDirty);
+  stack.position.y = 12 + height * 0.5;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(7.2, 1.1, 8, 24), materials.prisonPipe);
+  rim.rotation.x = Math.PI * 0.5;
+  rim.position.y = 12 + height;
+  group.add(base, stack, rim);
+  const plume = new THREE.Group();
+  plume.position.y = 17 + height;
+  group.add(plume);
+  const puffs = [];
+  for (let i = 0; i < 7; i++) {
+    const puff = new THREE.Mesh(prisonGeometry.smoke, materials.toxicSmoke);
+    puff.position.set((seededRandom(seed + i * 13) - 0.5) * 5, i * 7, (seededRandom(seed + i * 19) - 0.5) * 5);
+    puff.scale.setScalar(6 + i * 1.7);
+    plume.add(puff);
+    puffs.push(puff);
+  }
+  toxicSmokeEffects.push({ root: plume, puffs, phase: seededRandom(seed + 77) * Math.PI * 2 });
+  return group;
+}
+
 function createFlatPrisonCompound(terrainManager) {
   const group = new THREE.Group();
   const size = CONFIG.compoundSize;
@@ -2099,6 +2154,13 @@ function createFlatPrisonCompound(terrainManager) {
     group.add(collider);
   }
 
+  const stackPositions = [[-285, -170], [-285, 90], [285, -80], [285, 175], [-130, -285], [150, 285]];
+  stackPositions.forEach(([x, z], index) => {
+    const stack = createPerimeterSmokeStack(12000 + index);
+    stack.position.set(x, 0, z);
+    group.add(stack);
+  });
+
   group.userData.landmark = "flat-prison-compound";
   return group;
 }
@@ -2111,8 +2173,10 @@ class TerrainManager {
     this.clearZones = [];
     this.size = CONFIG.chunkSize;
     this.radius = CONFIG.visibleChunkRadius;
+    this.worldMode = "compound";
     this.compound = createFlatPrisonCompound(this);
     this.parent.add(this.compound);
+    this.compoundDestructibles = [...this.destructibles];
   }
 
   reserveClearZone(x, z, radius) {
@@ -2124,8 +2188,7 @@ class TerrainManager {
   }
 
   update(position) {
-    return;
-    /* Archived streaming terrain is retained below for the prison-city branch. */
+    if (this.worldMode === "compound") return;
     const cx = Math.floor(position.x / this.size);
     const cz = Math.floor(position.z / this.size);
     const wanted = new Set();
@@ -2146,6 +2209,24 @@ class TerrainManager {
         this.chunks.delete(key);
       }
     }
+  }
+
+  setWorldMode(mode) {
+    if (mode === this.worldMode) return;
+    this.worldMode = mode;
+    this.compound.visible = mode === "compound";
+    if (mode === "prison") {
+      this.radius = 1;
+      this.destructibles = [];
+      return;
+    }
+    for (const chunk of this.chunks.values()) {
+      this.parent.remove(chunk);
+      disposeObject(chunk);
+    }
+    this.chunks.clear();
+    this.radius = CONFIG.visibleChunkRadius;
+    this.destructibles = [...this.compoundDestructibles];
   }
 
   createChunk(cx, cz, key) {
@@ -2461,7 +2542,13 @@ class TerrainManager {
   }
 
   getHeightAt(x, z) {
-    return Math.hypot(x, z) <= 50 ? 1 : 0;
+    if (this.worldMode === "compound") return Math.hypot(x, z) <= 50 ? 1 : 0;
+    const waves = Math.sin(x * 0.018) * 2.8 + Math.cos(z * 0.021) * 2.3 + Math.sin((x + z) * 0.009) * 4.4;
+    const rough = (valueNoise(x * 0.035, z * 0.035) - 0.5) * 8.5;
+    const crater = Math.sin(Math.hypot(x + 130, z - 90) * 0.021) * 1.3;
+    const naturalHeight = waves + rough + crater;
+    const arenaBlend = THREE.MathUtils.smoothstep(Math.hypot(x, z), 82, 108);
+    return THREE.MathUtils.lerp(0, naturalHeight, arenaBlend);
   }
 
   getNormalAt(x, z) {
@@ -2471,6 +2558,60 @@ class TerrainManager {
     const back = this.getHeightAt(x, z - sample);
     const front = this.getHeightAt(x, z + sample);
     return new THREE.Vector3(left - right, sample * 2, back - front).normalize();
+  }
+}
+
+class WorldPortalManager {
+  constructor(parent, terrainManager) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.group = new THREE.Group();
+    this.group.position.set(50, 15, -170);
+    this.cooldown = 0;
+    this.elapsed = 0;
+    const ringMaterial = new THREE.MeshStandardMaterial({ color: 0x87949b, metalness: 0.96, roughness: 0.2, emissive: 0x102b35, emissiveIntensity: 0.8 });
+    this.ring = new THREE.Mesh(new THREE.TorusGeometry(13, 2.1, 18, 72), ringMaterial);
+    const innerRing = new THREE.Mesh(new THREE.TorusGeometry(10.8, 0.45, 10, 64), materials.facilityLightCool);
+    this.energyMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: { time: { value: 0 } },
+      vertexShader: "varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+      fragmentShader: "varying vec2 vUv; uniform float time; void main(){ vec2 p=vUv-0.5; float r=length(p); float a=atan(p.y,p.x); float flow=sin(a*7.0-r*42.0+time*4.4)+sin(a*3.0+r*28.0-time*2.7); float edge=smoothstep(0.5,0.39,r); float core=0.48+0.25*flow; vec3 color=mix(vec3(0.03,0.35,0.62),vec3(0.55,0.95,1.0),core); gl_FragColor=vec4(color,edge*(0.72+core*0.24)); }"
+    });
+    this.energy = new THREE.Mesh(new THREE.CircleGeometry(10.65, 72), this.energyMaterial);
+    this.group.add(this.ring, innerRing, this.energy);
+    for (let i = 0; i < 24; i++) {
+      const angle = i / 24 * Math.PI * 2;
+      const node = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), materials.facilityLightCool);
+      node.position.set(Math.cos(angle) * 13, Math.sin(angle) * 13, 0.35);
+      this.group.add(node);
+    }
+    this.parent.add(this.group);
+  }
+
+  update(delta, tankRef) {
+    this.elapsed += delta;
+    this.cooldown = Math.max(0, this.cooldown - delta);
+    this.energyMaterial.uniforms.time.value = this.elapsed;
+    this.ring.rotation.z = Math.sin(this.elapsed * 0.35) * 0.025;
+    const local = tankRef.group.position.clone().sub(this.group.position);
+    const insideAperture = Math.hypot(local.x, local.y) < 9.8 && Math.abs(local.z) < 4.5;
+    if (!insideAperture || this.cooldown > 0) return;
+    const enteringPrison = this.terrain.worldMode === "compound";
+    this.terrain.setWorldMode(enteringPrison ? "prison" : "compound");
+    tankRef.group.position.z = this.group.position.z + (enteringPrison ? -24 : 24);
+    tankRef.group.position.y = this.terrain.getHeightAt(tankRef.group.position.x, tankRef.group.position.z) + CONFIG.tankHoverHeight;
+    tankRef.altitudeHoldY = tankRef.group.position.y;
+    tacticalGrid.cellX = Infinity;
+    tacticalGrid.cellZ = Infinity;
+    this.cooldown = 3;
+    terrain.update(tankRef.group.position);
+    const compoundVisible = !enteringPrison;
+    for (const tower of [...refuelTowers.towers, ...missileTowers.towers]) tower.group.visible = compoundVisible;
+    hud.status.textContent = enteringPrison ? "Dimensional transit complete. Archived prison city acquired." : "Home compound restored. Helipad approach authorized.";
+    statusTimer = 5;
   }
 }
 
@@ -3103,6 +3244,75 @@ class PrisonEscapeManager {
       }
     }
     return destroyed;
+  }
+}
+
+class GiantTarantulaManager {
+  constructor(parent, terrainManager) {
+    this.parent = parent;
+    this.terrain = terrainManager;
+    this.spiders = [];
+    const positions = [[-175, 35], [175, -35], [-35, -175], [35, 175]];
+    positions.forEach((position, index) => this.spawn(position[0], position[1], index));
+  }
+
+  spawn(x, z, index) {
+    const root = new THREE.Group();
+    const shell = new THREE.MeshStandardMaterial({ color: 0x241814, metalness: 0.08, roughness: 0.9 });
+    const hair = new THREE.MeshStandardMaterial({ color: 0x473026, metalness: 0.04, roughness: 1 });
+    const abdomen = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), hair);
+    abdomen.scale.set(4.8, 3.4, 5.8);
+    abdomen.position.set(0, 8.2, 2.8);
+    const thorax = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), shell);
+    thorax.scale.set(3.7, 2.6, 3.8);
+    thorax.position.set(0, 8.1, -2.4);
+    root.add(abdomen, thorax);
+    const legs = [];
+    for (const side of [-1, 1]) {
+      for (let legIndex = 0; legIndex < 4; legIndex++) {
+        const hip = new THREE.Group();
+        hip.position.set(side * 2.5, 8.2, -4.6 + legIndex * 3.1);
+        hip.rotation.z = side * -0.9;
+        hip.rotation.x = (legIndex - 1.5) * 0.28;
+        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 6.2, 8), hair);
+        upper.position.y = -3.1;
+        hip.add(upper);
+        const knee = new THREE.Group();
+        knee.position.y = -6.1;
+        knee.rotation.z = side * 0.52;
+        const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 6.4, 8), shell);
+        lower.position.y = -3.2;
+        knee.add(lower);
+        hip.add(knee);
+        root.add(hip);
+        legs.push({ hip, knee, side, legIndex, phase: (legIndex % 2) * Math.PI + (side > 0 ? Math.PI : 0) });
+      }
+    }
+    root.position.set(x, this.terrain.getHeightAt(x, z), z);
+    root.rotation.y = index * Math.PI * 0.5;
+    this.parent.add(root);
+    this.spiders.push({ root, legs, phase: index * 1.7, heading: root.rotation.y, turnTimer: 5 + index });
+  }
+
+  update(delta) {
+    const time = performance.now() * 0.001;
+    for (const spider of this.spiders) {
+      spider.turnTimer -= delta;
+      if (spider.turnTimer <= 0) {
+        spider.turnTimer = 5 + seededRandom(time + spider.phase) * 7;
+        spider.heading += (seededRandom(time * 3 + spider.phase) - 0.5) * 1.3;
+      }
+      const next = spider.root.position.clone().add(new THREE.Vector3(-Math.sin(spider.heading), 0, -Math.cos(spider.heading)).multiplyScalar(delta * 2.2));
+      if (Math.abs(next.x) < 205 && Math.abs(next.z) < 205) spider.root.position.copy(next);
+      else spider.heading += Math.PI * 0.7;
+      spider.root.rotation.y += wrapAngle(spider.heading - spider.root.rotation.y) * Math.min(1, delta * 1.2);
+      spider.root.position.y = this.terrain.getHeightAt(spider.root.position.x, spider.root.position.z) + Math.sin(time * 2.2 + spider.phase) * 0.12;
+      for (const leg of spider.legs) {
+        const gait = Math.sin(time * 3.2 + leg.phase + spider.phase);
+        leg.hip.rotation.x = (leg.legIndex - 1.5) * 0.28 + gait * 0.16;
+        leg.knee.rotation.z = leg.side * (0.52 + Math.max(0, gait) * 0.16);
+      }
+    }
   }
 }
 
@@ -4830,11 +5040,13 @@ createSky();
 terrain = new TerrainManager(scene);
 tank = new Tank(scene);
 tacticalGrid = new TacticalGrid(scene, terrain);
+worldPortal = new WorldPortalManager(scene, terrain);
 projectiles = new ProjectileManager(scene);
 enemies = new EnemyManager(scene);
 prisonEscapees = new PrisonEscapeManager(scene, enemies);
 skyDrones = new SkyDroneManager(scene);
 surveillanceFleet = new SurveillanceFleet(scene, terrain);
+giantTarantulas = new GiantTarantulaManager(terrain.compound, terrain);
 refuelTowers = new RefuelTowerManager(scene, terrain);
 missileTowers = new MissileTowerManager(scene, terrain);
 audio = new AudioManager();
@@ -4856,12 +5068,14 @@ function animate() {
     distanceTravelled += moved;
     const normalHoverY = terrain.getHeightAt(tank.group.position.x, tank.group.position.z) + CONFIG.tankHoverHeight;
     if (tank.group.position.y > normalHoverY + 1) runStats.flightTime += delta;
+    worldPortal.update(delta, tank);
     terrain.update(tank.group.position);
     tacticalGrid.update(delta, tank);
     enemies.update(delta, tank);
     prisonEscapees.update(delta, tank);
     skyDrones.update(delta, tank);
-    surveillanceFleet.update(delta);
+    surveillanceFleet.update(delta, tank);
+    giantTarantulas.update(delta);
     refuelTowers.update(delta, tank);
     missileTowers.update(delta, tank);
     projectiles.update(delta, input, tank, enemies, skyDrones);
@@ -5319,7 +5533,7 @@ function calculateCompositeScore() {
   const rangeBonus = Math.round(Math.min(runStats.longestShot, 300) * 3);
   const armorBonus = hitPoints * 20;
   const resupplyBonus = runStats.resupplies * 200;
-  const parkedInArena = hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
+  const parkedInArena = terrain.worldMode === "compound" && hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
   const arenaBonus = parkedInArena ? 10000 : 0;
   const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus + arenaBonus;
   const missedShots = Math.max(0, runStats.shotsFired - runStats.shotsHit);
