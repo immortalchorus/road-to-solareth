@@ -498,6 +498,7 @@ function configureSessionMode(selectedMode) {
   document.body.classList.toggle("cockpit-mode", cockpitMode);
   cockpitOverlay.hidden = !cockpitMode;
   if (cockpitBombingScope) cockpitBombingScope.visible = cockpitMode;
+  tank.setCockpitVisibility(cockpitMode);
   if (wingmen) {
     for (const wingman of wingmen.units) wingman.group.visible = !dogfightMode;
   }
@@ -858,6 +859,7 @@ class Tank {
     this.beacons = [];
     this.missileLaunchIndex = 0;
     this.missileSlots = [];
+    this.cockpitViewEnabled = false;
 
     const addBox = (size, position, material = materials.tankTrim, rotation = [0, 0, 0]) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
@@ -1240,6 +1242,33 @@ class Tank {
       if (child.isMesh && child.material === materials.playerChrome) child.material = chrome;
     });
     this.paintMaterials = [chrome];
+    this.applyCockpitVisibility();
+  }
+
+  setCockpitVisibility(enabled) {
+    this.cockpitViewEnabled = enabled;
+    this.applyCockpitVisibility();
+  }
+
+  applyCockpitVisibility() {
+    if (!this.importedModel) return;
+    const cockpitCannons = new Set([
+      "Cylinder", "Cylinder3", "Cylinder4", "Cylinder5", "Cylinder2001",
+      "Cylinder001", "Cylinder3001", "Cylinder4001", "Cylinder5001", "Cylinder2002",
+      "Cylinder8", "Cylinder7", "Cylinder3002", "Cylinder4002", "Cylinder5002", "Cylinder6"
+    ]);
+    this.importedModel.traverse(child => {
+      if (!child.isMesh) return;
+      if (this.cockpitViewEnabled) {
+        if (child.userData.cockpitPreviousVisible === undefined) {
+          child.userData.cockpitPreviousVisible = child.visible;
+        }
+        child.visible = cockpitCannons.has(child.name);
+      } else if (child.userData.cockpitPreviousVisible !== undefined) {
+        child.visible = child.userData.cockpitPreviousVisible;
+        delete child.userData.cockpitPreviousVisible;
+      }
+    });
   }
 
   installPropulsionEnergy(turbineCenters, modelScale, modelOffsetY) {
