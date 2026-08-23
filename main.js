@@ -2177,6 +2177,10 @@ class TerrainManager {
     this.compound = createFlatPrisonCompound(this);
     this.parent.add(this.compound);
     this.compoundDestructibles = [...this.destructibles];
+    this.legacyWorld = new THREE.Group();
+    this.legacyWorld.visible = false;
+    this.legacyWorldBuilt = false;
+    this.parent.add(this.legacyWorld);
   }
 
   reserveClearZone(x, z, radius) {
@@ -2215,9 +2219,11 @@ class TerrainManager {
     if (mode === this.worldMode) return;
     this.worldMode = mode;
     this.compound.visible = mode === "compound";
+    this.legacyWorld.visible = mode === "prison";
     if (mode === "prison") {
       this.radius = 1;
       this.destructibles = [];
+      this.ensureLegacyWorld();
       return;
     }
     for (const chunk of this.chunks.values()) {
@@ -2227,6 +2233,25 @@ class TerrainManager {
     this.chunks.clear();
     this.radius = CONFIG.visibleChunkRadius;
     this.destructibles = [...this.compoundDestructibles];
+  }
+
+  ensureLegacyWorld() {
+    if (this.legacyWorldBuilt) {
+      for (const collider of this.legacyWorld.userData.colliders || []) this.registerDestructible(collider, this.legacyWorld, collider.userData.radius, { indestructible: true, ignoreClearZone: true, preciseHit: true });
+      return;
+    }
+    this.legacyWorldBuilt = true;
+    const city = createPrisonCity();
+    const cityZ = -300;
+    city.group.position.set(0, this.getHeightAt(0, cityZ), cityZ);
+    this.legacyWorld.add(city.group);
+    this.legacyWorld.userData.colliders = [];
+    for (const collider of city.colliders) {
+      collider.position.z += cityZ;
+      this.registerDestructible(collider, this.legacyWorld, collider.userData.radius, { indestructible: true, ignoreClearZone: true, preciseHit: true });
+      this.legacyWorld.add(collider);
+      this.legacyWorld.userData.colliders.push(collider);
+    }
   }
 
   createChunk(cx, cz, key) {
@@ -2265,7 +2290,7 @@ class TerrainManager {
 
   addScenery(group, cx, cz) {
     const hasDetentionBuilding = detentionBuildingSites.has(`${cx},${cz}`);
-    const hasPrisonCity = cx === prisonCitySite.chunkX && cz === prisonCitySite.chunkZ;
+    const hasPrisonCity = !this.legacyWorldBuilt && cx === prisonCitySite.chunkX && cz === prisonCitySite.chunkZ;
     const hasPrisonSprawl = isPrisonSprawlChunk(cx, cz);
     const count = 8 + Math.floor(seededRandom(cx * 11 - cz * 29) * 8);
     for (let i = 0; i < (hasPrisonSprawl ? 0 : count); i++) {
@@ -2601,7 +2626,12 @@ class WorldPortalManager {
     if (!insideAperture || this.cooldown > 0) return;
     const enteringPrison = this.terrain.worldMode === "compound";
     this.terrain.setWorldMode(enteringPrison ? "prison" : "compound");
-    tankRef.group.position.z = this.group.position.z + (enteringPrison ? -24 : 24);
+    if (enteringPrison) {
+      tankRef.group.position.set(0, tankRef.group.position.y, -165);
+      tankRef.group.rotation.y = 0;
+    } else {
+      tankRef.group.position.set(this.group.position.x, tankRef.group.position.y, this.group.position.z + 24);
+    }
     tankRef.group.position.y = this.terrain.getHeightAt(tankRef.group.position.x, tankRef.group.position.z) + CONFIG.tankHoverHeight;
     tankRef.altitudeHoldY = tankRef.group.position.y;
     tacticalGrid.cellX = Infinity;
@@ -3261,31 +3291,68 @@ class GiantTarantulaManager {
     const shell = new THREE.MeshStandardMaterial({ color: 0x241814, metalness: 0.08, roughness: 0.9 });
     const hair = new THREE.MeshStandardMaterial({ color: 0x473026, metalness: 0.04, roughness: 1 });
     const abdomen = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), hair);
-    abdomen.scale.set(4.8, 3.4, 5.8);
-    abdomen.position.set(0, 8.2, 2.8);
+    abdomen.scale.set(4.7, 3.6, 5.6);
+    abdomen.position.set(0, 8.4, 2.9);
     const thorax = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), shell);
-    thorax.scale.set(3.7, 2.6, 3.8);
-    thorax.position.set(0, 8.1, -2.4);
+    thorax.scale.set(3.8, 2.5, 3.9);
+    thorax.position.set(0, 8.0, -2.5);
     root.add(abdomen, thorax);
+    const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.2, roughness: 0.08 });
+    const eyeLayout = [[-0.72, 0.5], [-0.24, 0.68], [0.24, 0.68], [0.72, 0.5], [-0.52, 0.05], [-0.17, 0.18], [0.17, 0.18], [0.52, 0.05]];
+    for (const [eyeX, eyeY] of eyeLayout) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 7), eyeMaterial);
+      eye.position.set(eyeX, 8.7 + eyeY, -6.08);
+      root.add(eye);
+    }
+    for (const side of [-1, 1]) {
+      const fang = new THREE.Mesh(new THREE.ConeGeometry(0.38, 2.1, 10), new THREE.MeshStandardMaterial({ color: 0x17100d, roughness: 0.55 }));
+      fang.position.set(side * 1.15, 6.55, -6.0);
+      fang.rotation.x = Math.PI * 0.18;
+      root.add(fang);
+      const palp = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.48, 3.8, 9), hair);
+      palp.position.set(side * 2.15, 6.8, -5.2);
+      palp.rotation.z = side * 0.45;
+      palp.rotation.x = -0.45;
+      root.add(palp);
+    }
+    for (const side of [-1, 1]) {
+      const spinneret = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.4, 9), shell);
+      spinneret.position.set(side * 0.65, 7.4, 8.25);
+      spinneret.rotation.x = Math.PI * 0.5;
+      root.add(spinneret);
+    }
     const legs = [];
     for (const side of [-1, 1]) {
       for (let legIndex = 0; legIndex < 4; legIndex++) {
         const hip = new THREE.Group();
-        hip.position.set(side * 2.5, 8.2, -4.6 + legIndex * 3.1);
-        hip.rotation.z = side * -0.9;
-        hip.rotation.x = (legIndex - 1.5) * 0.28;
-        const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 6.2, 8), hair);
-        upper.position.y = -3.1;
-        hip.add(upper);
+        hip.position.set(side * 2.6, 8.0, -4.5 + legIndex * 2.85);
+        hip.rotation.y = side * (0.16 + Math.abs(legIndex - 1.5) * 0.2);
+        const coxa = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.7, 5.2, 10), hair);
+        coxa.rotation.z = Math.PI * 0.5;
+        coxa.position.x = side * 2.6;
+        hip.add(coxa);
         const knee = new THREE.Group();
-        knee.position.y = -6.1;
-        knee.rotation.z = side * 0.52;
-        const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.4, 6.4, 8), shell);
-        lower.position.y = -3.2;
-        knee.add(lower);
+        knee.position.x = side * 5.15;
+        knee.rotation.z = side * 0.48;
+        const kneeJoint = new THREE.Mesh(new THREE.SphereGeometry(0.72, 10, 7), hair);
+        knee.add(kneeJoint);
+        const femur = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.58, 4.8, 10), hair);
+        femur.position.y = -2.4;
+        knee.add(femur);
+        const ankle = new THREE.Group();
+        ankle.position.y = -4.7;
+        ankle.rotation.z = side * -0.28;
+        const ankleJoint = new THREE.Mesh(new THREE.SphereGeometry(0.48, 9, 6), shell);
+        const tibia = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.35, 4.4, 9), shell);
+        tibia.position.y = -2.2;
+        const foot = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), shell);
+        foot.scale.set(1, 0.55, 1.7);
+        foot.position.set(0, -4.35, -0.28);
+        ankle.add(ankleJoint, tibia, foot);
+        knee.add(ankle);
         hip.add(knee);
         root.add(hip);
-        legs.push({ hip, knee, side, legIndex, phase: (legIndex % 2) * Math.PI + (side > 0 ? Math.PI : 0) });
+        legs.push({ hip, knee, ankle, side, legIndex, phase: (legIndex % 2) * Math.PI + (side > 0 ? Math.PI : 0) });
       }
     }
     root.position.set(x, this.terrain.getHeightAt(x, z), z);
@@ -3309,8 +3376,9 @@ class GiantTarantulaManager {
       spider.root.position.y = this.terrain.getHeightAt(spider.root.position.x, spider.root.position.z) + Math.sin(time * 2.2 + spider.phase) * 0.12;
       for (const leg of spider.legs) {
         const gait = Math.sin(time * 3.2 + leg.phase + spider.phase);
-        leg.hip.rotation.x = (leg.legIndex - 1.5) * 0.28 + gait * 0.16;
-        leg.knee.rotation.z = leg.side * (0.52 + Math.max(0, gait) * 0.16);
+        leg.hip.rotation.y = leg.side * (0.16 + Math.abs(leg.legIndex - 1.5) * 0.2) + gait * 0.12;
+        leg.knee.rotation.z = leg.side * (0.48 + Math.max(0, gait) * 0.1);
+        leg.ankle.rotation.z = leg.side * (-0.28 + Math.min(0, gait) * 0.08);
       }
     }
   }
@@ -3369,6 +3437,27 @@ class GroundEnemyTank {
     return true;
   }
 
+  resolveArchitectureOverlap() {
+    const padding = this.collisionRadius * 0.72;
+    for (const item of terrain.destructibles) {
+      if (!item.solid || !item.object.parent || item.collisionBox.isEmpty()) continue;
+      const box = item.collisionBox;
+      const minX = box.min.x - padding;
+      const maxX = box.max.x + padding;
+      const minZ = box.min.z - padding;
+      const maxZ = box.max.z + padding;
+      const position = this.group.position;
+      if (position.x <= minX || position.x >= maxX || position.z <= minZ || position.z >= maxZ) continue;
+      const exits = [
+        { distance: position.x - minX, axis: "x", value: minX - 0.25 },
+        { distance: maxX - position.x, axis: "x", value: maxX + 0.25 },
+        { distance: position.z - minZ, axis: "z", value: minZ - 0.25 },
+        { distance: maxZ - position.z, axis: "z", value: maxZ + 0.25 }
+      ].sort((a, b) => a.distance - b.distance);
+      position[exits[0].axis] = exits[0].value;
+    }
+  }
+
   moveAroundArchitecture(direction, distance) {
     const candidate = this.group.position.clone().addScaledVector(direction, distance);
     if (this.canOccupy(candidate)) {
@@ -3389,6 +3478,7 @@ class GroundEnemyTank {
   }
 
   update(delta, tankRef, manager) {
+    this.resolveArchitectureOverlap();
     const toPlayer = tankRef.group.position.clone().sub(this.group.position);
     const distance = toPlayer.length();
     const flatDirection = toPlayer.clone().setY(0).normalize();
