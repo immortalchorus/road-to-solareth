@@ -330,6 +330,8 @@ const materials = {
   radioTower: new THREE.MeshStandardMaterial({ color: 0x3f484d, metalness: 0.9, roughness: 0.25 }),
   radioSphere: new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 1, depthWrite: false }),
   surveillanceChrome: new THREE.MeshStandardMaterial({ color: 0xbac7cd, metalness: 1, roughness: 0.14, envMapIntensity: 1.8 }),
+  playerChrome: new THREE.MeshStandardMaterial({ color: 0xe7f1f5, metalness: 1, roughness: 0.055, envMapIntensity: 2.8 }),
+  playerTurbine: new THREE.MeshStandardMaterial({ color: 0x3b4244, metalness: 0.76, roughness: 0.52, map: mechanicalRibTexture, bumpMap: mechanicalRibTexture, bumpScale: 0.04 }),
   facilityLightWarm: new THREE.MeshStandardMaterial({ color: 0xffbd72, emissive: 0xff7428, emissiveIntensity: 3.15, metalness: 0.55, roughness: 0.3 }),
   facilityLightCool: new THREE.MeshStandardMaterial({ color: 0x8ee8ff, emissive: 0x2aa8ff, emissiveIntensity: 3.35, metalness: 0.62, roughness: 0.24 }),
   collisionInvisible: new THREE.MeshBasicMaterial({ visible: false }),
@@ -552,7 +554,11 @@ function createSky() {
   );
   scene.add(vault);
 
-  const panorama = new THREE.TextureLoader().load("assets/twilight-environment-2048.jpg?v=twilight-environment-3");
+  const panorama = new THREE.TextureLoader().load("assets/twilight-environment-2048.jpg?v=twilight-environment-3", loaded => {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromEquirectangular(loaded).texture;
+    pmrem.dispose();
+  });
   panorama.encoding = THREE.sRGBEncoding;
   panorama.wrapS = THREE.RepeatWrapping;
   panorama.minFilter = THREE.LinearMipmapLinearFilter;
@@ -714,6 +720,16 @@ function createMissileModel() {
   }
   missile.add(body, nose, exhaustRing, ...fins);
   return missile;
+}
+
+let playerHoverTankModelPromise = null;
+function loadPlayerHoverTankModel() {
+  if (playerHoverTankModelPromise) return playerHoverTankModelPromise;
+  playerHoverTankModelPromise = new Promise((resolve, reject) => {
+    const loader = new THREE.OBJLoader();
+    loader.load("assets/models/HoverTank_001.obj?v=player-hovertank-1", resolve, undefined, reject);
+  });
+  return playerHoverTankModelPromise;
 }
 
 class Tank {
@@ -983,7 +999,108 @@ class Tank {
         this.paintMaterials.push(child.material);
       }
     });
+    this.legacyVisuals = [...this.group.children];
     parent.add(this.group);
+    loadPlayerHoverTankModel()
+      .then(source => this.installImportedModel(source))
+      .catch(error => console.error("Imported player hovertank failed to load", error));
+  }
+
+  installImportedModel(source) {
+    const model = source.clone(true);
+    const turbineNames = new Set(["NoName8", "NoName9", "NoName2", "NoName4"]);
+    model.traverse(child => {
+      if (!child.isMesh) return;
+      child.geometry.computeVertexNormals();
+      child.material = turbineNames.has(child.name) ? materials.playerTurbine : materials.playerChrome;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    });
+
+    const modelScale = 2.15;
+    const sourceBounds = new THREE.Box3().setFromObject(model);
+    model.scale.setScalar(modelScale);
+    model.position.y = -sourceBounds.min.y * modelScale + 0.08;
+    model.name = "ImportedHoverTank001";
+
+    const turretOrigin = new THREE.Vector3(0, 0.59, 0);
+    const cannonOrigin = new THREE.Vector3(0, 1.26, 0);
+    const turret = new THREE.Group();
+    turret.name = "PlayerTurretYaw";
+    turret.position.copy(turretOrigin);
+    const cannon = new THREE.Group();
+    cannon.name = "PlayerTurretPitch";
+    cannon.position.copy(cannonOrigin).sub(turretOrigin);
+
+    const movePart = (name, parent, globalOrigin) => {
+      const part = model.getObjectByName(name);
+      if (!part) return;
+      if (part.parent) part.parent.remove(part);
+      part.position.sub(globalOrigin);
+      parent.add(part);
+    };
+    for (const name of ["NoName3", "Cylinder2"]) movePart(name, turret, turretOrigin);
+    for (const name of ["Cylinder8", "Cylinder7", "Cylinder3002", "Cylinder4002", "Cylinder5002", "Cylinder6"]) {
+      movePart(name, cannon, cannonOrigin);
+    }
+    turret.add(cannon);
+    model.add(turret);
+
+    const addMarker = (parent, position) => {
+      const marker = new THREE.Object3D();
+      marker.position.copy(position);
+      parent.add(marker);
+      return marker;
+    };
+    this.turretMuzzle = addMarker(cannon, new THREE.Vector3(0, 0, -5.42));
+    this.turretCollisionStart = addMarker(cannon, new THREE.Vector3(0, 0, -0.35));
+    this.fixedCannonMuzzles = [
+      addMarker(model, new THREE.Vector3(-0.43, -0.07, -5.42)),
+      addMarker(model, new THREE.Vector3(0.42, -0.07, -5.42))
+    ];
+    this.fixedCannonStarts = [
+      addMarker(model, new THREE.Vector3(-0.43, -0.07, -2.85)),
+      addMarker(model, new THREE.Vector3(0.42, -0.07, -2.85))
+    ];
+
+    const missileRack = new THREE.Group();
+    missileRack.position.set(0, 0.72, 0.38);
+    for (const position of [
+      new THREE.Vector3(-2.05, 0, 0),
+      new THREE.Vector3(2.05, 0, 0),
+      new THREE.Vector3(-1.55, 0.16, 0.35),
+      new THREE.Vector3(1.55, 0.16, 0.35)
+    ]) {
+      const missile = createMissileModel();
+      missile.position.copy(position);
+      missile.scale.setScalar(0.52);
+      missileRack.add(missile);
+      this.missileSlots.push(missile);
+    }
+    turret.add(missileRack);
+
+    const turbineCenters = [
+      new THREE.Vector3(-2.54, 0.14, 1.99),
+      new THREE.Vector3(-2.54, 0.14, -1.4),
+      new THREE.Vector3(2.54, 0.14, -1.4),
+      new THREE.Vector3(2.54, 0.14, 1.99)
+    ];
+    for (const center of turbineCenters) this.addBeacon(model, center, 1 / modelScale);
+
+    this.legacyVisuals.forEach(child => { child.visible = false; });
+    this.missileSlots = this.missileSlots.filter(missile => missile.parent === missileRack);
+    this.group.add(model);
+    this.importedModel = model;
+    this.turret = turret;
+    this.cannon = cannon;
+    this.missileRack = missileRack;
+
+    const chrome = materials.playerChrome.clone();
+    chrome.userData.baseColor = chrome.color.clone();
+    model.traverse(child => {
+      if (child.isMesh && child.material === materials.playerChrome) child.material = chrome;
+    });
+    this.paintMaterials = [chrome];
   }
 
   update(delta, keys, terrainManager, hasFuel = true) {
@@ -1031,6 +1148,7 @@ class Tank {
     if (turningTurret) {
       if (keys.ArrowLeft) this.turret.rotation.y += this.turretTurnSpeed * delta;
       if (keys.ArrowRight) this.turret.rotation.y -= this.turretTurnSpeed * delta;
+      this.turret.rotation.y = THREE.MathUtils.clamp(this.turret.rotation.y, -Math.PI, Math.PI);
     } else if (pitchMode) {
       if (keys.ArrowUp) this.turretPitch += this.turretPitchSpeed * delta;
       if (keys.ArrowDown) this.turretPitch -= this.turretPitchSpeed * delta;
@@ -1047,7 +1165,9 @@ class Tank {
     this.group.rotation.x = this.flightPitch;
     this.group.rotation.z = this.flightRoll;
 
-    this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, -0.3, 0.72);
+    const frontAlignment = 1 - THREE.MathUtils.clamp(Math.abs(this.turret.rotation.y) / THREE.MathUtils.degToRad(24), 0, 1);
+    const minimumPitch = THREE.MathUtils.lerp(-0.3, -THREE.MathUtils.degToRad(8), frontAlignment);
+    this.turretPitch = THREE.MathUtils.clamp(this.turretPitch, minimumPitch, 0.72);
     this.cannon.rotation.x = this.turretPitch;
     this.missileRack.rotation.x = this.turretPitch;
     this.updateFuelTint(fuel / CONFIG.maxFuel);
@@ -1089,33 +1209,35 @@ class Tank {
     return new THREE.Vector3(0, 0, -1).applyQuaternion(this.cannon.getWorldQuaternion(new THREE.Quaternion())).normalize();
   }
 
-  addBeacon(parent, position) {
+  addBeacon(parent, position, visualScale = 1) {
     const light = new THREE.Mesh(
       new THREE.SphereGeometry(0.3, 12, 8),
       new THREE.MeshBasicMaterial({ color: 0xff1d1d, transparent: true, opacity: 1 })
     );
     light.position.copy(position);
+    light.scale.setScalar(visualScale);
     parent.add(light);
     const halo = new THREE.Mesh(
       new THREE.SphereGeometry(0.72, 12, 8),
       new THREE.MeshBasicMaterial({ color: 0xff3824, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending })
     );
     halo.position.copy(position);
+    halo.scale.setScalar(visualScale);
     parent.add(halo);
     const cast = new THREE.PointLight(0xff321c, 0, 18, 2);
     cast.position.copy(position);
     parent.add(cast);
-    this.beacons.push({ light, halo, cast });
+    this.beacons.push({ light, halo, cast, visualScale });
   }
 
   updateBeacons(musicPulse) {
     const beat = Math.pow(THREE.MathUtils.clamp(musicPulse, 0, 1), 1.18);
-    for (const { light, halo, cast } of this.beacons) {
+    for (const { light, halo, cast, visualScale = 1 } of this.beacons) {
       light.material.opacity = 0.38 + beat * 0.62;
       light.material.color.setRGB(1, 0.08 + beat * 0.72, 0.04 + beat * 0.28);
-      light.scale.setScalar(1 + beat * 0.82);
+      light.scale.setScalar((1 + beat * 0.82) * visualScale);
       halo.material.opacity = 0.1 + beat * 0.82;
-      halo.scale.setScalar(0.82 + beat * 1.62);
+      halo.scale.setScalar((0.82 + beat * 1.62) * visualScale);
       cast.intensity = 0.35 + beat * 5.8;
     }
   }
@@ -1180,11 +1302,33 @@ class Tank {
   }
 
   getMuzzleWorldPosition() {
-    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -16.72));
+    return this.turretMuzzle
+      ? this.turretMuzzle.getWorldPosition(new THREE.Vector3())
+      : this.cannon.localToWorld(new THREE.Vector3(0, 0, -16.72));
   }
 
   getCannonCollisionStart() {
-    return this.cannon.localToWorld(new THREE.Vector3(0, 0, -1.1));
+    return this.turretCollisionStart
+      ? this.turretCollisionStart.getWorldPosition(new THREE.Vector3())
+      : this.cannon.localToWorld(new THREE.Vector3(0, 0, -1.1));
+  }
+
+  getCannonShots() {
+    const shots = [{
+      position: this.getMuzzleWorldPosition(),
+      direction: this.getTurretWorldDirection(),
+      collisionStart: this.getCannonCollisionStart()
+    }];
+    if (!this.fixedCannonMuzzles || Math.abs(this.turret.rotation.y) > THREE.MathUtils.degToRad(1.25)) return shots;
+    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(this.group.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    for (let i = 0; i < this.fixedCannonMuzzles.length; i++) {
+      shots.push({
+        position: this.fixedCannonMuzzles[i].getWorldPosition(new THREE.Vector3()),
+        direction: direction.clone(),
+        collisionStart: this.fixedCannonStarts[i].getWorldPosition(new THREE.Vector3())
+      });
+    }
+    return shots;
   }
 }
 
@@ -3311,7 +3455,11 @@ class ProjectileManager {
     this.bombCooldown -= delta;
     if (keys.fireHeld && this.cooldown <= 0) {
       if (ammo > 0) {
-        this.fire(tankRef.getMuzzleWorldPosition(), tankRef.getTurretWorldDirection(), skyDroneManager, keys.heatSeekingHeld, tankRef.getCannonCollisionStart());
+        const shots = tankRef.getCannonShots();
+        for (let i = 0; i < shots.length && ammo > 0; i++) {
+          const shot = shots[i];
+          this.fire(shot.position, shot.direction, skyDroneManager, keys.heatSeekingHeld, shot.collisionStart, i === 0);
+        }
       } else {
         hud.status.textContent = "Ammo depleted. Find a resupply tower.";
         statusTimer = 2.2;
@@ -3470,7 +3618,7 @@ class ProjectileManager {
     }
   }
 
-  fire(position, direction, skyDroneManager, homingEnabled, collisionStart = position) {
+  fire(position, direction, skyDroneManager, homingEnabled, collisionStart = position, playSound = true) {
     if (this.projectiles.length >= CONFIG.maxProjectiles) this.removeProjectile(0);
     const group = new THREE.Group();
     const target = homingEnabled ? skyDroneManager.acquireHomingTarget(position, direction) : null;
@@ -3501,7 +3649,7 @@ class ProjectileManager {
     });
     runStats.shotsFired++;
     ammo = Math.max(0, ammo - 1);
-    audio.playFire();
+    if (playSound) audio.playFire();
   }
 
   launchMissile(tankRef) {
