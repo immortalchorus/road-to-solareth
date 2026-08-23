@@ -814,6 +814,7 @@ function loadPlayerHoverTankModel() {
 class Tank {
   constructor(parent) {
     this.group = new THREE.Group();
+    this.group.rotation.order = "YXZ";
     this.speed = 0;
     this.maxForwardSpeed = CONFIG.tankMaxForwardSpeed;
     this.maxReverseSpeed = CONFIG.tankMaxReverseSpeed;
