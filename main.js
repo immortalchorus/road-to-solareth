@@ -20,9 +20,9 @@ const CONFIG = {
   maxFlightRoll: 0.52,
   maxFuel: 1000,
   fuelDrainPerMinute: 50,
-  refuelTowerCount: 8,
+  refuelTowerCount: 54,
   refuelTowerRadius: 8.5,
-  missileTowerCount: 4,
+  missileTowerCount: 18,
   missileTowerRadius: 8.5,
   maxAmmo: 1000,
   radioChatterEvery: 30,
@@ -44,6 +44,7 @@ const CONFIG = {
   emergencyClearRadius: 58,
   chunkSize: 220,
   visibleChunkRadius: 2,
+  compoundSize: Math.sqrt(200000),
   enemySpawnEvery: 7.5,
   enemySpawnChance: 0.42,
   maxEnemies: 5,
@@ -1606,8 +1607,9 @@ class SurveillanceFleet {
     }
 
     const horizontal = i % 2 === 0;
-    const lane = -770 + (Math.floor(i / 2) % 8) * 220 + (i >= 16 ? 72 : 0);
-    const progress = -1150 + seededRandom(i * 97 + 11) * 2300;
+    const routeLines = [-200, -150, -100, -50, 0, 50, 100, 150, 200];
+    const lane = routeLines[Math.floor(i / 2) % routeLines.length];
+    const progress = -210 + seededRandom(i * 97 + 11) * 420;
     root.position.set(horizontal ? progress : lane, 70, horizontal ? lane : progress);
     root.rotation.y = horizontal ? Math.PI * 0.5 : 0;
     this.parent.add(root);
@@ -1639,7 +1641,7 @@ class SurveillanceFleet {
       if (droid.horizontal) droid.root.position.x += travel;
       else droid.root.position.z += travel;
       const routePosition = droid.horizontal ? droid.root.position.x : droid.root.position.z;
-      if (Math.abs(routePosition) > 1250) {
+      if (Math.abs(routePosition) > 215) {
         droid.direction *= -1;
         droid.root.rotation.y += Math.PI;
       }
@@ -1944,6 +1946,161 @@ function createSupplyArena() {
   return group;
 }
 
+function createFlatPrisonCompound(terrainManager) {
+  const group = new THREE.Group();
+  const size = CONFIG.compoundSize;
+  const half = size * 0.5;
+  const concrete = new THREE.MeshStandardMaterial({
+    color: 0x4b4d4c,
+    metalness: 0.18,
+    roughness: 0.9,
+    map: architectureArmorTexture,
+    bumpMap: architectureArmorTexture,
+    bumpScale: 0.025
+  });
+  const wornSteel = new THREE.MeshStandardMaterial({
+    color: 0x171c20,
+    metalness: 0.86,
+    roughness: 0.5,
+    map: mechanicalRibTexture,
+    bumpMap: tankSurfaceTexture,
+    bumpScale: 0.035
+  });
+
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(size, 1, size), concrete);
+  slab.position.y = -0.5;
+  slab.receiveShadow = true;
+  group.add(slab);
+
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(50, 50, 1, 128), wornSteel);
+  pad.position.y = 0.5;
+  pad.receiveShadow = true;
+  group.add(pad);
+
+  const padLightCount = Math.floor(Math.PI * 2 * 49.5);
+  const padLights = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.2, 0.2, 0.12, 8),
+    materials.facilityLightCool,
+    padLightCount
+  );
+  const matrix = new THREE.Matrix4();
+  for (let i = 0; i < padLightCount; i++) {
+    const angle = i / padLightCount * Math.PI * 2;
+    matrix.makeTranslation(Math.cos(angle) * 49.5, 1.08, Math.sin(angle) * 49.5);
+    padLights.setMatrixAt(i, matrix);
+  }
+  padLights.instanceMatrix.needsUpdate = true;
+  group.add(padLights);
+
+  const roadLines = [-150, -50, 50, 150];
+  for (const line of roadLines) {
+    const roadX = new THREE.Mesh(new THREE.BoxGeometry(size, 0.14, 15), materials.road);
+    roadX.position.set(0, 0.08, line);
+    group.add(roadX);
+    const roadZ = new THREE.Mesh(new THREE.BoxGeometry(15, 0.14, size), materials.road);
+    roadZ.position.set(line, 0.08, 0);
+    group.add(roadZ);
+  }
+
+  const lampStemGeo = new THREE.CylinderGeometry(0.2, 0.28, 7, 8);
+  const lampOrbGeo = new THREE.SphereGeometry(0.48, 10, 7);
+  const lampCount = roadLines.length * roadLines.length * 4;
+  const stems = new THREE.InstancedMesh(lampStemGeo, materials.darkMetal, lampCount);
+  const orbs = new THREE.InstancedMesh(lampOrbGeo, materials.facilityLightWarm, lampCount);
+  let lampIndex = 0;
+  for (const x of roadLines) {
+    for (const z of roadLines) {
+      for (const [dx, dz] of [[-9, -9], [9, -9], [-9, 9], [9, 9]]) {
+        matrix.makeTranslation(x + dx, 3.5, z + dz);
+        stems.setMatrixAt(lampIndex, matrix);
+        matrix.makeTranslation(x + dx, 7.2, z + dz);
+        orbs.setMatrixAt(lampIndex, matrix);
+        lampIndex++;
+      }
+    }
+  }
+  stems.instanceMatrix.needsUpdate = true;
+  orbs.instanceMatrix.needsUpdate = true;
+  group.add(stems, orbs);
+
+  const bridgeLines = [50];
+  const addBridge = (line, alongX) => {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(alongX ? size : 17, 2.2, alongX ? 17 : size), materials.prisonConcrete);
+    deck.position.set(alongX ? 0 : line, 22, alongX ? line : 0);
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    group.add(deck);
+    for (let along = -200; along <= 200; along += 50) {
+      const support = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 3.3, 21, 12), materials.prisonConcrete);
+      support.position.set(alongX ? along : line, 10.5, alongX ? line : along);
+      group.add(support);
+    }
+  };
+  for (const line of bridgeLines) {
+    addBridge(line, true);
+    addBridge(line, false);
+  }
+
+  const towerBodyGeo = new THREE.BoxGeometry(18, 42, 18);
+  const towerCabGeo = new THREE.BoxGeometry(25, 8, 25);
+  const towerWindowGeo = new THREE.BoxGeometry(2.2, 1.5, 0.18);
+  const towerPositions = [];
+  const towerLines = [-200, -100, 0, 100, 200];
+  for (const x of towerLines) {
+    for (const z of towerLines) {
+      if (x === 0 && z === 0) continue;
+      towerPositions.push({ x, z });
+    }
+  }
+  const bodies = new THREE.InstancedMesh(towerBodyGeo, materials.prisonConcrete, towerPositions.length);
+  const cabins = new THREE.InstancedMesh(towerCabGeo, materials.prisonPanel, towerPositions.length);
+  const litWindows = [];
+  towerPositions.forEach(({ x, z }, index) => {
+    matrix.makeTranslation(x, 21, z);
+    bodies.setMatrixAt(index, matrix);
+    matrix.makeTranslation(x, 45, z);
+    cabins.setMatrixAt(index, matrix);
+    for (let floor = 0; floor < 8; floor++) {
+      for (let column = -2; column <= 2; column++) {
+        if (seededRandom(index * 937 + floor * 53 + column * 17) < 0.42) continue;
+        const offset = column * 3.1;
+        const y = 6 + floor * 4.1;
+        litWindows.push([x + offset, y, z - 9.1, 0], [x + offset, y, z + 9.1, Math.PI]);
+        litWindows.push([x - 9.1, y, z + offset, Math.PI * 0.5], [x + 9.1, y, z + offset, -Math.PI * 0.5]);
+      }
+    }
+    const collider = new THREE.Mesh(new THREE.BoxGeometry(20, 50, 20), materials.collisionInvisible);
+    collider.position.set(x, 25, z);
+    terrainManager.registerDestructible(collider, group, 15, { indestructible: true, ignoreClearZone: true, preciseHit: true });
+    group.add(collider);
+  });
+  bodies.instanceMatrix.needsUpdate = true;
+  cabins.instanceMatrix.needsUpdate = true;
+  group.add(bodies, cabins);
+  const windows = new THREE.InstancedMesh(towerWindowGeo, materials.facilityLightWarm, litWindows.length);
+  litWindows.forEach(([x, y, z, rotation], index) => {
+    matrix.makeRotationY(rotation);
+    matrix.setPosition(x, y, z);
+    windows.setMatrixAt(index, matrix);
+  });
+  windows.instanceMatrix.needsUpdate = true;
+  group.add(windows);
+
+  for (const [index, position] of [[0, [-150, 0]], [1, [150, 0]], [2, [0, -150]], [3, [0, 150]]]) {
+    const pyramid = createHighTechPyramid(9100 + index);
+    pyramid.userData.useChrome = true;
+    pyramid.position.set(position[0], 0, position[1]);
+    group.add(pyramid);
+    const collider = new THREE.Mesh(new THREE.CylinderGeometry(18, 18, 38, 8), materials.collisionInvisible);
+    collider.position.set(position[0], 19, position[1]);
+    terrainManager.registerDestructible(collider, group, 19, { indestructible: true, ignoreClearZone: true, preciseHit: true });
+    group.add(collider);
+  }
+
+  group.userData.landmark = "flat-prison-compound";
+  return group;
+}
+
 class TerrainManager {
   constructor(parent) {
     this.parent = parent;
@@ -1952,7 +2109,8 @@ class TerrainManager {
     this.clearZones = [];
     this.size = CONFIG.chunkSize;
     this.radius = CONFIG.visibleChunkRadius;
-    this.reserveClearZone(prisonCitySite.worldX, prisonCitySite.worldZ, 112);
+    this.compound = createFlatPrisonCompound(this);
+    this.parent.add(this.compound);
   }
 
   reserveClearZone(x, z, radius) {
@@ -1964,6 +2122,8 @@ class TerrainManager {
   }
 
   update(position) {
+    return;
+    /* Archived streaming terrain is retained below for the prison-city branch. */
     const cx = Math.floor(position.x / this.size);
     const cz = Math.floor(position.z / this.size);
     const wanted = new Set();
@@ -2299,12 +2459,7 @@ class TerrainManager {
   }
 
   getHeightAt(x, z) {
-    const waves = Math.sin(x * 0.018) * 2.8 + Math.cos(z * 0.021) * 2.3 + Math.sin((x + z) * 0.009) * 4.4;
-    const rough = (valueNoise(x * 0.035, z * 0.035) - 0.5) * 8.5;
-    const crater = Math.sin(Math.hypot(x + 130, z - 90) * 0.021) * 1.3;
-    const naturalHeight = waves + rough + crater;
-    const arenaBlend = THREE.MathUtils.smoothstep(Math.hypot(x, z), 82, 108);
-    return THREE.MathUtils.lerp(0, naturalHeight, arenaBlend);
+    return Math.hypot(x, z) <= 50 ? 1 : 0;
   }
 
   getNormalAt(x, z) {
@@ -2323,7 +2478,7 @@ class TacticalGrid {
     this.terrain = terrainManager;
     this.spacing = 25;
     this.radius = 350;
-    this.enabled = true;
+    this.enabled = false;
     this.cellX = Infinity;
     this.cellZ = Infinity;
     this.sweepRadius = 0;
@@ -2754,13 +2909,12 @@ class EnemyManager {
 
   spawnNextPatrolTank() {
     const i = this.patrolSpawnIndex++;
-    const laneCount = CONFIG.prisonPatrolTankCount * 0.5;
-    const vertical = i < laneCount;
-    const laneIndex = vertical ? i : i - laneCount;
-    const lane = (laneIndex - (laneCount - 1) * 0.5) * CONFIG.chunkSize;
+    const vertical = i % 2 === 0;
+    const roadLines = [-150, -50, 50, 150];
+    const lane = roadLines[Math.floor(i * 0.5) % roadLines.length];
     const path = vertical
-      ? [new THREE.Vector3(lane, 0, -440), new THREE.Vector3(lane, 0, 440)]
-      : [new THREE.Vector3(-440, 0, lane), new THREE.Vector3(440, 0, lane)];
+      ? [new THREE.Vector3(lane, 0, -210), new THREE.Vector3(lane, 0, 210)]
+      : [new THREE.Vector3(-210, 0, lane), new THREE.Vector3(210, 0, lane)];
     const patrol = new GroundEnemyTank(path, i);
     patrol.group.position.copy(path[i % 2]);
     patrol.group.position.y = terrain.getHeightAt(patrol.group.position.x, patrol.group.position.z) + 1.2;
@@ -2832,7 +2986,7 @@ class PrisonEscapeManager {
     this.parent = parent;
     this.enemyManager = enemyManager;
     this.prisoners = [];
-    this.breachPosition = new THREE.Vector3(prisonCitySite.worldX + 52, 0, prisonCitySite.worldZ + 88);
+    this.breachPosition = new THREE.Vector3(-200, 0, -200);
     for (let i = 0; i < CONFIG.prisonEscapeeCount; i++) this.spawn(i);
   }
 
@@ -2844,8 +2998,9 @@ class PrisonEscapeManager {
       };
     }
     const vertical = index % 2 === 0;
-    const lane = ((index * 3) % 7 - 3) * CONFIG.chunkSize;
-    const along = ((Math.floor(index / 7) % 7) - 3) * 175;
+    const roadLines = [-150, -50, 50, 150];
+    const lane = roadLines[index % roadLines.length];
+    const along = -205 + (Math.floor(index / roadLines.length) % 5) * 95;
     const directionSign = index % 4 < 2 ? 1 : -1;
     return {
       origin: vertical ? new THREE.Vector3(lane, 0, along) : new THREE.Vector3(along, 0, lane),
@@ -2887,7 +3042,7 @@ class PrisonEscapeManager {
       group.position.addScaledVector(prisoner.direction, prisoner.speed * delta);
       const side = new THREE.Vector3(-prisoner.direction.z, 0, prisoner.direction.x);
       group.position.addScaledVector(side, Math.sin(performance.now() * 0.0016 + prisoner.stride) * delta * 0.45);
-      if (group.position.distanceToSquared(prisoner.origin) > 230 * 230) group.position.copy(prisoner.origin);
+      if (group.position.distanceToSquared(prisoner.origin) > 420 * 420) group.position.copy(prisoner.origin);
       group.position.y = terrain.getHeightAt(group.position.x, group.position.z);
       const toTank = tankRef.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)).sub(group.position);
       const distance = toTank.length();
@@ -3366,6 +3521,36 @@ class SkyDrone {
 
 let refuelTowerModelPromise = null;
 
+function getCompoundSupplyPositions(type) {
+  const half = CONFIG.compoundSize * 0.5 - 5;
+  const perimeter = half * 8;
+  const slotCount = Math.floor(perimeter / 25);
+  const positions = [];
+  for (let slot = 0; slot < slotCount; slot++) {
+    const isMissile = slot % 4 === 3;
+    if ((type === "missile") !== isMissile) continue;
+    let distance = slot / slotCount * perimeter;
+    let x;
+    let z;
+    if (distance < half * 2) {
+      x = -half + distance;
+      z = -half;
+    } else if ((distance -= half * 2) < half * 2) {
+      x = half;
+      z = -half + distance;
+    } else if ((distance -= half * 2) < half * 2) {
+      x = half - distance;
+      z = half;
+    } else {
+      distance -= half * 2;
+      x = -half;
+      z = half - distance;
+    }
+    positions.push({ x, z });
+  }
+  return positions;
+}
+
 function loadRefuelTowerModel() {
   if (refuelTowerModelPromise) return refuelTowerModelPromise;
 
@@ -3394,12 +3579,9 @@ class RefuelTowerManager {
   }
 
   spawnTowers() {
-    const perimeterSlots = [0, 2, 3, 5, 6, 8, 9, 11];
-    for (let i = 0; i < CONFIG.refuelTowerCount; i++) {
-      const angle = perimeterSlots[i] / 12 * Math.PI * 2 - Math.PI * 0.5;
-      const radius = 80;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
+    const positions = getCompoundSupplyPositions("fuel");
+    for (let i = 0; i < positions.length; i++) {
+      const { x, z } = positions[i];
       this.terrain.reserveClearZone(x, z, CONFIG.refuelTowerRadius + CONFIG.tankCollisionRadius + 11);
       const tower = new RefuelTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
@@ -3507,11 +3689,9 @@ class MissileTowerManager {
     this.parent = parent;
     this.terrain = terrainManager;
     this.towers = [];
-    const perimeterSlots = [1, 4, 7, 10];
-    for (let i = 0; i < CONFIG.missileTowerCount; i++) {
-      const angle = perimeterSlots[i] / 12 * Math.PI * 2 - Math.PI * 0.5;
-      const x = Math.cos(angle) * 80;
-      const z = Math.sin(angle) * 80;
+    const positions = getCompoundSupplyPositions("missile");
+    for (let i = 0; i < positions.length; i++) {
+      const { x, z } = positions[i];
       this.terrain.reserveClearZone(x, z, CONFIG.missileTowerRadius + CONFIG.tankCollisionRadius + 8);
       const tower = new MissileTower(i, this.terrain, x, z);
       this.parent.add(tower.group);
@@ -5018,6 +5198,7 @@ function updateImpactEffects(delta) {
 }
 
 function damagePlayer(amount) {
+  if (sessionTimeRemaining > CONFIG.sessionDuration - 8) return;
   if (gameEnded) return;
   hitPoints = Math.max(0, hitPoints - amount);
   if (hitPoints < 50 && criticalDamageWarningArmed) {
@@ -5422,7 +5603,7 @@ function addImportedPyramid(group, radius, height) {
     model.traverse(child => {
       if (!child.isMesh) return;
       child.geometry = projectPyramidFaceUvs(child.geometry, sourceBounds);
-      child.material = pyramidPanelMaterial;
+      child.material = group.userData.useChrome ? materials.playerChrome : pyramidPanelMaterial;
       child.castShadow = true;
       child.receiveShadow = true;
     });
