@@ -195,7 +195,7 @@ const commsVolumeValue = document.querySelector("#comms-volume-value");
 const playerCallSign = document.querySelector("#player-call-sign");
 const recordScoreButton = document.querySelector("#record-score-button");
 const highScoreList = document.querySelector("#high-score-list");
-const HIGH_SCORE_STORAGE_KEY = "hovertank-high-scores-v1";
+const HIGH_SCORE_STORAGE_KEY = "hovertank-high-scores-v2";
 let finalScoreForLeaderboard = null;
 let audio = null;
 let missileRange = 55;
@@ -334,6 +334,7 @@ const runStats = {
   missilesFired: 0,
   missileHits: 0,
   shotsHit: 0,
+  damageDealt: 0,
   longestShot: 0,
   ricochetKills: 0,
   objectsDestroyed: 0,
@@ -7207,6 +7208,7 @@ function createBombShockwaves(position) {
 
 function registerPlayerHit(shot, position, damage, targetType) {
   if (shot.noPlayerStats) return;
+  runStats.damageDealt += Math.max(0, damage);
   const isBullet = shot.kind !== "bomb";
   if (isBullet && !shot.statsHitRegistered) {
     shot.statsHitRegistered = true;
@@ -7366,8 +7368,16 @@ function calculateCompositeScore() {
   const accuracyRatio = runStats.shotsFired > 0
     ? Math.min(1, runStats.shotsHit / runStats.shotsFired)
     : 0;
-  const accuracyMultiplier = 0.5 + accuracyRatio;
+  const confirmedEliminations =
+    runStats.dronesDestroyed +
+    runStats.enemyVehiclesDestroyed +
+    runStats.prisonersStopped +
+    runStats.spidersDestroyed +
+    runStats.bootcampOpponentsDefeated;
+  const accuracyQualified = runStats.shotsFired >= 10 || confirmedEliminations >= 5;
+  const accuracyMultiplier = accuracyQualified ? 0.85 + accuracyRatio * 0.65 : 1;
   const combatBase =
+    runStats.damageDealt * 8 +
     runStats.dronesDestroyed * 100 +
     runStats.enemyVehiclesDestroyed * 300 +
     runStats.objectsDestroyed * 75 +
@@ -7377,26 +7387,28 @@ function calculateCompositeScore() {
     runStats.spidersDestroyed * 750 +
     (isBootcamp ? runStats.bootcampOpponentsDefeated * 2500 + runStats.bootcampTunnels * 900 : 0);
   const adjustedCombat = Math.round(combatBase * accuracyMultiplier);
-  const flightScore = Math.round(runStats.flightTime * 10);
-  const distanceScore = Math.round(distanceTravelled * 5);
-  const rangeBonus = Math.round(Math.min(runStats.longestShot, 300) * 3);
-  const armorBonus = hitPoints * 20;
-  const resupplyBonus = runStats.resupplies * 200;
   const parkedInArena = !isBootcamp && terrain.worldMode === "compound" && hitPoints > 0 && Math.hypot(tank.group.position.x, tank.group.position.z) <= 48 && Math.abs(tank.speed) < 2.5;
-  const arenaBonus = parkedInArena ? 10000 : 0;
+  const returnMultiplier = parkedInArena ? 1.25 : 1;
   const wingmanSurvivors = !isBootcamp && wingmen ? wingmen.units.filter(unit => !unit.dead).length : 0;
-  const wingmanBonus = wingmanSurvivors * 5000;
-  const fieldScore = flightScore + distanceScore + rangeBonus + armorBonus + resupplyBonus + arenaBonus + wingmanBonus;
-  const missedShots = Math.max(0, runStats.shotsFired - runStats.shotsHit);
-  const missedMissiles = Math.max(0, runStats.missilesFired - runStats.missileHits);
-  const penalties = missedShots * 2 + missedMissiles * 25 + runStats.collisions * 50;
-  const total = Math.max(0, adjustedCombat + fieldScore - penalties);
+  const wingmanMultiplier = isBootcamp ? 1 : 1 + wingmanSurvivors * 0.1;
+  const survivalMultiplier = 0.75 + THREE.MathUtils.clamp(hitPoints / CONFIG.maxHitPoints, 0, 1) * 0.25;
+  const total = runStats.damageDealt > 0
+    ? Math.max(0, Math.round(adjustedCombat * survivalMultiplier * wingmanMultiplier * returnMultiplier))
+    : 0;
+  const fieldScore = Math.max(0, total - adjustedCombat);
+  const arenaBonus = parkedInArena && adjustedCombat > 0
+    ? Math.round(adjustedCombat * survivalMultiplier * wingmanMultiplier * 0.25)
+    : 0;
+  const wingmanBonus = adjustedCombat > 0
+    ? Math.round(adjustedCombat * survivalMultiplier * (wingmanMultiplier - 1))
+    : 0;
+  const penalties = 0;
   const rank = total >= 100000 ? "Protocol Legend"
     : total >= 50000 ? "Planetary Ace"
       : total >= 25000 ? "Warden"
         : total >= 10000 ? "Enforcer"
           : "Recruit";
-  return { accuracyRatio, accuracyMultiplier, adjustedCombat, fieldScore, arenaBonus, wingmanBonus, penalties, total, rank };
+  return { accuracyRatio, accuracyMultiplier, accuracyQualified, adjustedCombat, fieldScore, arenaBonus, wingmanBonus, survivalMultiplier, wingmanMultiplier, returnMultiplier, penalties, total, rank };
 }
 
 function showRunSummary() {
@@ -7429,6 +7441,7 @@ function showRunSummary() {
   document.querySelector("#stat-flight").textContent = `${minutes}:${seconds}`;
   document.querySelector("#stat-shots-fired").textContent = runStats.shotsFired;
   document.querySelector("#stat-shots-hit").textContent = runStats.shotsHit;
+  document.querySelector("#stat-damage-dealt").textContent = Math.round(runStats.damageDealt).toLocaleString();
   document.querySelector("#stat-distance").textContent = `${(distanceTravelled / 1000).toFixed(2)} km`;
   document.querySelector("#stat-armor").textContent = `${hitPoints} / ${CONFIG.maxHitPoints}`;
   document.querySelector("#stat-resupplies").textContent = runStats.resupplies;
