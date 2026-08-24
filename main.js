@@ -536,6 +536,12 @@ function isDogfightMode() {
   return gameMode === "bootcamp" || gameMode === "cockpit";
 }
 
+function getGameModeLabel(mode = gameMode) {
+  if (mode === "cockpit") return "Cockpit Dogfight";
+  if (mode === "bootcamp") return "Dogfight";
+  return "Standard";
+}
+
 function configureSessionMode(selectedMode) {
   gameMode = selectedMode === "cockpit" ? "cockpit" : selectedMode === "bootcamp" ? "bootcamp" : "standard";
   const dogfightMode = isDogfightMode();
@@ -7491,7 +7497,7 @@ function renderHighScores() {
     const rank = document.createElement("em");
     const score = document.createElement("b");
     name.textContent = entry.callSign;
-    rank.textContent = entry.rank;
+    rank.textContent = `${entry.mode || "Standard"} | ${entry.rank}`;
     score.textContent = entry.score.toLocaleString();
     row.append(name, rank, score);
     item.appendChild(row);
@@ -7503,7 +7509,13 @@ function recordHighScore() {
   if (!finalScoreForLeaderboard || recordScoreButton.disabled) return;
   const callSign = playerCallSign.value.trim().replace(/[^a-z0-9 _-]/gi, "").slice(0, 16).toUpperCase() || "UNKNOWN";
   const scores = loadHighScores();
-  scores.push({ callSign, score: finalScoreForLeaderboard.total, rank: finalScoreForLeaderboard.rank, recordedAt: Date.now() });
+  scores.push({
+    callSign,
+    score: finalScoreForLeaderboard.total,
+    rank: finalScoreForLeaderboard.rank,
+    mode: getGameModeLabel(),
+    recordedAt: Date.now()
+  });
   scores.sort((a, b) => b.score - a.score || a.recordedAt - b.recordedAt);
   try {
     window.localStorage.setItem(HIGH_SCORE_STORAGE_KEY, JSON.stringify(scores.slice(0, 10)));
