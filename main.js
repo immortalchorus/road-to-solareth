@@ -130,7 +130,7 @@ camera.add(cockpitWeaponRig);
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit2", "Numpad2", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit2", "Numpad2", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "F5", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -481,6 +481,7 @@ window.addEventListener("keydown", event => {
   if (event.code === "F1" && !event.repeat) setMissileRange(20, true);
   if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
   if (event.code === "F3" && !event.repeat) setMissileRange(90, true);
+  if (event.code === "F5" && !event.repeat && tank) tank.togglePrecisionSteering();
   if (event.code === "KeyG" && !event.repeat && tacticalGrid) tacticalGrid.toggle();
   if (event.code === "KeyP" && !event.repeat && autopilot) {
     if (shiftHeld && autopilot.enabled) autopilot.switchPhase();
@@ -969,6 +970,7 @@ class Tank {
     this.acceleration = CONFIG.tankAcceleration;
     this.friction = 18.7785;
     this.turnSpeed = CONFIG.tankTurnSpeed;
+    this.manualTurnMultiplier = 1;
     this.turretTurnSpeed = CONFIG.turretTurnSpeed;
     this.turretPitchSpeed = CONFIG.turretPitchSpeed;
     this.turretPitch = 0;
@@ -1558,7 +1560,7 @@ class Tank {
       if (keys.ArrowDown) this.turretPitch -= this.turretPitchSpeed * delta;
     } else {
       const turnScale = THREE.MathUtils.clamp(Math.abs(this.speed) / 18, 0.25, 1);
-      const steeringScale = autopilotMode ? 0.48 : 1;
+      const steeringScale = autopilotMode ? 0.48 : this.manualTurnMultiplier;
       if (hasFuel && keys.ArrowLeft) this.group.rotation.y += this.turnSpeed * turnScale * steeringScale * delta;
       if (hasFuel && keys.ArrowRight) this.group.rotation.y -= this.turnSpeed * turnScale * steeringScale * delta;
     }
@@ -1609,6 +1611,14 @@ class Tank {
     if (!skipWorldCollision && terrainManager.resolveTankCollision(this, previousPosition)) {
       this.bumpTimer = 0.28;
     }
+  }
+
+  togglePrecisionSteering() {
+    this.manualTurnMultiplier = this.manualTurnMultiplier === 1 ? 0.5 : 1;
+    hud.status.textContent = this.manualTurnMultiplier < 1
+      ? "Precision steering: turn speed 50%."
+      : "Standard steering restored.";
+    statusTimer = 2.5;
   }
 
   toggleCombatDive() {
