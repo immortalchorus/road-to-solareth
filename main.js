@@ -5581,7 +5581,7 @@ class BombingScope {
     if (this.visible) {
       this.render(0);
       playSonarActivation();
-      if (audio) audio.speakComms("Sonar Mode.", true);
+      if (audio) audio.speakComms("Sone Are Mode.", true);
     }
   }
 
