@@ -169,6 +169,7 @@ const bombingScopeCanvas = document.querySelector("#bombing-scope-canvas");
 const cockpitOverlay = document.querySelector("#cockpit-overlay");
 const cockpitSonarCanvas = document.querySelector("#cockpit-sonar-canvas");
 const sonarActivation = document.querySelector("#sonar-activation");
+const launchCountdown = document.querySelector("#launch-countdown");
 const cockpitReadouts = {
   armor: document.querySelector("#cockpit-armor"),
   speed: document.querySelector("#cockpit-speed"),
@@ -205,6 +206,9 @@ let bombingScope = null;
 let cockpitBombingScope = null;
 let cockpitAlertTimer = 0;
 let sonarActivationTimer = 0;
+const LAUNCH_SEQUENCE_DURATION = 18.5;
+let launchSequenceActive = false;
+let launchSequenceEndsAt = 0;
 
 function playSonarActivation() {
   window.clearTimeout(sonarActivationTimer);
@@ -482,13 +486,13 @@ window.addEventListener("keydown", event => {
   const manualFlightInput = event.code === "KeyF" || (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code) && !shiftHeld && !input.KeyY);
   if (manualFlightInput && autopilot && autopilot.enabled) autopilot.disengage(true);
   input[event.code] = true;
-  if (audio && !audio.started) audio.start();
-  if (event.code === "ControlLeft" || event.code === "ControlRight") input.fireHeld = true;
+  if (audio && !audio.started && !launchSequenceActive) audio.start();
+  if ((event.code === "ControlLeft" || event.code === "ControlRight") && !launchSequenceActive) input.fireHeld = true;
   if (event.code === "KeyZ") input.heatSeekingHeld = true;
-  if (event.code === "Space" && !event.repeat && projectiles && tank) projectiles.dropBombPayload(tank);
+  if (event.code === "Space" && !event.repeat && !launchSequenceActive && projectiles && tank) projectiles.dropBombPayload(tank);
   if ((event.code === "Digit1" || event.code === "Numpad1") && !event.repeat && bombingScope) bombingScope.toggle();
   if ((event.code === "Digit2" || event.code === "Numpad2") && !event.repeat && tank) tank.toggleCombatDive();
-  if (event.code === "KeyM" && !event.repeat && projectiles && tank) projectiles.launchMissile(tank);
+  if (event.code === "KeyM" && !event.repeat && !launchSequenceActive && projectiles && tank) projectiles.launchMissile(tank);
   if (event.code === "F1" && !event.repeat) setMissileRange(20, true);
   if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
   if (event.code === "F3" && !event.repeat) setMissileRange(90, true);
@@ -579,33 +583,73 @@ playButton.addEventListener("click", async () => {
   playLaunch.classList.add("depositing");
   await new Promise(resolve => window.setTimeout(resolve, 680));
   configureSessionMode(gameModeSelect ? gameModeSelect.value : "standard");
-  const sessionDuration = CONFIG.sessionDuration;
-  const sessionStartedAt = performance.now();
   gameStarted = true;
-  sessionTimeRemaining = sessionDuration;
-  missionEndsAt = performance.now() + sessionDuration * 1000;
-  const missionSeconds = Math.ceil(sessionDuration);
+  launchSequenceActive = true;
+  launchSequenceEndsAt = performance.now() + LAUNCH_SEQUENCE_DURATION * 1000;
+  sessionTimeRemaining = CONFIG.sessionDuration;
+  missionEndsAt = launchSequenceEndsAt + CONFIG.sessionDuration * 1000;
+  const missionSeconds = Math.ceil(CONFIG.sessionDuration);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   splashScreen.hidden = true;
   splashScreen.remove();
   clock.getDelta();
+  hud.status.textContent = "Pre-launch configuration window active.";
+  statusTimer = LAUNCH_SEQUENCE_DURATION;
+  try {
+    audio.armAudio();
+    audio.playCoinRing();
+    void audio.playLaunchIntro().catch(error => console.warn("Launch intro playback deferred", error));
+  } catch (error) {
+    console.warn("Audio unavailable; gameplay remains active", error);
+  }
+  runLaunchCountdown();
+});
+
+function showLaunchCountdown(message, configure = false, duration = 760) {
+  launchCountdown.textContent = message;
+  launchCountdown.classList.toggle("configure", configure);
+  launchCountdown.classList.add("active");
+  window.setTimeout(() => launchCountdown.classList.remove("active"), duration);
+}
+
+function runLaunchCountdown() {
+  window.setTimeout(() => {
+    if (!launchSequenceActive) return;
+    showLaunchCountdown("CONFIGURE HOVERTANK", true, 1700);
+    audio.speakComms("Configure HoverTank.", true);
+  }, 5000);
+  ["Five", "Four", "Three", "Two", "One"].forEach((word, index) => {
+    window.setTimeout(() => {
+      if (!launchSequenceActive) return;
+      showLaunchCountdown(word.toUpperCase());
+      audio.speakComms(`${word}.`, true);
+    }, 13000 + index * 1000);
+  });
+  window.setTimeout(() => {
+    if (launchSequenceActive) audio.stopLaunchIntro();
+  }, 17650);
+  window.setTimeout(beginMissionAfterLaunch, LAUNCH_SEQUENCE_DURATION * 1000);
+}
+
+function beginMissionAfterLaunch() {
+  if (!launchSequenceActive || gameEnded) return;
+  launchSequenceActive = false;
+  launchCountdown.classList.remove("active", "configure");
+  audio.stopLaunchIntro();
+  const missionStartedAt = performance.now();
+  missionEndsAt = missionStartedAt + CONFIG.sessionDuration * 1000;
+  sessionTimeRemaining = CONFIG.sessionDuration;
   hud.status.textContent = isDogfightMode()
     ? `${audio.currentTrack.title} signal acquired. ${gameMode === "cockpit" ? "Cockpit Dogfight" : "Dogfight Bootcamp"} active.`
     : `${audio.currentTrack.title} signal acquired. Reach Solareth.`;
   statusTimer = 4;
-  try {
-    audio.armAudio();
-    audio.playCoinRing();
-    void audio.start().catch(error => console.warn("Soundtrack startup deferred", error));
-  } catch (error) {
-    console.warn("Audio unavailable; gameplay remains active", error);
-  }
+  void audio.start().catch(error => console.warn("Soundtrack startup deferred", error));
   audio.prepareSessionDuration().then(trackDuration => {
-    if (!gameStarted || gameEnded) return;
-    missionEndsAt = sessionStartedAt + trackDuration * 1000;
+    if (!gameStarted || gameEnded || launchSequenceActive) return;
+    missionEndsAt = missionStartedAt + trackDuration * 1000;
     sessionTimeRemaining = Math.max(0, (missionEndsAt - performance.now()) / 1000);
   });
-});
+}
 
 function drawPlayCoin() {
   const context = playCoin.getContext("2d");
@@ -6286,10 +6330,14 @@ class AudioManager {
     this.music.id = "soundtrack";
     this.music.setAttribute("aria-hidden", "true");
     this.music.preload = "auto";
+    this.launchIntro = new Audio("assets/hovertank-intro-001.mp3");
+    this.launchIntro.id = "launch-intro";
+    this.launchIntro.setAttribute("aria-hidden", "true");
+    this.launchIntro.preload = "auto";
     this.musicAmmoBalance = Number(musicAmmoBalanceControl.value) / 100;
     this.music.volume = 0.58;
     this.setMusicAmmoBalance(this.musicAmmoBalance);
-    document.body.appendChild(this.music);
+    document.body.append(this.music, this.launchIntro);
   }
 
   selectTrack() {
@@ -6347,6 +6395,18 @@ class AudioManager {
     hud.musicButton.textContent = "Sound Off";
   }
 
+  async playLaunchIntro() {
+    const ctx = this.ensureContext();
+    if (ctx && ctx.state === "suspended") await ctx.resume();
+    this.launchIntro.currentTime = 0;
+    await this.launchIntro.play();
+  }
+
+  stopLaunchIntro() {
+    this.launchIntro.pause();
+    this.launchIntro.currentTime = 0;
+  }
+
   armAudio() {
     const ctx = this.ensureContext();
     if (ctx && ctx.state === "suspended") ctx.resume();
@@ -6385,6 +6445,7 @@ class AudioManager {
   }
 
   toggleMute() {
+    if (launchSequenceActive) return;
     if (!this.started) {
       this.start();
       return;
@@ -6677,6 +6738,7 @@ class AudioManager {
     this.musicAmmoBalance = THREE.MathUtils.clamp(balance, 0, 1);
     const angle = this.musicAmmoBalance * Math.PI * 0.5;
     this.music.volume = 0.82 * Math.cos(angle);
+    this.launchIntro.volume = 0.82 * Math.cos(angle);
     if (this.ammoOutput && this.context) {
       const ammoGain = Math.SQRT2 * Math.sin(angle);
       this.ammoOutput.gain.setTargetAtTime(ammoGain, this.context.currentTime, 0.035);
@@ -6932,7 +6994,7 @@ function animate() {
   const previous = tank.group.position.clone();
 
   if (gameStarted && !gameEnded && !gamePaused) {
-    updateFuel(delta);
+    if (!launchSequenceActive) updateFuel(delta);
     const controls = autopilot.update(delta, tank, terrain, input);
     tank.update(delta, controls, terrain, fuel > 0);
     if (terrain.worldMode === "maze" && tank.group.position.y > 17) {
@@ -6941,29 +7003,31 @@ function animate() {
       tank.altitudeHoldY = Math.min(17, tank.altitudeHoldY ?? 17);
     }
     const moved = tank.group.position.distanceTo(previous);
-    distanceTravelled += moved;
+    if (!launchSequenceActive) distanceTravelled += moved;
     const normalHoverY = terrain.getHeightAt(tank.group.position.x, tank.group.position.z) + CONFIG.tankHoverHeight;
-    if (tank.group.position.y > normalHoverY + 1) runStats.flightTime += delta;
-    worldPortal.update(delta, tank);
-    purpleMazePortal.update(delta, tank);
+    if (!launchSequenceActive && tank.group.position.y > normalHoverY + 1) runStats.flightTime += delta;
     terrain.update(tank.group.position);
     tacticalGrid.update(delta, tank);
-    if (isDogfightMode() && bootcampManager) {
-      bootcampManager.update(delta);
-      enemies.updateHostileShots(delta, tank);
-      refuelTowers.update(delta, tank);
-      missileTowers.update(delta, tank);
-      projectiles.update(delta, input, tank, enemies, skyDrones, bootcampManager);
-    } else {
-      enemies.update(delta, tank);
-      prisonEscapees.update(delta, tank);
-      skyDrones.update(delta, tank);
-      surveillanceFleet.update(delta, tank);
-      giantTarantulas.update(delta, tank, enemies);
-      wingmen.update(delta);
-      refuelTowers.update(delta, tank);
-      missileTowers.update(delta, tank);
-      projectiles.update(delta, input, tank, enemies, skyDrones);
+    if (!launchSequenceActive) {
+      worldPortal.update(delta, tank);
+      purpleMazePortal.update(delta, tank);
+      if (isDogfightMode() && bootcampManager) {
+        bootcampManager.update(delta);
+        enemies.updateHostileShots(delta, tank);
+        refuelTowers.update(delta, tank);
+        missileTowers.update(delta, tank);
+        projectiles.update(delta, input, tank, enemies, skyDrones, bootcampManager);
+      } else {
+        enemies.update(delta, tank);
+        prisonEscapees.update(delta, tank);
+        skyDrones.update(delta, tank);
+        surveillanceFleet.update(delta, tank);
+        giantTarantulas.update(delta, tank, enemies);
+        wingmen.update(delta);
+        refuelTowers.update(delta, tank);
+        missileTowers.update(delta, tank);
+        projectiles.update(delta, input, tank, enemies, skyDrones);
+      }
     }
     updateCamera(delta);
     updateHUD(delta);
@@ -6990,7 +7054,7 @@ function animate() {
 }
 
 function toggleGamePause() {
-  if (!gameStarted || gameEnded) return;
+  if (!gameStarted || gameEnded || launchSequenceActive) return;
   gamePaused = !gamePaused;
   for (const key of Object.keys(input)) input[key] = false;
   if (gamePaused) {
@@ -7048,10 +7112,15 @@ function updateCamera(delta) {
 }
 
 function updateHUD(delta) {
-  sessionTimeRemaining = Math.max(0, (missionEndsAt - performance.now()) / 1000);
+  sessionTimeRemaining = launchSequenceActive
+    ? CONFIG.sessionDuration
+    : Math.max(0, (missionEndsAt - performance.now()) / 1000);
   const missionSeconds = Math.ceil(sessionTimeRemaining);
   hud.sessionTime.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
-  hud.missionCountdown.textContent = `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
+  const launchSeconds = Math.max(0, Math.ceil((launchSequenceEndsAt - performance.now()) / 1000));
+  hud.missionCountdown.textContent = launchSequenceActive
+    ? `T-${String(launchSeconds).padStart(2, "0")}`
+    : `${Math.floor(missionSeconds / 60)}:${String(missionSeconds % 60).padStart(2, "0")}`;
   const northSouth = tank.group.position.z <= 0 ? "N" : "S";
   const eastWest = tank.group.position.x >= 0 ? "E" : "W";
   hud.coordinates.textContent = `${northSouth} ${String(Math.round(Math.abs(tank.group.position.z))).padStart(4, "0")} | ${eastWest} ${String(Math.round(Math.abs(tank.group.position.x))).padStart(4, "0")}`;
@@ -7062,7 +7131,7 @@ function updateHUD(delta) {
     ? (baseBearingZ <= 0 ? "N" : "S")
     : (baseBearingX >= 0 ? "E" : "W");
   hud.baseRange.textContent = `BASE ${baseDirection} ${Math.round(baseDistance)} m`;
-  if (sessionTimeRemaining <= 30 && returnToBaseWarningArmed) {
+  if (!launchSequenceActive && sessionTimeRemaining <= 30 && returnToBaseWarningArmed) {
     returnToBaseWarningArmed = false;
     audio.speakReturnToBase();
     hud.status.textContent = "RETURN TO BASE. Black-circle recovery bonus available.";
@@ -7103,7 +7172,7 @@ function updateHUD(delta) {
     hud.status.textContent = poeticStatuses[currentStatus];
     statusTimer = 10 + Math.random() * 8;
   }
-  if (sessionTimeRemaining <= 0) {
+  if (!launchSequenceActive && sessionTimeRemaining <= 0) {
     hud.status.textContent = "Soundtrack mission complete.";
     endRun();
   }
@@ -7377,7 +7446,7 @@ function updateImpactEffects(delta) {
 }
 
 function damagePlayer(amount) {
-  if (sessionTimeRemaining > CONFIG.sessionDuration - 8) return;
+  if (launchSequenceActive || sessionTimeRemaining > CONFIG.sessionDuration - 8) return;
   if (gameEnded) return;
   hitPoints = Math.max(0, hitPoints - amount);
   if (hitPoints < 50 && criticalDamageWarningArmed) {

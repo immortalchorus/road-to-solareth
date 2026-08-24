@@ -639,6 +639,31 @@ body {
   animation: sonar-activation-flicker 1.3s ease-out both;
 }
 
+#launch-countdown {
+  position: fixed;
+  left: 50%;
+  top: 23%;
+  z-index: 19;
+  min-width: min(420px, calc(100vw - 40px));
+  color: #b9ffe0;
+  font: 900 clamp(34px, 6vh, 72px) "Segoe UI", system-ui, sans-serif;
+  text-align: center;
+  text-shadow: 0 0 10px #24ff91, 0 0 28px rgba(32, 255, 135, 0.72);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: opacity 140ms ease, transform 180ms ease;
+}
+
+#launch-countdown.active {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+#launch-countdown.configure {
+  font-size: clamp(22px, 3.5vh, 42px);
+}
+
 .sonar-activation-ring {
   position: absolute;
   inset: 0;
