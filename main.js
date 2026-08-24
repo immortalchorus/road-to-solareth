@@ -2768,7 +2768,15 @@ function createFlatPrisonCompound(terrainManager) {
     group.add(collider);
   }
 
-  const stackPositions = [[-285, -170], [-285, 90], [285, -80], [285, 175], [-130, -285], [150, 285]];
+  const wastelandStackOffset = bridgePerimeterOffset + 125;
+  const stackPositions = [
+    [-wastelandStackOffset, -210],
+    [-wastelandStackOffset, 120],
+    [wastelandStackOffset, -150],
+    [wastelandStackOffset, 230],
+    [-180, -wastelandStackOffset],
+    [210, wastelandStackOffset]
+  ];
   stackPositions.forEach(([x, z], index) => {
     const stack = createPerimeterSmokeStack(12000 + index);
     stack.position.set(x, 0, z);
