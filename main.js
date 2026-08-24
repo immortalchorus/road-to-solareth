@@ -2695,14 +2695,16 @@ function createFlatPrisonCompound(terrainManager) {
   orbs.instanceMatrix.needsUpdate = true;
   group.add(stems, orbs);
 
-  const bridgeLines = [50];
+  const supplyPerimeterOffset = half + 20;
+  const bridgePerimeterOffset = supplyPerimeterOffset + 50;
+  const bridgeSpan = bridgePerimeterOffset * 2;
   const addBridge = (line, alongX) => {
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(alongX ? size : 17, 2.2, alongX ? 17 : size), materials.prisonConcrete);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(alongX ? bridgeSpan : 17, 2.2, alongX ? 17 : bridgeSpan), materials.prisonConcrete);
     deck.position.set(alongX ? 0 : line, 22, alongX ? line : 0);
     deck.castShadow = true;
     deck.receiveShadow = true;
     group.add(deck);
-    for (let along = -200; along <= 200; along += 50) {
+    for (let along = -250; along <= 250; along += 50) {
       const support = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 3.3, 21, 12), materials.prisonConcrete);
       support.position.set(alongX ? along : line, 10.5, alongX ? line : along);
       group.add(support);
@@ -2713,7 +2715,8 @@ function createFlatPrisonCompound(terrainManager) {
       });
     }
   };
-  for (const line of bridgeLines) {
+  for (const side of [-1, 1]) {
+    const line = bridgePerimeterOffset * side;
     addBridge(line, true);
     addBridge(line, false);
   }
