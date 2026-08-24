@@ -130,7 +130,7 @@ camera.add(cockpitWeaponRig);
 const clock = new THREE.Clock();
 
 const input = {};
-const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit2", "Numpad2", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "F5", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
+const gameKeyCodes = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Escape", "Digit1", "Numpad1", "Digit2", "Numpad2", "Digit5", "Digit7", "KeyF", "KeyG", "KeyM", "KeyP", "KeyZ", "KeyY", "KeyV", "F1", "F2", "F3", "F5", "F6", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "Tab"]);
 const cameraProfiles = {
   chase: { height: 16, distance: 28, lookHeight: 5.8, fov: 62, settle: 0.035 },
   worm: { height: 5.2, distance: 42, lookHeight: 8.8, fov: 72, settle: 0.02 }
@@ -482,6 +482,7 @@ window.addEventListener("keydown", event => {
   if (event.code === "F2" && !event.repeat) setMissileRange(55, true);
   if (event.code === "F3" && !event.repeat) setMissileRange(90, true);
   if (event.code === "F5" && !event.repeat && tank) tank.togglePrecisionSteering();
+  if (event.code === "F6" && !event.repeat && tank) tank.toggleDoubleSpeed();
   if (event.code === "KeyG" && !event.repeat && tacticalGrid) tacticalGrid.toggle();
   if (event.code === "KeyP" && !event.repeat && autopilot) {
     if (shiftHeld && autopilot.enabled) autopilot.switchPhase();
@@ -1618,6 +1619,16 @@ class Tank {
     hud.status.textContent = this.manualTurnMultiplier < 1
       ? "Precision steering: turn speed 50%."
       : "Standard steering restored.";
+    statusTimer = 2.5;
+  }
+
+  toggleDoubleSpeed() {
+    const doubleSpeedEnabled = this.maxForwardSpeed === CONFIG.tankMaxForwardSpeed;
+    this.maxForwardSpeed = CONFIG.tankMaxForwardSpeed * (doubleSpeedEnabled ? 2 : 1);
+    this.maxReverseSpeed = CONFIG.tankMaxReverseSpeed * (doubleSpeedEnabled ? 2 : 1);
+    hud.status.textContent = doubleSpeedEnabled
+      ? "High-speed drive: forward and reverse limits doubled."
+      : "Standard drive speed restored.";
     statusTimer = 2.5;
   }
 
