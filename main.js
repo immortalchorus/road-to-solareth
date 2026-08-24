@@ -30,7 +30,7 @@ const CONFIG = {
   projectileCooldown: 0.085,
   projectileRadius: 0.34,
   projectileCollisionRadius: 0.52,
-  cannonGravity: 4.5,
+  cannonGravity: 5.5,
   bombRadius: 0.82,
   bombDropCount: 8,
   bombGravity: 38,
@@ -4511,6 +4511,60 @@ class WingmanUnit {
   }
 
   build() {
+    for (const original of this.playerTank.legacyVisuals) {
+      const clone = original.clone(true);
+      clone.traverse(child => {
+        child.visible = true;
+        if (!child.isMesh) return;
+        child.material = child.material.clone();
+        child.castShadow = false;
+        child.receiveShadow = false;
+        if ("metalness" in child.material) child.material.metalness = Math.max(0.82, child.material.metalness || 0);
+        if ("roughness" in child.material) child.material.roughness = Math.min(0.3, child.material.roughness ?? 0.3);
+        if (child.material.color) child.material.color.lerp(new THREE.Color(0xdde8ed), 0.42);
+      });
+      this.group.add(clone);
+    }
+
+    this.rearThrusters = [];
+    for (const x of [-1.35, 1.35]) {
+      const coreMaterial = new THREE.MeshBasicMaterial({
+        color: 0x33bfff,
+        transparent: true,
+        opacity: 0.22,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      });
+      const haloMaterial = new THREE.MeshBasicMaterial({
+        color: 0x168dff,
+        transparent: true,
+        opacity: 0.11,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      });
+      const core = new THREE.Mesh(new THREE.CircleGeometry(0.31, 12), coreMaterial);
+      const halo = new THREE.Mesh(new THREE.CircleGeometry(0.57, 12), haloMaterial);
+      core.position.set(x, 2.72, 7.1);
+      halo.position.set(x, 2.72, 7.08);
+      const engineLight = new THREE.PointLight(0x35cfff, 0.45, 14, 2);
+      engineLight.position.set(x, 2.72, 7.45);
+      engineLight.castShadow = false;
+      this.group.add(halo, core, engineLight);
+      this.rearThrusters.push({ core, halo, engineLight });
+    }
+
+    const beaconMaterial = new THREE.MeshBasicMaterial({ color: this.index ? 0x6effa8 : 0x65dfff, transparent: true, opacity: 0.95 });
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 7), beaconMaterial);
+    beacon.position.set(0, 4.5, 0.4);
+    this.group.add(beacon);
+    this.muzzle = new THREE.Object3D();
+    this.muzzle.position.set(0, 2.25, -11.5);
+    this.group.add(this.muzzle);
+  }
+
+  buildOptimizedWingman() {
     if (!this.constructor.sharedWingmanAssets) {
       this.constructor.sharedWingmanAssets = {
         body: new THREE.BoxGeometry(6.0, 1.0, 8.8),
