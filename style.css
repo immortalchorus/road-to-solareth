@@ -621,6 +621,106 @@ body {
   aspect-ratio: 15 / 11;
 }
 
+#sonar-activation {
+  position: fixed;
+  left: 50%;
+  top: 48%;
+  z-index: 18;
+  width: clamp(210px, 25vw, 360px);
+  aspect-ratio: 1;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.94);
+}
+
+#sonar-activation.active {
+  visibility: visible;
+  animation: sonar-activation-flicker 1.3s ease-out both;
+}
+
+.sonar-activation-ring {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 2px solid rgba(83, 255, 159, 0.92);
+  border-radius: 50%;
+  box-shadow:
+    0 0 16px rgba(44, 255, 139, 0.8),
+    0 0 44px rgba(30, 255, 128, 0.34),
+    inset 0 0 18px rgba(47, 255, 137, 0.48),
+    inset 0 0 0 30px rgba(20, 255, 117, 0.035),
+    inset 0 0 0 62px rgba(20, 255, 117, 0.025);
+  background: rgba(0, 28, 14, 0.2);
+}
+
+.sonar-activation-ring::before,
+.sonar-activation-ring::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46%;
+  height: 2px;
+  background: rgba(123, 255, 184, 0.95);
+  box-shadow: 0 0 9px #39ff8d, 0 0 18px rgba(44, 255, 139, 0.72);
+  transform-origin: 0 50%;
+}
+
+.sonar-activation-ring::before {
+  width: 100%;
+  left: 0;
+  background: rgba(78, 255, 157, 0.24);
+  box-shadow: none;
+}
+
+#sonar-activation.active .sonar-activation-ring::after {
+  animation: sonar-activation-sweep 0.72s 0.18s cubic-bezier(0.3, 0.7, 0.35, 1) both;
+}
+
+.sonar-activation-ring > i,
+.sonar-activation-ring > b {
+  position: absolute;
+  border: 1px solid rgba(85, 255, 164, 0.42);
+  border-radius: 50%;
+}
+
+.sonar-activation-ring > i {
+  inset: 24%;
+}
+
+.sonar-activation-ring > b {
+  inset: 42%;
+  box-shadow: 0 0 12px rgba(41, 255, 136, 0.62);
+}
+
+.sonar-activation-ring > span {
+  position: absolute;
+  left: 50%;
+  bottom: 13%;
+  transform: translateX(-50%);
+  color: #a8ffd0;
+  font: 800 12px "Segoe UI", system-ui, sans-serif;
+  text-shadow: 0 0 8px #20ff7c;
+  white-space: nowrap;
+}
+
+@keyframes sonar-activation-flicker {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.94); }
+  5% { opacity: 0.92; }
+  9% { opacity: 0.18; }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  22% { opacity: 0.58; }
+  28% { opacity: 1; }
+  72% { opacity: 0.94; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.04); }
+}
+
+@keyframes sonar-activation-sweep {
+  from { transform: rotate(-90deg); }
+  to { transform: rotate(270deg); }
+}
+
 #cockpit-overlay {
   position: fixed;
   inset: 0;

@@ -168,6 +168,7 @@ const bombingScopePanel = document.querySelector("#bombing-scope");
 const bombingScopeCanvas = document.querySelector("#bombing-scope-canvas");
 const cockpitOverlay = document.querySelector("#cockpit-overlay");
 const cockpitSonarCanvas = document.querySelector("#cockpit-sonar-canvas");
+const sonarActivation = document.querySelector("#sonar-activation");
 const cockpitReadouts = {
   armor: document.querySelector("#cockpit-armor"),
   speed: document.querySelector("#cockpit-speed"),
@@ -203,6 +204,15 @@ let commsVolume = 0.7;
 let bombingScope = null;
 let cockpitBombingScope = null;
 let cockpitAlertTimer = 0;
+let sonarActivationTimer = 0;
+
+function playSonarActivation() {
+  window.clearTimeout(sonarActivationTimer);
+  sonarActivation.classList.remove("active");
+  void sonarActivation.offsetWidth;
+  sonarActivation.classList.add("active");
+  sonarActivationTimer = window.setTimeout(() => sonarActivation.classList.remove("active"), 1350);
+}
 
 try {
   musicAmmoBalanceControl.value = window.localStorage.getItem("hovertank-music-ammo-balance") || "50";
@@ -5568,7 +5578,11 @@ class BombingScope {
     this.panel.hidden = !this.visible;
     hud.status.textContent = this.visible ? "Bombing sonar online." : "Bombing sonar dismissed.";
     statusTimer = 2.2;
-    if (this.visible) this.render(0);
+    if (this.visible) {
+      this.render(0);
+      playSonarActivation();
+      if (audio) audio.speakComms("Sonar Mode.", true);
+    }
   }
 
   predictImpact() {
