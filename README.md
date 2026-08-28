@@ -1,6 +1,6 @@
-# Road to Solareth
+# HoverTank©
 
-A simple Three.js browser game project: a slow, atmospheric futuristic tank journey across an infinite alien landscape toward the unreachable city of Solareth.
+You are a HoverTank pilot on a mission to defend a city from a maniac invader and his mecha, tanks, and spider droids.
 
 ## Status
 
